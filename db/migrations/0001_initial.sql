@@ -247,26 +247,60 @@ CREATE TABLE pos_item_types (
   UNIQUE (org_id, name)
 );
 
+CREATE TABLE pos_staff (
+  id         TEXT PRIMARY KEY,
+  org_id     TEXT NOT NULL REFERENCES core_organizations(id),
+  smrt_name  TEXT NOT NULL,        -- as SMRT shows it in 'Created by', 'Assembled by' ...: 'Sheri L'
+  person_id  TEXT REFERENCES core_people(id),   -- matched to the employee list (blank until matched)
+  created_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+  updated_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+  updated_by  TEXT REFERENCES core_users(id),
+  deleted_at  TEXT,
+  rev         INTEGER NOT NULL DEFAULT 0,
+  UNIQUE (org_id, smrt_name)
+);
+
 CREATE TABLE pos_orders (
-  id                TEXT PRIMARY KEY,
-  org_id            TEXT NOT NULL REFERENCES core_organizations(id),
-  smrt_order_no     TEXT NOT NULL,  -- SMRT's order id, e.g. 262813231
-  status_id         TEXT NOT NULL REFERENCES pos_order_statuses(id),
-  return_location_id TEXT REFERENCES core_locations(id),  -- where it goes back to (decides the shuttle)
-  drop_location_id  TEXT REFERENCES core_locations(id),   -- where it was dropped off (SMRT 'Agent')
-  is_route          INTEGER NOT NULL DEFAULT 0,
-  piece_count       INTEGER,        -- SMRT's own count on the order
-  customer_ref      TEXT,           -- SMRT customer id, if the report includes it
-  smrt_created_at   TEXT NOT NULL,  -- when the order was written up in SMRT
-  due_at            TEXT,
-  ready_at          TEXT,
-  returned_at       TEXT,
-  picked_up_at      TEXT,
-  delivered_at      TEXT,
-  extra_json        TEXT,           -- every other column SMRT sent
-  row_hash          TEXT NOT NULL,  -- fingerprint of SMRT's row; unchanged rows aren't rewritten
-  first_sync_id     TEXT REFERENCES int_sync_runs(id),
-  last_sync_id      TEXT REFERENCES int_sync_runs(id),
+  id                  TEXT PRIMARY KEY,
+  org_id              TEXT NOT NULL REFERENCES core_organizations(id),
+  smrt_order_no       TEXT NOT NULL,  -- SMRT's order id, e.g. 262813231
+  status_id           TEXT NOT NULL REFERENCES pos_order_statuses(id),
+  order_type          TEXT,           -- 'Dry Cleaning', 'Wash & Fold', ...
+  customer_ref        TEXT,           -- SMRT customer id (names and phones aren't in the reports)
+  return_location_id  TEXT REFERENCES core_locations(id),  -- where it goes back to (decides the shuttle)
+  drop_location_id    TEXT REFERENCES core_locations(id),  -- where it was dropped off (SMRT 'Agent')
+  is_route_delivery   INTEGER NOT NULL DEFAULT 0,
+  is_route_pickup     INTEGER NOT NULL DEFAULT 0,
+  piece_count         INTEGER,
+  original_piece_count INTEGER,
+  weight_in_lbs       REAL,           -- wash & fold
+  weight_out_lbs      REAL,
+  notes               TEXT,           -- SMRT 'Order Notes'; every change is kept in pos_changes
+  before_discount_cents INTEGER,
+  discount_cents      INTEGER,
+  surcharge_cents     INTEGER,
+  taxable_cents       INTEGER,
+  tax_cents           INTEGER,
+  price_cents         INTEGER,
+  paid_cents          INTEGER,
+  payment_setting     TEXT,           -- 'AutoPay', ...
+  promotion           TEXT,
+  created_by_staff_id  TEXT REFERENCES pos_staff(id),
+  detailed_by_staff_id TEXT REFERENCES pos_staff(id),
+  smrt_created_at     TEXT NOT NULL,  -- when the order was written up in SMRT
+  detailed_at         TEXT,
+  due_at              TEXT,           -- current due time; earlier ones are in pos_changes
+  assembled_at        TEXT,
+  ready_at            TEXT,
+  returned_at         TEXT,
+  picked_up_at        TEXT,
+  delivered_at        TEXT,
+  paid_at             TEXT,
+  smrt_deleted_at     TEXT,
+  extra_json          TEXT,           -- every other column SMRT sent
+  row_hash            TEXT NOT NULL,  -- fingerprint of SMRT's row; unchanged rows aren't rewritten
+  first_sync_id       TEXT REFERENCES int_sync_runs(id),
+  last_sync_id        TEXT REFERENCES int_sync_runs(id),
   created_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
   updated_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
   updated_by  TEXT REFERENCES core_users(id),
@@ -282,30 +316,57 @@ CREATE TABLE pos_order_departments (
 );
 
 CREATE TABLE pos_items (
-  id              TEXT PRIMARY KEY,
-  order_id        TEXT NOT NULL REFERENCES pos_orders(id),
-  smrt_item_ref   TEXT,             -- SMRT's id for the piece, if the report gives one (see notes)
-  line_no         INTEGER NOT NULL, -- position within the order
-  item_type_id    TEXT NOT NULL REFERENCES pos_item_types(id),
-  department_id   TEXT NOT NULL REFERENCES pos_departments(id),
-  status_id       TEXT REFERENCES pos_item_statuses(id),
-  lot_status      TEXT,             -- laundry lot: 'Washing', 'Completed'
-  smrt_created_at TEXT NOT NULL,    -- when the piece was detailed in SMRT
-  assembled_at    TEXT,             -- drives done-ahead, done-today and the pieces-through-the-day chart
-  removed_at      TEXT,             -- taken off the order; kept for history, left out of counts
-  base_cents      INTEGER,
-  upcharge_cents  INTEGER,
-  discount_cents  INTEGER,
-  price_cents     INTEGER,          -- SMRT 'Price' (includes tax); revenue uses base + upcharge - discount
-  extra_json      TEXT,
-  row_hash        TEXT NOT NULL,
-  last_sync_id    TEXT REFERENCES int_sync_runs(id),
+  id                    TEXT PRIMARY KEY,
+  order_id              TEXT NOT NULL REFERENCES pos_orders(id),   -- changes if SMRT moves the piece to another order
+  barcode               TEXT,         -- SMRT's tag barcode; how a piece is matched on every sync
+  line_no               INTEGER NOT NULL,
+  item_type_id          TEXT NOT NULL REFERENCES pos_item_types(id),
+  department_id         TEXT NOT NULL REFERENCES pos_departments(id),
+  status_id             TEXT REFERENCES pos_item_statuses(id),
+  lot_status            TEXT,         -- laundry lot: 'Washing', 'Completed'
+  category              TEXT,         -- SMRT 'Category'
+  classification        TEXT,
+  description           TEXT,
+  notes                 TEXT,         -- SMRT 'Item Notes'; every change is kept in pos_changes
+  special_cares         TEXT,
+  brand                 TEXT,
+  colors                TEXT,
+  fabrics               TEXT,
+  pattern               TEXT,
+  detailed_by_staff_id  TEXT REFERENCES pos_staff(id),
+  assembled_by_staff_id TEXT REFERENCES pos_staff(id),
+  racked_by_staff_id    TEXT REFERENCES pos_staff(id),
+  last_rack_location    TEXT,
+  smrt_created_at       TEXT NOT NULL,
+  detailed_at           TEXT,
+  assembled_at          TEXT,         -- drives done-ahead, done-today and the pieces-through-the-day chart
+  racked_at             TEXT,
+  removed_at            TEXT,         -- taken off the order; kept for history, left out of counts
+  base_cents            INTEGER,
+  upcharge_cents        INTEGER,
+  discount_cents        INTEGER,
+  price_cents           INTEGER,      -- SMRT 'Price' (includes tax); revenue uses base + upcharge - discount
+  extra_json            TEXT,
+  row_hash              TEXT NOT NULL,
+  last_sync_id          TEXT REFERENCES int_sync_runs(id),
   created_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
   updated_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
   updated_by  TEXT REFERENCES core_users(id),
   deleted_at  TEXT,
-  rev         INTEGER NOT NULL DEFAULT 0,
-  UNIQUE (order_id, line_no)
+  rev         INTEGER NOT NULL DEFAULT 0
+);
+
+-- What changed in SMRT, as found by each sync: due dates moved, notes added or edited, pieces moved between orders,
+-- status changes. Nothing is overwritten without a row here, so every earlier due date and note is kept.
+CREATE TABLE pos_changes (
+  id           TEXT PRIMARY KEY,
+  order_id     TEXT NOT NULL REFERENCES pos_orders(id),
+  item_id      TEXT REFERENCES pos_items(id),
+  kind         TEXT NOT NULL CHECK (kind IN ('due_changed','order_note','item_note','item_moved','item_added','item_removed','status_changed','order_deleted')),
+  old_value    TEXT,
+  new_value    TEXT,
+  detected_at  TEXT NOT NULL,
+  sync_run_id  TEXT REFERENCES int_sync_runs(id)
 );
 
 -- ===================== labor (hours + pay) =====================
@@ -527,6 +588,34 @@ CREATE TABLE plan_callouts (
   rev         INTEGER NOT NULL DEFAULT 0
 );
 
+CREATE TABLE plan_followup_reasons (
+  id     TEXT PRIMARY KEY,           -- 'stain','repair','customer','waiting','missing','other'
+  name   TEXT NOT NULL,
+  sort   INTEGER NOT NULL DEFAULT 0
+);
+
+-- Opened when an order's due date moves later, a piece moves to another order, or an order goes overdue.
+-- If SMRT already has a note, it opens as 'noted'; if not, it asks the production manager for one.
+CREATE TABLE plan_followups (
+  id            TEXT PRIMARY KEY,
+  order_id      TEXT NOT NULL REFERENCES pos_orders(id),
+  item_id       TEXT REFERENCES pos_items(id),
+  kind          TEXT NOT NULL CHECK (kind IN ('due_moved','item_moved','overdue')),
+  change_id     TEXT REFERENCES pos_changes(id),   -- the SMRT change that opened it
+  status        TEXT NOT NULL DEFAULT 'needs_note' CHECK (status IN ('needs_note','noted','resolved')),
+  reason_id     TEXT REFERENCES plan_followup_reasons(id),
+  note          TEXT,                -- entered in the app (SMRT's own note stays on the order or piece)
+  noted_by      TEXT REFERENCES core_users(id),
+  noted_at      TEXT,
+  resolved_by   TEXT REFERENCES core_users(id),
+  resolved_at   TEXT,                -- finished, or the new due date was met
+  created_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+  updated_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+  updated_by  TEXT REFERENCES core_users(id),
+  deleted_at  TEXT,
+  rev         INTEGER NOT NULL DEFAULT 0
+);
+
 CREATE TABLE plan_publications (
   id             TEXT PRIMARY KEY,
   day_id         TEXT NOT NULL REFERENCES plan_days(id),
@@ -555,6 +644,11 @@ CREATE INDEX ix_orders_status       ON pos_orders(status_id);
 CREATE INDEX ix_orders_return       ON pos_orders(return_location_id, due_at);
 CREATE INDEX ix_order_deps_dep      ON pos_order_departments(department_id);
 CREATE INDEX ix_items_order         ON pos_items(order_id);
+CREATE INDEX ix_items_barcode       ON pos_items(barcode);
+CREATE INDEX ix_changes_order       ON pos_changes(order_id, detected_at);
+CREATE INDEX ix_changes_kind        ON pos_changes(kind, detected_at);
+CREATE INDEX ix_followups_open      ON plan_followups(status, order_id);
+CREATE INDEX ix_staff_person        ON pos_staff(person_id);
 CREATE INDEX ix_items_assembled     ON pos_items(assembled_at);
 CREATE INDEX ix_items_type          ON pos_items(item_type_id);
 CREATE INDEX ix_items_dep           ON pos_items(department_id, assembled_at);
