@@ -1,0 +1,27 @@
+name = "netex-sync"
+main = "src/index.js"
+compatibility_date = "2026-09-01"
+account_id = "61c6ba95bfea0222857214634869b20a"
+
+# every 15 minutes; the job itself only loads history between BACKFILL_START_HOUR and BACKFILL_END_HOUR (local time)
+[triggers]
+crons = ["*/15 * * * *"]
+
+[[d1_databases]]
+binding = "DB"
+database_name = "netex-apps"
+database_id = "1657081e-9193-4636-a12b-88e0f1f86438"
+migrations_dir = "../../db/migrations"
+
+[vars]
+TIMEZONE = "America/Chicago"
+SMRT_URL = "https://towncountryclean.smrtapp.com/graphql"
+ORG_ID = "tcc"
+SMRT_INTEGRATION_ID = "smrt"
+BACKFILL_START_HOUR = "20"
+BACKFILL_END_HOUR = "5"
+BACKFILL_DAYS_PER_RUN = "2"
+BACKFILL_OLDEST_DAY = "2021-01-01"
+
+# Secret (set once in the Cloudflare dashboard: Workers > netex-sync > Settings > Variables and Secrets):
+#   SMRT_KEY  - the SMRT API key. Never put it in this file or in GitHub.

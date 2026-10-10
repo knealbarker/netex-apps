@@ -190,6 +190,20 @@ CREATE TABLE int_sync_runs (
   message         TEXT
 );
 
+-- History loaded a little at a time: one row per SMRT created-day, newest first, a few days per night.
+CREATE TABLE int_backfill_days (
+  integration_id  TEXT NOT NULL REFERENCES int_integrations(id),
+  day             TEXT NOT NULL,        -- the created date in SMRT ('YYYY-MM-DD')
+  status          TEXT NOT NULL CHECK (status IN ('done','empty','error')),
+  orders          INTEGER NOT NULL DEFAULT 0,
+  items           INTEGER NOT NULL DEFAULT 0,
+  attempts        INTEGER NOT NULL DEFAULT 1,
+  last_error      TEXT,
+  loaded_at       TEXT NOT NULL,
+  sync_run_id     TEXT REFERENCES int_sync_runs(id),
+  PRIMARY KEY (integration_id, day)
+);
+
 -- ===================== orders (full copy of SMRT) =====================
 -- Every order and every piece SMRT reports is kept for good. Each sync asks SMRT only for recently created orders and for
 -- the created days that still have open orders; a closed order (picked up, delivered, deleted) is never read again.
