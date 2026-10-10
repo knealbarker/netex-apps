@@ -20,7 +20,7 @@ export default {
     console.log(JSON.stringify({ job: "smrt-backfill", status: res.status, days: res.loaded.map(x => x.day), error: res.error }));
   },
 
-  // GET /status -> history progress (behind Cloudflare Access like everything on the domain)
+  // GET /status -> history progress (only reachable once a netexcleaners.com route behind Cloudflare Access is added)
   async fetch(req, env) {
     const url = new URL(req.url);
     if (url.pathname === "/status") return Response.json(await backfillProgress(env.DB, env.ORG_ID, env.SMRT_INTEGRATION_ID));
