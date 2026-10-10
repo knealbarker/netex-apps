@@ -12,6 +12,7 @@ export default {
     const { day, hour } = localNow(tz);
     // history only overnight (default 8 pm - 5 am), so it never competes with the day's work in SMRT
     if (!inWindow(hour, +(env.BACKFILL_START_HOUR ?? 20), +(env.BACKFILL_END_HOUR ?? 5))) return;
+    if (!env.SMRT_KEY) { console.log(JSON.stringify({ job: "smrt-backfill", status: "waiting", reason: "SMRT_KEY secret not set" })); return; }
     const smrt = new Smrt({ url: env.SMRT_URL, key: env.SMRT_KEY });
     const res = await runBackfill(env.DB, smrt, {
       orgId: env.ORG_ID, integrationId: env.SMRT_INTEGRATION_ID, today: day,
