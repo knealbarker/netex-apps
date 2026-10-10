@@ -2,14 +2,15 @@
 -- One database for every app on netexcleaners.com. Tables are grouped by a name prefix:
 --   core_   shared by every app: company, locations, people, users, roles, devices, settings, audit log
 --   int_    connections to outside systems (SMRT, Rippling, Gmail) and their sync history
---   pos_    orders copied from SMRT (read-only copy; SMRT stays the source of truth)
---   labor_  time clock punches from Rippling and pay rates
+--   pos_    every order and piece from SMRT, kept as history (SMRT stays the source of truth for open orders)
+--   labor_  hours per person per day from Rippling, and pay rates
 --   plan_   the production planner
 -- Conventions
 --   ids are text (ULIDs) so a PC working offline can create rows without clashing; small lookup tables use readable ids ('dct', 'owner').
 --   times are ISO-8601 text in UTC; work dates are 'YYYY-MM-DD'; times of day are 'HH:MM' in the company's time zone; money is integer cents.
 --   Most tables end with: created_at, updated_at, updated_by (user), deleted_at (soft delete), rev (sync counter).
---   No totals are stored that can be calculated from other rows, except plan_publications.snapshot_json (a frozen record of what was published).
+--   No totals are stored that can be calculated from other rows, except plan_publications.snapshot_json (a frozen record of what was published)
+--   and labor_daily_hours (Rippling's punches are not kept after the day is added up).
 
 PRAGMA foreign_keys = ON;
 
@@ -189,12 +190,43 @@ CREATE TABLE int_sync_runs (
   message         TEXT
 );
 
--- ===================== orders (copy of SMRT) =====================
+-- ===================== orders (full copy of SMRT) =====================
+-- Every order and every piece SMRT reports is kept for good. Each sync asks SMRT only for recently created orders and for
+-- the created days that still have open orders; a closed order (picked up, delivered, deleted) is never read again.
+-- Columns the planner doesn't use yet are kept in extra_json, so nothing SMRT sends is lost.
+
+CREATE TABLE pos_order_statuses (
+  id          TEXT PRIMARY KEY,
+  org_id      TEXT NOT NULL REFERENCES core_organizations(id),
+  name        TEXT NOT NULL,       -- as SMRT spells it: 'processing', 'ready', 'pickedUp', ...
+  is_done     INTEGER NOT NULL DEFAULT 0,   -- finished for production
+  is_closed   INTEGER NOT NULL DEFAULT 0,   -- nothing more will change; stop re-reading
+  is_void     INTEGER NOT NULL DEFAULT 0,   -- deleted / disabled: left out of counts
+  created_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+  updated_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+  updated_by  TEXT REFERENCES core_users(id),
+  deleted_at  TEXT,
+  rev         INTEGER NOT NULL DEFAULT 0,
+  UNIQUE (org_id, name)
+);
+
+CREATE TABLE pos_item_statuses (
+  id            TEXT PRIMARY KEY,
+  org_id        TEXT NOT NULL REFERENCES core_organizations(id),
+  name          TEXT NOT NULL,     -- 'detailed', 'assembled', 'racked', ...
+  is_assembled  INTEGER NOT NULL DEFAULT 0,   -- counts as complete for production
+  created_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+  updated_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+  updated_by  TEXT REFERENCES core_users(id),
+  deleted_at  TEXT,
+  rev         INTEGER NOT NULL DEFAULT 0,
+  UNIQUE (org_id, name)
+);
 
 CREATE TABLE pos_departments (
   id      TEXT PRIMARY KEY,
   org_id  TEXT NOT NULL REFERENCES core_organizations(id),
-  name    TEXT NOT NULL,           -- 'Dry Cleaning Tops', 'Laundry Bottoms', ...
+  name    TEXT NOT NULL,           -- financial department: 'Dry Cleaning Tops', 'Laundry Bottoms', ...
   created_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
   updated_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
   updated_by  TEXT REFERENCES core_users(id),
@@ -204,66 +236,107 @@ CREATE TABLE pos_departments (
 );
 
 CREATE TABLE pos_item_types (
-  id             TEXT PRIMARY KEY,
-  department_id  TEXT NOT NULL REFERENCES pos_departments(id),
-  name           TEXT NOT NULL,    -- 'Shirt L', 'Comforter', 'Tablecloth', ...
+  id      TEXT PRIMARY KEY,
+  org_id  TEXT NOT NULL REFERENCES core_organizations(id),
+  name    TEXT NOT NULL,           -- 'Shirt L', 'Comforter', 'Tablecloth', ...
   created_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
   updated_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
   updated_by  TEXT REFERENCES core_users(id),
   deleted_at  TEXT,
   rev         INTEGER NOT NULL DEFAULT 0,
-  UNIQUE (department_id, name)
+  UNIQUE (org_id, name)
 );
 
 CREATE TABLE pos_orders (
   id                TEXT PRIMARY KEY,
   org_id            TEXT NOT NULL REFERENCES core_organizations(id),
-  pos_order_no      TEXT NOT NULL,  -- SMRT order number
-  location_id       TEXT REFERENCES core_locations(id),   -- return location (decides the shuttle)
-  drop_location_id  TEXT REFERENCES core_locations(id),
-  customer_ref      TEXT,           -- SMRT customer id only; names and phone numbers stay in SMRT
-  due_at            TEXT NOT NULL,
-  is_rush           INTEGER NOT NULL DEFAULT 0,
-  status            TEXT,
-  last_sync_run_id  TEXT REFERENCES int_sync_runs(id),
+  smrt_order_no     TEXT NOT NULL,  -- SMRT's order id, e.g. 262813231
+  status_id         TEXT NOT NULL REFERENCES pos_order_statuses(id),
+  return_location_id TEXT REFERENCES core_locations(id),  -- where it goes back to (decides the shuttle)
+  drop_location_id  TEXT REFERENCES core_locations(id),   -- where it was dropped off (SMRT 'Agent')
+  is_route          INTEGER NOT NULL DEFAULT 0,
+  piece_count       INTEGER,        -- SMRT's own count on the order
+  customer_ref      TEXT,           -- SMRT customer id, if the report includes it
+  smrt_created_at   TEXT NOT NULL,  -- when the order was written up in SMRT
+  due_at            TEXT,
+  ready_at          TEXT,
+  returned_at       TEXT,
+  picked_up_at      TEXT,
+  delivered_at      TEXT,
+  extra_json        TEXT,           -- every other column SMRT sent
+  row_hash          TEXT NOT NULL,  -- fingerprint of SMRT's row; unchanged rows aren't rewritten
+  first_sync_id     TEXT REFERENCES int_sync_runs(id),
+  last_sync_id      TEXT REFERENCES int_sync_runs(id),
   created_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
   updated_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
   updated_by  TEXT REFERENCES core_users(id),
   deleted_at  TEXT,
   rev         INTEGER NOT NULL DEFAULT 0,
-  UNIQUE (org_id, pos_order_no)
+  UNIQUE (org_id, smrt_order_no)
 );
 
-CREATE TABLE pos_order_items (
-  id            TEXT PRIMARY KEY,
-  order_id      TEXT NOT NULL REFERENCES pos_orders(id),
-  item_type_id  TEXT NOT NULL REFERENCES pos_item_types(id),
-  pieces        INTEGER NOT NULL,
-  pieces_ready  INTEGER NOT NULL DEFAULT 0,
-  ready_at      TEXT,               -- when the last piece was assembled (done-ahead vs done-today comes from this)
-  price_cents   INTEGER,
+CREATE TABLE pos_order_departments (
+  order_id       TEXT NOT NULL REFERENCES pos_orders(id),
+  department_id  TEXT NOT NULL REFERENCES pos_departments(id),
+  PRIMARY KEY (order_id, department_id)
+);
+
+CREATE TABLE pos_items (
+  id              TEXT PRIMARY KEY,
+  order_id        TEXT NOT NULL REFERENCES pos_orders(id),
+  smrt_item_ref   TEXT,             -- SMRT's id for the piece, if the report gives one (see notes)
+  line_no         INTEGER NOT NULL, -- position within the order
+  item_type_id    TEXT NOT NULL REFERENCES pos_item_types(id),
+  department_id   TEXT NOT NULL REFERENCES pos_departments(id),
+  status_id       TEXT REFERENCES pos_item_statuses(id),
+  lot_status      TEXT,             -- laundry lot: 'Washing', 'Completed'
+  smrt_created_at TEXT NOT NULL,    -- when the piece was detailed in SMRT
+  assembled_at    TEXT,             -- drives done-ahead, done-today and the pieces-through-the-day chart
+  removed_at      TEXT,             -- taken off the order; kept for history, left out of counts
+  base_cents      INTEGER,
+  upcharge_cents  INTEGER,
+  discount_cents  INTEGER,
+  price_cents     INTEGER,          -- SMRT 'Price' (includes tax); revenue uses base + upcharge - discount
+  extra_json      TEXT,
+  row_hash        TEXT NOT NULL,
+  last_sync_id    TEXT REFERENCES int_sync_runs(id),
   created_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
   updated_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
   updated_by  TEXT REFERENCES core_users(id),
   deleted_at  TEXT,
-  rev         INTEGER NOT NULL DEFAULT 0
+  rev         INTEGER NOT NULL DEFAULT 0,
+  UNIQUE (order_id, line_no)
 );
 
--- ===================== labor (time clock + pay) =====================
+-- ===================== labor (hours + pay) =====================
+-- Only hours per person per day are kept. Today's clock punches sit in labor_clock_today so the planner can see who's in;
+-- each night they are added up into labor_daily_hours and cleared.
 
-CREATE TABLE labor_punches (
-  id                TEXT PRIMARY KEY,
-  person_id         TEXT NOT NULL REFERENCES core_people(id),
-  location_id       TEXT REFERENCES core_locations(id),
-  clock_in          TEXT NOT NULL,
-  clock_out         TEXT,
-  payroll_entry_id  TEXT UNIQUE,    -- Rippling's id for the entry, so re-imports don't duplicate
-  sync_run_id       TEXT REFERENCES int_sync_runs(id),
+CREATE TABLE labor_daily_hours (
+  person_id      TEXT NOT NULL REFERENCES core_people(id),
+  work_date      TEXT NOT NULL,
+  department_id  TEXT NOT NULL REFERENCES core_departments(id),   -- Production, Counter, Route ...
+  location_id    TEXT REFERENCES core_locations(id),
+  hours          REAL NOT NULL,     -- paid hours that day; weekly overtime is worked out from these
+  first_in       TEXT,              -- 'HH:MM', for plan vs actual in Review
+  last_out       TEXT,
+  sync_run_id    TEXT REFERENCES int_sync_runs(id),
   created_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
   updated_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
   updated_by  TEXT REFERENCES core_users(id),
   deleted_at  TEXT,
-  rev         INTEGER NOT NULL DEFAULT 0
+  rev         INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (person_id, work_date, department_id)
+);
+
+CREATE TABLE labor_clock_today (
+  id             TEXT PRIMARY KEY,
+  person_id      TEXT NOT NULL REFERENCES core_people(id),
+  department_id  TEXT REFERENCES core_departments(id),
+  clock_in       TEXT NOT NULL,
+  clock_out      TEXT,
+  payroll_entry_id TEXT UNIQUE,     -- Rippling's id, so the 10-minute re-reads don't duplicate
+  sync_run_id    TEXT REFERENCES int_sync_runs(id)
 );
 
 CREATE TABLE labor_pay_rates (
@@ -289,9 +362,19 @@ CREATE TABLE plan_categories (
   sort            INTEGER NOT NULL DEFAULT 0
 );
 
+CREATE TABLE plan_department_categories (
+  department_id  TEXT PRIMARY KEY REFERENCES pos_departments(id),
+  category_id    TEXT NOT NULL REFERENCES plan_categories(id),
+  created_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+  updated_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+  updated_by  TEXT REFERENCES core_users(id),
+  deleted_at  TEXT,
+  rev         INTEGER NOT NULL DEFAULT 0
+);
+
 CREATE TABLE plan_item_categories (
   item_type_id  TEXT PRIMARY KEY REFERENCES pos_item_types(id),
-  category_id   TEXT NOT NULL REFERENCES plan_categories(id),
+  category_id   TEXT NOT NULL REFERENCES plan_categories(id),   -- overrides the department (comforters, tablecloths)
   created_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
   updated_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
   updated_by  TEXT REFERENCES core_users(id),
@@ -467,10 +550,16 @@ CREATE INDEX ix_audit_org_at        ON core_audit_log(org_id, at);
 CREATE INDEX ix_audit_entity        ON core_audit_log(entity, entity_id);
 CREATE INDEX ix_sync_runs_int       ON int_sync_runs(integration_id, started_at);
 CREATE INDEX ix_orders_due          ON pos_orders(org_id, due_at);
-CREATE INDEX ix_orders_location     ON pos_orders(location_id, due_at);
-CREATE INDEX ix_order_items_order   ON pos_order_items(order_id);
-CREATE INDEX ix_order_items_ready   ON pos_order_items(ready_at);
-CREATE INDEX ix_punches_person      ON labor_punches(person_id, clock_in);
+CREATE INDEX ix_orders_created      ON pos_orders(org_id, smrt_created_at);
+CREATE INDEX ix_orders_status       ON pos_orders(status_id);
+CREATE INDEX ix_orders_return       ON pos_orders(return_location_id, due_at);
+CREATE INDEX ix_order_deps_dep      ON pos_order_departments(department_id);
+CREATE INDEX ix_items_order         ON pos_items(order_id);
+CREATE INDEX ix_items_assembled     ON pos_items(assembled_at);
+CREATE INDEX ix_items_type          ON pos_items(item_type_id);
+CREATE INDEX ix_items_dep           ON pos_items(department_id, assembled_at);
+CREATE INDEX ix_hours_date          ON labor_daily_hours(work_date, department_id);
+CREATE INDEX ix_clock_today_person  ON labor_clock_today(person_id);
 CREATE INDEX ix_assignments_day     ON plan_assignments(day_id);
 CREATE INDEX ix_assignments_person  ON plan_assignments(person_id);
 CREATE INDEX ix_callouts_day        ON plan_callouts(day_id);
