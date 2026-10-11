@@ -6,7 +6,7 @@
 //   - Finished days go into labor_daily_hours (one row per person per day: hours, first in, last out).
 //   - Today's punches replace labor_clock_today, so the planner can see who's in right now.
 // Clock punches themselves are not kept after the day is added up (Neal, Oct 10).
-import { ulid, nowIso } from "./util.js";
+import { ulid, nowIso, sha1 } from "./util.js";
 
 export const RIPPLING_COLUMNS = ["time_entry_id", "employee_name", "employee_number", "department_path", "time_entry_date", "clock_in_local", "clock_out_local", "duration_hours"];
 
@@ -53,6 +53,10 @@ async function plannerSettings(db, orgId) {
  * @returns {{ rows, used, days, people, added: string[], today: number, skipped: number }}
  */
 export async function ingestRippling(db, { orgId, integrationId, today, csv }) {
+  // Rippling can send the same export many times; an identical file on the same day changes nothing, so skip it
+  const hash = await sha1(`${today}|${csv}`);
+  const last = await db.prepare("SELECT value_json FROM core_settings WHERE org_id=? AND app_id='core' AND key='rippling_last'").bind(orgId).first();
+  if (last && JSON.parse(last.value_json).hash === hash) return { duplicate: true, rows: 0, used: 0, days: 0, people: 0, added: [], today: 0, skipped: 0 };
   const rows = parseCsv(csv);
   if (!rows.length) return { rows: 0, used: 0, days: 0, people: 0, added: [], today: 0, skipped: 0 };
   const miss = RIPPLING_COLUMNS.filter(c => !(c in rows[0]));
@@ -109,6 +113,9 @@ export async function ingestRippling(db, { orgId, integrationId, today, csv }) {
   stmts.push(db.prepare("UPDATE int_sync_runs SET finished_at=?, status='ok', rows_read=?, rows_changed=?, message=? WHERE id=?")
     .bind(nowIso(), rows.length, daily.size + todayRows.length,
       `rippling: ${used} entries, ${daily.size} person-days, ${todayRows.length} punches today${added.length ? `; added ${added.join(", ")}` : ""}`, runId));
+  stmts.push(db.prepare(`INSERT INTO core_settings(org_id,app_id,key,value_json) VALUES(?, 'core', 'rippling_last', ?)
+    ON CONFLICT(org_id,app_id,key) DO UPDATE SET value_json=excluded.value_json, updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now'), rev=rev+1`)
+    .bind(orgId, JSON.stringify({ hash, at: nowIso(), rows: rows.length })));
   for (let i = 0; i < stmts.length; i += 90) await db.batch(stmts.slice(i, i + 90));
   return { rows: rows.length, used, days: daily.size, people: new Set([...daily.values()].map(d => d.pid)).size, added, today: todayRows.length, skipped };
 }

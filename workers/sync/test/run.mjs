@@ -231,7 +231,8 @@ ok("custom work days: Saturday as a work day waits", !backfillAllowed({ day: "20
   const today = R.prepare("SELECT p.payroll_id, c.clock_in, c.clock_out FROM labor_clock_today c JOIN core_people p ON p.id=c.person_id ORDER BY c.clock_in").all();
   ok("rippling: today's punches kept for the live view, open shift has no clock-out", today.length === 2 && today[0].clock_in === "2026-10-12T03:45:00-05:00" && today[0].clock_out === null, today);
   ok("rippling: quoted name with a comma parsed", one(R, "SELECT first_name || ' ' || last_name AS n FROM core_people WHERE payroll_id='41'").n === "Name, With Comma");
-  await ingestRippling(rdb, { orgId: "tcc", integrationId: "rippling", today: "2026-10-12", csv });
+  const again = await ingestRippling(rdb, { orgId: "tcc", integrationId: "rippling", today: "2026-10-12", csv });
+  ok("rippling: an identical export is skipped without touching the database", again.duplicate === true);
   ok("rippling: same email twice changes nothing", one(R, "SELECT COUNT(*) n FROM labor_daily_hours").n === 2 && one(R, "SELECT COUNT(*) n FROM labor_clock_today").n === 2);
   ok("rippling: 12 PM and 12 AM", ripTime("10/12/2026 12:05 PM CDT").hm === "12:05" && ripTime("10/12/2026 12:05 AM CST").iso === "2026-10-12T00:05:00-06:00");
   let bad = null; try { await ingestRippling(rdb, { orgId: "tcc", integrationId: "rippling", today: "2026-10-12", csv: "a,b\n1,2" }); } catch (e) { bad = e.message; }
