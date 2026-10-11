@@ -11,7 +11,8 @@ const LIMIT = 5000;
 
 export class Smrt {
   // fetchImpl is injectable so tests can stand in for SMRT
-  constructor({ url, key, fetchImpl = fetch }) { this.url = url; this.key = key; this.fetch = fetchImpl; this.cols = {}; this.calls = 0; }
+  // wrapped so Workers never calls the global fetch with the Smrt object as `this` ("Illegal invocation")
+  constructor({ url, key, fetchImpl = (...a) => fetch(...a) }) { this.url = url; this.key = key; this.fetch = (...a) => fetchImpl(...a); this.cols = {}; this.calls = 0; }
 
   async gql(query) {
     this.calls++;

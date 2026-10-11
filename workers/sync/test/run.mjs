@@ -154,6 +154,14 @@ ok("deleted order logged", one(sqlite, "SELECT COUNT(*) n FROM pos_changes WHERE
 
 // 9. foreign keys still hold
 ok("foreign keys clean", sqlite.prepare("PRAGMA foreign_key_check").all().length === 0);
+// ---- the real fetch must not be called as a method (Workers throws "Illegal invocation")
+{
+  const strict = function (url) { if (this !== undefined && this !== globalThis) throw new Error("Illegal invocation"); return Promise.resolve(new Response(JSON.stringify({ data: { business: { getReport: { columns: [] } } } }))); };
+  const s2 = new Smrt({ url: "https://x", key: "k", fetchImpl: strict });
+  let err = null; try { await s2.gql("{ x }"); } catch (e) { err = e; }
+  ok("SMRT client calls fetch as a plain function", !err || !/Illegal invocation/.test(err.message), err && err.message);
+}
+
 // ---- when the history load may run (2026-10-10 is a Saturday, 10-12 a Monday)
 ok("weekend: runs at 10 am", backfillAllowed({ day: "2026-10-10", hour: 10 }));
 ok("weekend: runs on Sunday afternoon", backfillAllowed({ day: "2026-10-11", hour: 15 }));
