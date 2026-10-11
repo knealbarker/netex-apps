@@ -151,7 +151,7 @@ export async function importDesktop(db, env, me, body) {
         if (!p.name || typeof p.hours !== "number") continue;
         const pid = personFor(p.rip || null, p.name, false);
         stmts.push(db.prepare(`INSERT INTO labor_daily_hours(person_id, work_date, department_id, location_id, hours, first_in, last_out, updated_by) VALUES(?,?,?,?,?,?,?,?)
-          ON CONFLICT(person_id, work_date, department_id) DO UPDATE SET hours=excluded.hours, first_in=excluded.first_in, last_out=excluded.last_out, updated_at=?, updated_by=excluded.updated_by, rev=rev+1`)
+          ON CONFLICT(person_id, work_date, department_id, location_id) DO UPDATE SET hours=excluded.hours, first_in=excluded.first_in, last_out=excluded.last_out, updated_at=?, updated_by=excluded.updated_by, rev=rev+1`)
           .bind(pid, h.day, departmentId, locationId, Math.round(p.hours * 100) / 100, hhmm(p.in), p.open ? null : hhmm(p.out), me.id, now));
         summary.hoursRows++;
       }

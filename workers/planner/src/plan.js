@@ -48,7 +48,7 @@ async function history(db, env, day, departmentId, locationId) {
 }
 async function clockToday(db, env, day) {
   const r = await db.prepare(`SELECT c.person_id AS personId, c.clock_in AS clockIn, c.clock_out AS clockOut FROM labor_clock_today c JOIN core_people p ON p.id=c.person_id
-      WHERE p.org_id=? AND substr(c.clock_in,1,10)=? ORDER BY c.clock_in`).bind(env.ORG_ID, day).all();
+      WHERE p.org_id=? AND substr(c.clock_in,1,10)=? AND (c.department_id IS NULL OR c.department_id=(SELECT d.id FROM core_departments d WHERE d.org_id=p.org_id AND d.name='Production')) ORDER BY c.clock_in`).bind(env.ORG_ID, day).all();
   return r.results;
 }
 

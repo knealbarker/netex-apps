@@ -201,9 +201,19 @@ ok("custom work days: Saturday as a work day waits", !backfillAllowed({ day: "20
   const r2 = await runLive(ldb, smrt2, { orgId: "tcc", integrationId: "smrt", today: T });
   ok("live: later runs only re-read older days with orders due soon or overdue", !r2.full && r2.olderDays === 1, r2);
   ok("live: later run uses few SMRT calls", r2.calls <= 8, r2.calls);
-  ok("live: first run made a modest number of calls", r1.calls <= 10, r1.calls);
+  ok("live: first run made a modest number of calls (incl. the daily payments pass)", r1.calls <= 15, r1.calls);
   ok("live: a due date moved later opens a follow-up", one(L, "SELECT COUNT(*) n FROM plan_followups WHERE kind='due_moved' AND status='needs_note'").n === 1);
   ok("live: unchanged rows aren't rewritten", r2.ordersWritten === 1, r2.ordersWritten);
+  {
+    // a picked-up order paid later (statement customer): only the daily payments pass sees it
+    const o = f.days.get(addDays(T, -30)).orders[0];
+    ok("payments: picked-up order starts unpaid", one(L, "SELECT paid_at FROM pos_orders WHERE smrt_order_no='262550001'").paid_at === null);
+    Object.assign(o, { "Paid date": `${addDays(T, 1)}T09:30:00-05:00`, "Paid amount (inc. deposits)": o.Price, "Is Paid": "true" });
+    const r3 = await runLive(ldb, new Smrt({ url: "https://x/graphql", key: "k", fetchImpl: f.fetchImpl }), { orgId: "tcc", integrationId: "smrt", today: addDays(T, 1) });
+    const p = one(L, "SELECT paid_at, paid_cents FROM pos_orders WHERE smrt_order_no='262550001'");
+    ok("payments: next day's full run picks up the late payment", r3.full && r3.paymentsChanged >= 1 && p.paid_at === `${addDays(T, 1)}T09:30:00-05:00` && p.paid_cents === 1700, { r3, p });
+    ok("payments: nothing else rewritten on that order", one(L, "SELECT COUNT(*) n FROM pos_changes c JOIN pos_orders o ON o.id=c.order_id WHERE o.smrt_order_no='262550001'").n === 0);
+  }
   ok("live: run logged", /live: \d+ orders/.test(one(L, "SELECT message FROM int_sync_runs WHERE message LIKE 'live:%' ORDER BY started_at DESC LIMIT 1").message));
   ok("dayRanges groups consecutive days", JSON.stringify(dayRanges(["2026-10-01", "2026-10-02", "2026-10-03", "2026-10-07"], 2)) === JSON.stringify([["2026-10-01", "2026-10-03"], ["2026-10-03", "2026-10-04"], ["2026-10-07", "2026-10-08"]]));
   ok("live window: Monday 10 am yes, 9 pm no, Saturday no", liveAllowed({ day: T, hour: 10 }) && !liveAllowed({ day: T, hour: 21 }) && !liveAllowed({ day: "2026-10-10", hour: 10 }));
@@ -224,7 +234,12 @@ ok("custom work days: Saturday as a work day waits", !backfillAllowed({ day: "20
     '"a6","Name, With Comma",41,Production Technician,Production,TCC SS Workshop,10/12/2026,10/12/2026 12:05 PM CDT,10/12/2026 01:10 PM CDT,1.08,America/Chicago,PAID,Web,Web',
   ].join("\r\n");
   const res = await ingestRippling(rdb, { orgId: "tcc", integrationId: "rippling", today: "2026-10-12", csv });
-  ok("rippling: production rows used, others skipped", res.used === 5 && res.skipped === 1, res);
+  ok("rippling: every department used (retail too)", res.used === 6 && res.skipped === 0, res);
+  const retail = one(R, `SELECT h.hours, l.name AS loc, d.name AS dep FROM labor_daily_hours h JOIN core_locations l ON l.id=h.location_id JOIN core_departments d ON d.id=h.department_id
+      JOIN core_people p ON p.id=h.person_id WHERE p.payroll_id='70'`);
+  ok("rippling: retail hours kept at their store, in the Retail department", retail && retail.hours === 8 && retail.loc === "Sulphur Springs" && retail.dep === "Retail", retail);
+  ok("rippling: workshop hours stay at the Workshop", one(R, "SELECT l.kind FROM labor_daily_hours h JOIN core_locations l ON l.id=h.location_id WHERE h.person_id='PR40'").kind === "plant");
+  ok("rippling: new retail clerk isn't added to the production team", one(R, "SELECT d.name FROM core_people p JOIN core_departments d ON d.id=p.department_id WHERE p.payroll_id='70'").name === "Retail");
   const h = one(R, "SELECT hours, first_in, last_out FROM labor_daily_hours WHERE person_id='PR40' AND work_date='2026-10-09'");
   ok("rippling: split shift added up into one day", h && h.hours === 8.02 && h.first_in === "03:50" && h.last_out === "12:21", h);
   ok("rippling: new Production employee added to the team", one(R, "SELECT COUNT(*) n FROM core_people WHERE payroll_id='99' AND status='active'").n === 1 && res.added.includes("New Person"));
@@ -233,7 +248,28 @@ ok("custom work days: Saturday as a work day waits", !backfillAllowed({ day: "20
   ok("rippling: quoted name with a comma parsed", one(R, "SELECT first_name || ' ' || last_name AS n FROM core_people WHERE payroll_id='41'").n === "Name, With Comma");
   const again = await ingestRippling(rdb, { orgId: "tcc", integrationId: "rippling", today: "2026-10-12", csv });
   ok("rippling: an identical export is skipped without touching the database", again.duplicate === true);
-  ok("rippling: same email twice changes nothing", one(R, "SELECT COUNT(*) n FROM labor_daily_hours").n === 2 && one(R, "SELECT COUNT(*) n FROM labor_clock_today").n === 2);
+  ok("rippling: same email twice changes nothing", one(R, "SELECT COUNT(*) n FROM labor_daily_hours").n === 3 && one(R, "SELECT COUNT(*) n FROM labor_clock_today").n === 2);
+  {
+    const { sqlite: S, db: sdb } = freshDb();
+    const hdr = "time_entry_id,employee_name,employee_number,title,department_path,work_location,time_entry_date,clock_in_local,clock_out_local,duration_hours,timezone,status,clock_in_source,clock_out_source,Pay Rate";
+    const two = [hdr,
+      "b1,Store Hopper,80,Retail Advisor,Retail,TCC SS Retail,10/09/2026,10/09/2026 07:00 AM CDT,10/09/2026 11:00 AM CDT,4,America/Chicago,PAID,Web,Web,$14.50",
+      "b2,Store Hopper,80,Retail Advisor,Retail,TCC Emory Retail,10/09/2026,10/09/2026 12:00 PM CDT,10/09/2026 04:00 PM CDT,4,America/Chicago,PAID,Web,Web,$14.50",
+      "b3,Hub Tech,81,Laundry Hub Technician,Laundry Hub,TCC Laundry Hub,10/09/2026,10/09/2026 06:00 AM CDT,10/09/2026 02:00 PM CDT,8,America/Chicago,PAID,Web,Web,16",
+      "b4,Store Hopper,80,Retail Advisor,Retail,TCC Greenville Retail,10/12/2026,10/12/2026 07:00 AM CDT,,,America/Chicago,OPEN,Web,,$14.50"].join("\n");
+    const r2 = await ingestRippling(sdb, { orgId: "tcc", integrationId: "rippling", today: "2026-10-12", csv: two });
+    const rows = S.prepare("SELECT l.name, h.hours FROM labor_daily_hours h JOIN core_locations l ON l.id=h.location_id JOIN core_people p ON p.id=h.person_id WHERE p.payroll_id='80' ORDER BY l.name").all();
+    ok("rippling: two stores in one day kept apart", rows.length === 2 && rows[0].name === "Emory" && rows[1].name === "Sulphur Springs" && rows[0].hours === 4, rows);
+    ok("rippling: Laundry Hub is its own plant location and department", one(S, "SELECT l.kind, d.name FROM labor_daily_hours h JOIN core_locations l ON l.id=h.location_id JOIN core_departments d ON d.id=h.department_id JOIN core_people p ON p.id=h.person_id WHERE p.payroll_id='81'").kind === "plant");
+    ok("rippling: pay rate column read into labor_pay_rates", r2.rates === 2 && one(S, "SELECT hourly_cents c, effective_on e FROM labor_pay_rates r JOIN core_people p ON p.id=r.person_id WHERE p.payroll_id='80'").c === 1450, r2);
+    ok("rippling: today's punch remembers its store", one(S, "SELECT l.name FROM labor_clock_today c JOIN core_locations l ON l.id=c.location_id").name === "Greenville");
+    const raise = two.replace(/\$14\.50/g, "$15.25").replace("b4,", "b5,");
+    await ingestRippling(sdb, { orgId: "tcc", integrationId: "rippling", today: "2026-10-12", csv: raise });
+    const rr = S.prepare("SELECT hourly_cents c, effective_on e FROM labor_pay_rates r JOIN core_people p ON p.id=r.person_id WHERE p.payroll_id='80' ORDER BY e").all();
+    ok("rippling: a raise starts today, the old rate stays for earlier days", rr.length === 2 && rr[0].c === 1450 && rr[1].c === 1525 && rr[1].e === "2026-10-12", rr);
+    const imp = await ingestRippling(sdb, { orgId: "tcc", integrationId: "rippling", today: "2026-10-12", csv: [hdr, "c1,Old Timer,82,Retail Advisor,Retail,TCC Quitman Retail,09/02/2026,09/02/2026 08:00 AM CDT,09/02/2026 01:00 PM CDT,5,America/Chicago,PAID,Web,Web,"].join("\n"), keepToday: true });
+    ok("rippling: a hand import leaves today's punches alone", imp.used === 1 && one(S, "SELECT COUNT(*) n FROM labor_clock_today").n === 1);
+  }
   ok("rippling: 12 PM and 12 AM", ripTime("10/12/2026 12:05 PM CDT").hm === "12:05" && ripTime("10/12/2026 12:05 AM CST").iso === "2026-10-12T00:05:00-06:00");
   let bad = null; try { await ingestRippling(rdb, { orgId: "tcc", integrationId: "rippling", today: "2026-10-12", csv: "a,b\n1,2" }); } catch (e) { bad = e.message; }
   ok("rippling: wrong file refused with a clear message", /missing/.test(bad || ""), bad);

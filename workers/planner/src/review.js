@@ -42,7 +42,7 @@ async function assembled(db, orgId, day, cat, prices) {
 async function hours(db, env, day, today, departmentId) {
   if (day === today) {
     const rows = (await db.prepare(`SELECT c.person_id AS personId, c.clock_in AS cin, c.clock_out AS cout, p.first_name || ' ' || p.last_name AS name
-        FROM labor_clock_today c JOIN core_people p ON p.id=c.person_id WHERE p.org_id=? AND substr(c.clock_in,1,10)=?`).bind(env.ORG_ID, day).all()).results;
+        FROM labor_clock_today c JOIN core_people p ON p.id=c.person_id WHERE p.org_id=? AND substr(c.clock_in,1,10)=? AND (c.department_id IS NULL OR c.department_id=(SELECT d.id FROM core_departments d WHERE d.org_id=p.org_id AND d.name='Production'))`).bind(env.ORG_ID, day).all()).results;
     const nowH = toH(localNow(env.TIMEZONE).hm);
     const by = new Map();
     for (const r of rows) {

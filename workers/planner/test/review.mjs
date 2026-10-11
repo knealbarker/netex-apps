@@ -50,7 +50,7 @@ await db.prepare("INSERT INTO int_sync_runs(id,integration_id,started_at,finishe
 await ingestDay(db, { orgId: "tcc", runId: "rv", mode: "backfill", day: addDays(DAY, -2) }, orders, items);
 const dep = sqlite.prepare("SELECT id FROM core_departments WHERE name='Production'").get().id;
 for (const [p, h, fi, lo] of [[ana, 8, "05:05", "13:40"], [beto, 6, "06:20", "12:50"], [cora, 4, "07:00", "11:00"]])
-  sqlite.prepare("INSERT INTO labor_daily_hours(person_id, work_date, department_id, hours, first_in, last_out) VALUES(?,?,?,?,?,?)").run(p, DAY, dep, h, fi, lo);
+  sqlite.prepare("INSERT INTO labor_daily_hours(person_id, work_date, department_id, location_id, hours, first_in, last_out) VALUES(?,?,?,(SELECT id FROM core_locations WHERE kind='plant' ORDER BY created_at LIMIT 1),?,?,?)").run(p, DAY, dep, h, fi, lo);
 
 await t("pieces assembled that day, by kind, with revenue from SMRT prices and the running count", async () => {
   const r = (await call("GET", `/review/${DAY}`)).body;

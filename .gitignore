@@ -2,3 +2,4 @@ node_modules/
 .wrangler/
 .dev.vars
 workers/planner/test/shots/
+workers/retail/test/shots/

@@ -4,15 +4,19 @@
 //   - each older created day that still has an open order due soon or overdue (up to 14 days back).
 // Once a day (the first run) it also re-reads every created day in the last 45 days that has any open order,
 // so older special orders (alterations, repairs) stay current.
-// SMRT calls per run: 2 column calls + 1 orders call + 3 items calls + 2 per older day range (~8). Unchanged rows aren't rewritten.
+// The daily full run also re-reads the orders report alone for the last PAYMENT_LOOKBACK_DAYS (in 15-day calls), so payments made
+// after pickup (statements, AutoPay) reach the Retail Snapshot's revenue numbers.
+// SMRT calls per run: 2 column calls + 1 orders call + 3 items calls + 2 per older day range (~8); +4 orders calls once a day.
+// Unchanged rows aren't rewritten.
 import { REPORT_ORDERS, REPORT_ITEMS } from "./smrt.js";
-import { ingestDay, Lookups } from "./ingest.js";
+import { ingestDay, Lookups, refreshPayments, PAYMENT_LOOKBACK_DAYS } from "./ingest.js";
 import { ulid, nowIso, addDays } from "./util.js";
 
 export const LIVE_RECENT_DAYS = 7;
 const ITEMS_DAYS_PER_CALL = 3;      // ~1,100 pieces a day; SMRT caps a call at 5,000 rows (bigger answers are split automatically)
 const OPEN_LOOKBACK_DAYS = 45;
 const OVERDUE_DAYS = 14;
+const PAYMENT_DAYS_PER_CALL = 15;  // ~231 orders a day -> ~3,500 rows per call
 const SOON_DAYS = 4;               // due by then counts as "soon" (covers a weekend before the next work day)
 
 async function getState(db, orgId) {
@@ -72,11 +76,19 @@ export async function runLive(db, smrt, { orgId, integrationId, today, reports =
       const st = await ingestDay(db, ctx, orders, items);
       for (const k in totals) totals[k] += st[k] || 0;
     }
+    // once a day: payments on orders that are otherwise finished
+    if (full) {
+      const ranges = dayRanges(Array.from({ length: PAYMENT_LOOKBACK_DAYS - LIVE_RECENT_DAYS }, (_, i) => addDays(today, -PAYMENT_LOOKBACK_DAYS + 1 + i)), PAYMENT_DAYS_PER_CALL);
+      for (const [a, b] of ranges) {
+        const p = await refreshPayments(db, ctx, await smrt.rangeObjects(ordersId, a, b));
+        totals.paymentsChanged = (totals.paymentsChanged || 0) + p.changed;
+      }
+    }
   } catch (e) { error = String(e.message || e); }
 
   if (!error) await putState(db, orgId, { ...state, fullDay: full ? today : state.fullDay, lastOk: nowIso(), olderDays: older.length });
   await db.prepare("UPDATE int_sync_runs SET finished_at=?, status=?, rows_read=?, rows_changed=?, message=? WHERE id=?")
     .bind(nowIso(), error ? "error" : "ok", totals.orders + totals.items, totals.ordersWritten + totals.itemsWritten,
-      error ? `live: ${error}` : `live${full ? " (daily full refresh)" : ""}: ${totals.orders} orders, ${totals.items} pieces read; ${totals.changes} changes; ${smrt.calls} SMRT calls`, runId).run();
+      error ? `live: ${error}` : `live${full ? " (daily full refresh)" : ""}: ${totals.orders} orders, ${totals.items} pieces read; ${totals.changes} changes${full ? `; ${totals.paymentsChanged || 0} payments updated` : ""}; ${smrt.calls} SMRT calls`, runId).run();
   return { status: error ? "error" : "ok", error, full, olderDays: older.length, calls: smrt.calls, ...totals };
 }

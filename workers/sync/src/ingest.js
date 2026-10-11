@@ -205,3 +205,34 @@ export async function ingestDay(db, ctx, orders, items) {
   await runBatches(db, [...L.take(), ...writes]);
   return stats;
 }
+
+/**
+ * Payments only. A picked-up order is never read again by the normal sync, but statement and AutoPay customers often
+ * pay after pickup. Once a day the live sync re-reads the orders report (orders only, no pieces) for the last
+ * PAYMENT_LOOKBACK_DAYS and updates what was paid, when, and the order's price, tax and status. Nothing else is touched,
+ * so notes, due dates and pieces keep their full change history from the normal sync.
+ */
+export const PAYMENT_LOOKBACK_DAYS = 62;
+export async function refreshPayments(db, ctx, orders) {
+  const L = ctx.lookups || (ctx.lookups = await new Lookups(db, ctx.orgId).load());
+  const nos = [...new Set(orders.map(r => orderNo(r["ID"])).filter(Boolean))];
+  const known = new Map();
+  for (const c of chunks(nos, CHUNK)) {
+    const r = await db.prepare(`SELECT id, smrt_order_no AS no, status_id, price_cents, tax_cents, taxable_cents, paid_cents, paid_at, smrt_deleted_at
+      FROM pos_orders WHERE org_id=? AND smrt_order_no IN (${c.map(() => "?").join(",")})`).bind(ctx.orgId, ...c).all();
+    for (const x of r.results) known.set(x.no, x);
+  }
+  const now = nowIso(), writes = []; let changed = 0;
+  for (const r of orders) {
+    const old = known.get(orderNo(r["ID"])); if (!old) continue;   // not stored yet: the normal sync or history will bring it in
+    const v = { status_id: L.orderStatus(r["Status"]).id, price_cents: int(r["Price"]), tax_cents: int(r["Total Tax"]), taxable_cents: int(r["Taxable Amount"]),
+      paid_cents: int(r["Paid amount (inc. deposits)"]), paid_at: stamp(r["Paid date"]), smrt_deleted_at: stamp(r["Deleted date"]) };
+    const cols = Object.keys(v).filter(k => (old[k] ?? null) !== (v[k] ?? null));
+    if (!cols.length) continue;
+    changed++;
+    writes.push(db.prepare(`UPDATE pos_orders SET ${cols.map(c => c + "=?").join(",")}, last_sync_id=?, updated_at=?, rev=rev+1 WHERE id=?`)
+      .bind(...cols.map(c => v[c]), ctx.runId, now, old.id));
+  }
+  await runBatches(db, [...L.take(), ...writes]);
+  return { read: orders.length, changed };
+}

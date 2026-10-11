@@ -92,8 +92,8 @@ await t("call-outs are kept for the day and can be undone", async () => {
 await t("history: recent hours and planned stations come with the plan", async () => {
   const { call, sqlite, p1 } = await setup();
   const dep = sqlite.prepare("SELECT id FROM core_departments WHERE name='Production'").get().id;
-  sqlite.prepare("INSERT INTO labor_daily_hours(person_id, work_date, department_id, hours, first_in) VALUES(?,?,?,?,?)").run(p1, "2026-10-05", dep, 8.1, "04:55");
-  sqlite.prepare("INSERT INTO labor_daily_hours(person_id, work_date, department_id, hours, first_in) VALUES(?,?,?,?,?)").run(p1, "2026-10-12", dep, 3, "05:00"); // the day itself: not history
+  sqlite.prepare("INSERT INTO labor_daily_hours(person_id, work_date, department_id, location_id, hours, first_in) VALUES(?,?,?,(SELECT id FROM core_locations WHERE kind='plant' ORDER BY created_at LIMIT 1),?,?)").run(p1, "2026-10-05", dep, 8.1, "04:55");
+  sqlite.prepare("INSERT INTO labor_daily_hours(person_id, work_date, department_id, location_id, hours, first_in) VALUES(?,?,?,(SELECT id FROM core_locations WHERE kind='plant' ORDER BY created_at LIMIT 1),?,?)").run(p1, "2026-10-12", dep, 3, "05:00"); // the day itself: not history
   await call("PUT", "/api/plan/2026-10-09", { body: { rev: 0, crew: { slb1: { personId: p1, start: "05:00", hours: 7.5 } } } });
   const h = (await call("GET", `/api/plan/${DAY}`)).body.history;
   eq(h.hours.map(x => [x.day, x.hours, x.firstIn]), [["2026-10-05", 8.1, "04:55"]]);
