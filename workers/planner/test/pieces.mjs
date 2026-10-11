@@ -42,6 +42,8 @@ order(ts("2026-10-09"), { due: ts(TODAY, "12:00"), pieces: [{ dep: DCT, status: 
 order(ts("2026-10-09"), { due: ts(TODAY, "17:00"), store: "TCC Sulphur Springs", pieces: [{ dep: SLB, type: "Comforter King" }] });
 // overdue (due Friday), still open: 2 laundry bottoms, one in the washer
 order(ts("2026-10-08"), { due: ts("2026-10-09", "12:00"), pieces: [{ dep: SLB, lot: "Washing" }, { dep: SLB, status: "to pre-spot" }] });
+// overdue but every piece assembled (order status not "ready" yet): done for production, not late
+order(ts("2026-10-08"), { due: ts("2026-10-09", "12:00"), status: "assembled", pieces: [{ dep: SLB, status: "assembled", asm: ts("2026-10-09", "09:00") }] });
 // due tomorrow, Emory: 4 DC bottoms, one finished today (work done ahead)
 order(ts("2026-10-09"), { due: ts(NEXT, "13:00"), store: "TCC Emory", pieces: [{ dep: DCB, status: "assembled", asm: ts(TODAY, "09:00") }, { dep: DCB }, { dep: DCB }, { dep: DCB }] });
 // due today, picked up today: all done today
@@ -79,7 +81,7 @@ await t("deleted orders and removed pieces don't count; unmapped departments are
 await t("overdue: open pieces from earlier days", () => { eq(V.overdue.q.slb, 2); eq(V.overdue.orders, 1); });
 await t("late list shows the overdue order with where its pieces are", () => {
   const o = V.late.find(x => x.overdue);
-  ok(o, "overdue order listed"); eq(o.left, 2); eq(o.washing, 1); eq(Object.keys(o.open).sort(), ["detailed (washing)", "to pre-spot"]);
+  ok(o, "overdue order listed"); eq(V.late.filter(x => x.overdue).length, 1, "all-assembled order not listed"); eq(o.left, 2); eq(o.washing, 1); eq(Object.keys(o.open).sort(), ["detailed (washing)", "to pre-spot"]);
 });
 await t("stores grouped by shuttle run / counter, earliest deadline first", () => {
   eq(T.stores.map(s => [s.loc, s.run, s.deadline]), [["Quitman", "Winnsboro + Quitman", 11 * 60], ["Sulphur Springs", "Sulphur Springs store", 16 * 60]]);

@@ -196,7 +196,7 @@ export async function piecesView(db, env, { at = new Date() } = {}) {
       stores: [...stores.values()].sort((a, b) => (a.deadline ?? 9999) - (b.deadline ?? 9999) || a.loc.localeCompare(b.loc)),
     };
   };
-  const overdueOrders = groups.smrt.overdue ? orders.filter(o => o.dueDay < today && !o.done) : [];
+  const overdueOrders = groups.smrt.overdue ? orders.filter(o => o.dueDay < today && !o.done && o.pieces > o.complete) : [];
   const overdue = { q: zero(), orders: overdueOrders.length };
   for (const o of overdueOrders) for (const [k, p] of Object.entries(o.per)) overdue.q[k] += Math.max(0, p[0] - p[1]);
   overdue.todo = CATS.reduce((t, k) => t + overdue.q[k], 0);
@@ -205,7 +205,8 @@ export async function piecesView(db, env, { at = new Date() } = {}) {
   const pr = {}; for (const o of orders) for (const [k, p] of Object.entries(o.per)) { const a = pr[k] = pr[k] || [0, 0]; a[0] += p[4]; a[1] += p[5]; }
   const prices = Object.fromEntries(Object.entries(pr).filter(([, a]) => a[1] >= 15).map(([k, a]) => [k, Math.round(a[0] / a[1]) / 100]));
 
-  const late = orders.filter(o => !o.done && (o.dueDay < today || (o.dueDay === today && isWorkDay)))
+  // late = not finished and still has pieces to do (an order whose pieces are all assembled is done for production)
+  const late = orders.filter(o => !o.done && o.pieces > o.complete && (o.dueDay < today || (o.dueDay === today && isWorkDay)))
     .map(o => ({ no: o.no, due: o.due, status: o.status, loc: o.loc, pieces: o.pieces, left: o.pieces - o.complete, washing: o.washing, open: o.open,
       cats: Object.entries(o.per).filter(([, p]) => p[0] > p[1]).map(([k]) => k), notes: o.notes, customer: o.customer, overdue: o.dueDay < today }))
     .sort((a, b) => (a.due || "").localeCompare(b.due || ""));
