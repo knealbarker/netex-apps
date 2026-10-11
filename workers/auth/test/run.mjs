@@ -144,7 +144,8 @@ await t("a timed-out page and posts from other sites are refused; pages have str
   eq((await A.req("POST", "/send", { form: { rid: rid2, phone: "9035550101" }, headers: { origin: "https://evil.example" } })).status, 403);
   eq((await A.req("POST", "/send", { form: { rid: rid2, phone: "9035550101" }, headers: { origin: "https://auth.netexcleaners.com" } })).status, 200, "our own page's posts are accepted");
   const pg = await A.req("GET", `/authorize?client_id=cloudflare-access&response_type=code&redirect_uri=${encodeURIComponent(CALLBACK)}`);
-  ok(/frame-ancestors 'none'/.test(pg.headers.get("content-security-policy"))); eq(pg.headers.get("referrer-policy"), "same-origin", "so the browser sends our origin with the form"); eq(pg.headers.get("cache-control"), "no-store");
+  ok(/frame-ancestors 'none'/.test(pg.headers.get("content-security-policy")));
+  ok(/form-action[^;]*https:\/\/\*\.netexcleaners\.com/.test(pg.headers.get("content-security-policy")), "the redirect after Access's callback lands on the app, so form-action must allow it"); eq(pg.headers.get("referrer-policy"), "same-origin", "so the browser sends our origin with the form"); eq(pg.headers.get("cache-control"), "no-store");
   ok(/autocomplete="tel-national"/.test(await pg.text()));
 });
 

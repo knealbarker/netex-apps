@@ -27,7 +27,7 @@ const sha256 = async s => b64u(await crypto.subtle.digest("SHA-256", enc.encode(
 const iso = (ms = Date.now()) => new Date(ms).toISOString();
 const json = (data, status = 200, headers = {}) => new Response(JSON.stringify(data), { status, headers: { "content-type": "application/json", "cache-control": "no-store", ...headers } });
 const SECURITY = {
-  "content-security-policy": "default-src 'none'; style-src 'unsafe-inline'; img-src data:; form-action 'self' https://*.cloudflareaccess.com; frame-ancestors 'none'; base-uri 'none'",
+  "content-security-policy": "default-src 'none'; style-src 'unsafe-inline'; img-src data:; form-action 'self' https://*.cloudflareaccess.com https://netexcleaners.com https://*.netexcleaners.com; frame-ancestors 'none'; base-uri 'none'",
   "x-content-type-options": "nosniff", "referrer-policy": "same-origin", "cache-control": "no-store",
   "strict-transport-security": "max-age=31536000; includeSubDomains",
 };
