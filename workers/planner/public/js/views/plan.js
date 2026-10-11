@@ -92,7 +92,7 @@ export async function render(main) {
         <p>Every piece is assembled, but the order isn't marked ready.${van ? ` ${van} went out on the van and weren't racked at the store.` : ""} These are for the stores, not production.</p></header>
       <div class="late-list">${rows.slice(0, 60).map(o => raw(html`<div class="late">
         <div class="l-main"><a href="${o.customer ? SMRT_ORDER(o.customer, o.no) : "#"}" target="_blank" rel="noopener" class="l-no" title="Open in SMRT">${o.no}</a>
-          <span class="chip ${o.onVan ? "admin" : ""}">${o.onVan ? "On the van · not checked in" : "Assembled · not racked as ready"}</span></div>
+          <span class="chip ${o.onVan ? "admin" : ""}">${o.onVan ? "On the van · not checked in" : o.loc === "Sulphur Springs" || o.loc === "Route" ? "Assembled · not racked as ready" : "Assembled · still at the plant, next shuttle"}</span></div>
         <div class="l-meta"><span>${o.loc}</span><span>Due ${new Date(o.due).toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" })}</span><span>${o.pieces} pieces</span><span>${o.status}</span></div>
       </div>`))}</div></section>`;
   }
