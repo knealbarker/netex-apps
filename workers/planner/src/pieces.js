@@ -89,7 +89,7 @@ export function splitOrders({ orders, items, deps }, cat, today) {
     const done = !!o.is_done || !!finishedAt;
     const when = d => (d ? (d < today ? "b" : d === today ? "t" : "") : "");
     const per = {}, open = {}, other = {};
-    let pieces = 0, complete = 0, washing = 0, noteCount = o.notes ? 1 : 0;
+    let pieces = 0, complete = 0, washing = 0, undetailed = 0, noteCount = o.notes ? 1 : 0;
     const add = (k, p, c, b, t, cents, pp) => { const a = per[k] = per[k] || [0, 0, 0, 0, 0, 0]; a[0] += p; a[1] += c; a[2] += b; a[3] += t; a[4] += cents; a[5] += pp; };
     const its = byOrder.get(o.id) || [];
     for (const it of its) {
@@ -113,12 +113,13 @@ export function splitOrders({ orders, items, deps }, cat, today) {
       const k = ds.length === 1 ? cat("", ds[0]) : null;
       const w = done ? when((finishedAt || "").slice(0, 10)) : "";
       pieces = o.pieces; complete = done ? pieces : 0;
-      if (k) add(k, pieces, complete, w === "b" ? pieces : 0, w === "t" ? pieces : 0, 0, 0); else other[ds[0] || "Not detailed"] = pieces;
+      // several departments and no pieces yet: can't split it until it's detailed
+      if (k) add(k, pieces, complete, w === "b" ? pieces : 0, w === "t" ? pieces : 0, 0, 0); else if (!done) undetailed += pieces; else other[ds[0] || "Other"] = pieces;
       if (!done) open["not detailed"] = pieces;
     }
     const no = String(o.no);
     return { id: o.id, no: no.length > 5 ? `${no.slice(0, 5)}-${no.slice(5)}` : no, due: o.due, dueDay: String(o.due || "").slice(0, 10), status: o.status,
-      loc: o.route ? "Route" : o.loc || "Route", customer: o.customer, done, pieces, complete, washing, per, open, other, notes: noteCount };
+      loc: o.route ? "Route" : o.loc || "Route", customer: o.customer, done, pieces, complete, washing, undetailed, per, open, other, notes: noteCount };
   });
 }
 
@@ -208,14 +209,19 @@ export async function piecesView(db, env, { at = new Date() } = {}) {
     .map(o => ({ no: o.no, due: o.due, status: o.status, loc: o.loc, pieces: o.pieces, left: o.pieces - o.complete, washing: o.washing, open: o.open,
       cats: Object.entries(o.per).filter(([, p]) => p[0] > p[1]).map(([k]) => k), notes: o.notes, customer: o.customer, overdue: o.dueDay < today }))
     .sort((a, b) => (a.due || "").localeCompare(b.due || ""));
-  const unmapped = {}; for (const o of orders) if (o.dueDay >= today) for (const [d, n] of Object.entries(o.other)) unmapped[d] = (unmapped[d] || 0) + n;
+  const unmapped = {}, undetailed = {};
+  for (const o of orders) {
+    if (o.dueDay < today) continue;
+    for (const [d, n] of Object.entries(o.other)) unmapped[d] = (unmapped[d] || 0) + n;
+    if (o.undetailed) undetailed[o.dueDay] = (undetailed[o.dueDay] || 0) + o.undetailed;
+  }
 
   const live = await db.prepare("SELECT started_at AS at, finished_at AS done, status, message FROM int_sync_runs WHERE integration_id='smrt' AND message LIKE 'live%' ORDER BY started_at DESC LIMIT 1").first();
   const lastOk = await db.prepare("SELECT finished_at AS at FROM int_sync_runs WHERE integration_id='smrt' AND message LIKE 'live%' AND status='ok' ORDER BY started_at DESC LIMIT 1").first();
   return {
     today, next, now: hm, isWorkDay,
     days: { [today]: isWorkDay ? dayView(today, true) : null, [next]: dayView(next, false) },
-    overdue, late, prices, unmapped,
+    overdue, late, prices, unmapped, undetailed,
     forecast: { ratio: fc.all.ratio, basedOn: fc.all.n },
     smrt: { lastRun: live || null, lastOk: lastOk?.at || null },
   };

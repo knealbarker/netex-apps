@@ -112,6 +112,12 @@ await t("weekend: no 'today', plans the next work day", async () => {
   const sat = await piecesView(db, env, { at: new Date("2026-10-10T15:00:00Z") });
   eq([sat.isWorkDay, sat.next, sat.days["2026-10-10"]], [false, "2026-10-12", null]);
 });
+await t("undetailed order with several departments is reported, not called unmapped", async () => {
+  const o3 = [{ "ID": "263000001", "Status": "processing", "Due date": ts(NEXT, "12:00"), "Created": ts(TODAY, "08:00"), "Piece Count": "7", "Return Location": "TCC Quitman", "Financial department(s)": "Dry Cleaning Tops, Laundry Tops" }];
+  await ingestDay(db, { orgId: "tcc", runId: "r1", mode: "backfill", day: TODAY }, o3, []);
+  const v = await piecesView(db, env, { at: AT });
+  eq(v.undetailed[NEXT], 7); ok(!v.unmapped["Dry Cleaning Tops"], JSON.stringify(v.unmapped));
+});
 await t("categorizer: comma lists, case-insensitive", () => {
   const c = categorizer({ departments: { dct: "Dry Cleaning Tops, DC Tops" }, itemTypes: { tc: "Tablecloth, Table Cloth" } });
   eq([c("Shirt", "dc tops"), c("Round TABLE CLOTH", "Dry Cleaning Bottoms"), c("Shirt", "Alterations")], ["dct", "tc", null]);

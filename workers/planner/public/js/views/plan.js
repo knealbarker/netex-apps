@@ -61,6 +61,7 @@ export async function render(main) {
       </section>
 
       ${anyExpected ? raw(html`<p class="note-line">“Expected” adds what usually still comes in by each store's drop-off cutoff (based on the last ${V.forecast.basedOn || "few"} ${new Date(pick + "T12:00:00").toLocaleDateString(undefined, { weekday: "long" })}s). Stores past their cutoff are final.</p>`) : ""}
+      ${V.undetailed?.[pick] ? raw(html`<p class="note-line">${n(V.undetailed[pick])} more pieces are on orders that aren't detailed yet and have several departments; they're counted once SMRT has their pieces.</p>`) : ""}
       ${Object.keys(V.unmapped).length ? raw(html`<div class="banner"><b>Not planned:</b> ${Object.entries(V.unmapped).map(([d, c]) => `${c} in ${d}`).join(" · ")}. <a href="#/settings" class="linkish">Map them in Settings › SMRT mapping</a> if they belong to production.</div>`) : ""}
 
       <section class="card set-card">
