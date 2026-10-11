@@ -28,7 +28,7 @@ const iso = (ms = Date.now()) => new Date(ms).toISOString();
 const json = (data, status = 200, headers = {}) => new Response(JSON.stringify(data), { status, headers: { "content-type": "application/json", "cache-control": "no-store", ...headers } });
 const SECURITY = {
   "content-security-policy": "default-src 'none'; style-src 'unsafe-inline'; img-src data:; form-action 'self' https://*.cloudflareaccess.com; frame-ancestors 'none'; base-uri 'none'",
-  "x-content-type-options": "nosniff", "referrer-policy": "no-referrer", "cache-control": "no-store",
+  "x-content-type-options": "nosniff", "referrer-policy": "same-origin", "cache-control": "no-store",
   "strict-transport-security": "max-age=31536000; includeSubDomains",
 };
 const html = (body, status = 200) => new Response(body, { status, headers: { "content-type": "text/html; charset=utf-8", ...SECURITY } });
