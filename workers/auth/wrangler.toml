@@ -2,7 +2,7 @@ name = "netex-auth"
 main = "src/index.js"
 compatibility_date = "2026-09-01"
 account_id = "61c6ba95bfea0222857214634869b20a"
-workers_dev = false
+workers_dev = true    # Cloudflare Access calls /token and /jwks here (it can't reach a custom domain on its own account)
 preview_urls = false
 
 # auth.netexcleaners.com must NOT be behind Cloudflare Access (it is the sign-in page Access sends people to):
