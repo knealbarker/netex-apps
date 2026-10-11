@@ -32,7 +32,7 @@ function order(created, { due, store = "TCC Quitman", status = "processing", pie
     "Financial department(s)": deps || [...new Set(pieces.map(p => p.dep))].join(", ") });
   pieces.forEach((p, i) => items.push({ "Sale Id": id, "Barcode": `${id}${i}`, "Item Status": p.status || "detailed", "Financial department": p.dep, "Item Type": p.type || "Shirt",
     "Created": created, "Item assembly date": p.asm || null, "Item removal date": p.removed || null, "Lot status": p.lot || null, "Picked up date": p.picked || null,
-    "Item base price": p.cents != null ? String(p.cents) : null, "Item Notes": p.note || null }));
+    "Item base price": p.cents != null ? String(p.cents) : null, "Item Notes": p.note || null, "Last Rack Location": p.rack || null }));
   return id;
 }
 const DCT = "Dry Cleaning Tops", DCB = "Dry Cleaning Bottoms", SLT = "Laundry Tops", SLB = "Laundry Bottoms";
@@ -44,6 +44,8 @@ order(ts("2026-10-09"), { due: ts(TODAY, "17:00"), store: "TCC Sulphur Springs",
 order(ts("2026-10-08"), { due: ts("2026-10-09", "12:00"), pieces: [{ dep: SLB, lot: "Washing" }, { dep: SLB, status: "to pre-spot" }] });
 // overdue but every piece assembled (order status not "ready" yet): done for production, not late
 order(ts("2026-10-08"), { due: ts("2026-10-09", "12:00"), status: "assembled", pieces: [{ dep: SLB, status: "assembled", asm: ts("2026-10-09", "09:00") }] });
+// assembled, racked to the van, never racked at the store (Neal's example 26281-2841)
+order(ts("2026-10-08"), { due: ts("2026-10-09", "12:00"), store: "TCC Greenville", status: "assembled", pieces: [{ dep: DCT, status: "bagging", asm: ts("2026-10-09", "08:00"), rack: "Van" }, { dep: DCT, status: "bagging", asm: ts("2026-10-09", "08:00"), rack: "VAN" }] });
 // due tomorrow, Emory: 4 DC bottoms, one finished today (work done ahead)
 order(ts("2026-10-09"), { due: ts(NEXT, "13:00"), store: "TCC Emory", pieces: [{ dep: DCB, status: "assembled", asm: ts(TODAY, "09:00") }, { dep: DCB }, { dep: DCB }, { dep: DCB }] });
 // due today, picked up today: all done today
@@ -132,6 +134,12 @@ await t("route orders are planned the work day before they're due; unfinished on
   eq(v.days[TODAY].stores[v.days[TODAY].stores.length - 1].loc, "Route", "route last (end of day)");
   eq(v.days[NEXT].stores.find(s => s.loc === "Route")?.q.dct, 4, "Wednesday's route order is Tuesday's work");
   ok(v.late.some(x => x.no === "26310-0002" && x.overdue && x.route), "route due today and not done is overdue");
+});
+await t("finished orders not ready in SMRT are listed for the stores, van ones flagged", () => {
+  const van = V.notReady.find(o => o.loc === "Greenville");
+  ok(van && van.onVan, JSON.stringify(V.notReady)); eq(van.pieces, 2);
+  ok(!V.late.some(o => o.loc === "Greenville"), "not in production's late list");
+  ok(V.notReady.some(o => !o.onVan && o.status === "assembled"), "the other all-assembled order, not on the van");
 });
 await t("categorizer: comma lists, case-insensitive", () => {
   const c = categorizer({ departments: { dct: "Dry Cleaning Tops, DC Tops" }, itemTypes: { tc: "Tablecloth, Table Cloth" } });

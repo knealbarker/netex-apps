@@ -76,6 +76,7 @@ export async function render(main) {
       </section>
 
       ${withOverdue ? raw(lateCard()) : ""}
+      ${withOverdue && V.notReady?.length ? raw(notReadyCard()) : ""}
 
       <section class="card empty next-stage">
         <div class="ico"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="9" cy="8" r="3.2"/><path d="M3.5 19c.6-3.2 2.9-5 5.5-5s4.9 1.8 5.5 5"/><path d="M16 8h5M18.5 5.5v5"/></svg></div>
@@ -83,6 +84,17 @@ export async function render(main) {
         <p>These piece counts are what the plan will be built on. Keep using the desktop app to plan the day for now.</p>
       </section>`;
     main.querySelectorAll("[data-day]").forEach(b => b.addEventListener("click", () => { pick = b.dataset.day; draw(); main.querySelector(`[data-day="${pick}"]`)?.focus(); }));
+  }
+
+  function notReadyCard() {
+    const rows = V.notReady, van = rows.filter(o => o.onVan).length;
+    return html`<section class="card set-card"><header><h2>Finished, but not ready in SMRT <span class="count soft">${rows.length}</span></h2>
+        <p>Every piece is assembled, but the order isn't marked ready.${van ? ` ${van} went out on the van and weren't racked at the store.` : ""} These are for the stores, not production.</p></header>
+      <div class="late-list">${rows.slice(0, 60).map(o => raw(html`<div class="late">
+        <div class="l-main"><a href="${o.customer ? SMRT_ORDER(o.customer, o.no) : "#"}" target="_blank" rel="noopener" class="l-no" title="Open in SMRT">${o.no}</a>
+          <span class="chip ${o.onVan ? "admin" : ""}">${o.onVan ? "On the van · not checked in" : "Assembled · not racked as ready"}</span></div>
+        <div class="l-meta"><span>${o.loc}</span><span>Due ${new Date(o.due).toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" })}</span><span>${o.pieces} pieces</span><span>${o.status}</span></div>
+      </div>`))}</div></section>`;
   }
 
   function lateCard() {

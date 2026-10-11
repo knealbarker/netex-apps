@@ -71,7 +71,7 @@ async function loadOpen(db, orgId, { from, to, overdueFrom }) {
   const orders = (await db.prepare(`SELECT o.id, o.smrt_order_no AS no, o.due_at AS due, o.piece_count AS pieces, o.is_route_delivery AS route, o.notes,
       o.customer_ref AS customer, o.ready_at, o.returned_at, o.picked_up_at, o.delivered_at, s.name AS status, s.is_done, rl.name AS loc
       FROM pos_orders o JOIN pos_order_statuses s ON s.id=o.status_id LEFT JOIN core_locations rl ON rl.id=o.return_location_id WHERE ${where}`).bind(...args).all()).results;
-  const items = (await db.prepare(`SELECT i.order_id AS orderId, i.assembled_at AS asm, i.lot_status AS lot, i.notes, i.base_cents AS base, i.upcharge_cents AS up, i.discount_cents AS disc,
+  const items = (await db.prepare(`SELECT i.order_id AS orderId, i.assembled_at AS asm, i.lot_status AS lot, i.last_rack_location AS rack, i.notes, i.base_cents AS base, i.upcharge_cents AS up, i.discount_cents AS disc,
       t.name AS type, d.name AS dep, st.name AS istatus, COALESCE(st.is_assembled,0) AS isAsm
       FROM pos_items i JOIN pos_orders o ON o.id=i.order_id JOIN pos_order_statuses s ON s.id=o.status_id
       LEFT JOIN pos_item_types t ON t.id=i.item_type_id LEFT JOIN pos_departments d ON d.id=i.department_id LEFT JOIN pos_item_statuses st ON st.id=i.status_id
@@ -82,7 +82,8 @@ async function loadOpen(db, orgId, { from, to, overdueFrom }) {
 }
 
 /** Each order with its pieces split by kind of work: per category [pieces, complete, finished before today, finished today, priced cents, priced pieces]. */
-export function splitOrders({ orders, items, deps }, cat, today) {
+export function splitOrders({ orders, items, deps }, cat, today, transitRack = "Van") {
+  const transit = new RegExp(`\\b${String(transitRack || "Van").replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`, "i");
   const byOrder = new Map(); for (const it of items) (byOrder.get(it.orderId) || byOrder.set(it.orderId, []).get(it.orderId)).push(it);
   const depsOf = new Map(); for (const d of deps) (depsOf.get(d.orderId) || depsOf.set(d.orderId, []).get(d.orderId)).push(d.name);
   return orders.map(o => {
@@ -90,11 +91,12 @@ export function splitOrders({ orders, items, deps }, cat, today) {
     const done = !!o.is_done || !!finishedAt;
     const when = d => (d ? (d < today ? "b" : d === today ? "t" : "") : "");
     const per = {}, open = {}, other = {};
-    let pieces = 0, complete = 0, washing = 0, undetailed = 0, noteCount = o.notes ? 1 : 0;
+    let pieces = 0, complete = 0, washing = 0, undetailed = 0, onVan = 0, noteCount = o.notes ? 1 : 0;
     const add = (k, p, c, b, t, cents, pp) => { const a = per[k] = per[k] || [0, 0, 0, 0, 0, 0]; a[0] += p; a[1] += c; a[2] += b; a[3] += t; a[4] += cents; a[5] += pp; };
     const its = byOrder.get(o.id) || [];
     for (const it of its) {
       const isC = done || !!it.isAsm || !!it.asm;
+      if (isC && it.rack && transit.test(it.rack)) onVan++;
       const w = isC ? when((it.asm || "").slice(0, 10) || (done ? (finishedAt || "").slice(0, 10) : "")) : "";
       const priced = it.base != null;
       const cents = priced ? Math.max(0, (+it.base || 0) + (+it.up || 0) - (+it.disc || 0)) : 0;
@@ -120,7 +122,7 @@ export function splitOrders({ orders, items, deps }, cat, today) {
     }
     const no = String(o.no);
     return { id: o.id, no: no.length > 5 ? `${no.slice(0, 5)}-${no.slice(5)}` : no, due: o.due, dueDay: String(o.due || "").slice(0, 10), status: o.status,
-      loc: o.route ? "Route" : o.loc || "Route", customer: o.customer, done, pieces, complete, washing, undetailed, per, open, other, notes: noteCount };
+      loc: o.route ? "Route" : o.loc || "Route", customer: o.customer, done, pieces, complete, washing, undetailed, onVan, per, open, other, notes: noteCount };
   });
 }
 
@@ -166,7 +168,7 @@ export async function piecesView(db, env, { at = new Date() } = {}) {
   const cat = categorizer(groups.smrt), runOf = storeToRun(runs);
   const data = await loadOpen(db, env.ORG_ID, { from: today, to: after, overdueFrom: addDays(today, -OVERDUE_DAYS) });
   // the work day an order belongs to: its due day, or the work day before for route deliveries
-  const orders = splitOrders(data, cat, today)
+  const orders = splitOrders(data, cat, today, groups.smrt.transitRack)
     .map(o => ({ ...o, workDay: o.loc === "Route" && route.dayBefore ? prevWorkDay(o.dueDay, workDays) : o.dueDay }))
     .filter(o => o.workDay <= next);
   const ROUTE_RUN = { id: "route", name: `Route deliveries · ready by ${route.readyBy} on the route day`, kind: "route", deadline: 24 * 60 };
@@ -217,6 +219,10 @@ export async function piecesView(db, env, { at = new Date() } = {}) {
     .map(o => ({ no: o.no, due: o.due, status: o.status, loc: o.loc, pieces: o.pieces, left: o.pieces - o.complete, washing: o.washing, open: o.open,
       cats: Object.entries(o.per).filter(([, p]) => p[0] > p[1]).map(([k]) => k), notes: o.notes, customer: o.customer, overdue: o.workDay < today, route: o.loc === "Route" }))
     .sort((a, b) => (a.due || "").localeCompare(b.due || ""));
+  // finished for production but SMRT doesn't show the order ready: on the van and not checked in at the store, or not racked yet
+  const notReady = orders.filter(o => !o.done && o.pieces > 0 && o.complete >= o.pieces && o.workDay <= today)
+    .map(o => ({ no: o.no, due: o.due, loc: o.loc, pieces: o.pieces, status: o.status, customer: o.customer, onVan: o.onVan > 0 }))
+    .sort((a, b) => (a.due || "").localeCompare(b.due || ""));
   const unmapped = {}, undetailed = {};
   for (const o of orders) {
     if (o.workDay < today) continue;
@@ -229,7 +235,7 @@ export async function piecesView(db, env, { at = new Date() } = {}) {
   return {
     today, next, now: hm, isWorkDay,
     days: { [today]: isWorkDay ? dayView(today, true) : null, [next]: dayView(next, false) },
-    overdue, late, prices, unmapped, undetailed,
+    overdue, late, prices, unmapped, undetailed, notReady,
     forecast: { ratio: fc.all.ratio, basedOn: fc.all.n },
     smrt: { lastRun: live || null, lastOk: lastOk?.at || null },
   };

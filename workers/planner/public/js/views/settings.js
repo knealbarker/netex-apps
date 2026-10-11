@@ -48,6 +48,7 @@ const GROUPS = [
   ] },
   { id: "smrt", title: "SMRT mapping", lead: "Which SMRT departments and item types count toward each kind of work. Item types win over departments (a comforter is a comforter whatever its department).", fields: [
     ["overdue", "Count overdue pieces in today's work", "bool", ""],
+    ["transitRack", "Rack location for orders on the van", "text", "Finished orders racked here and not yet racked at the store are listed as \"not checked in at the store\"."],
     ["departments", "SMRT department", "perCatText", "", { placeholder: "none" }],
     ["itemTypes", "SMRT item types (comma-separated)", "perCatText", "", { placeholder: "none" }],
   ] },

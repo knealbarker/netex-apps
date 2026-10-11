@@ -30,7 +30,7 @@ export const SCHEMA = {
   route: { dayBefore: f.bool(true), readyBy: f.time("08:00") },
   wash: { on: f.bool(true), washers: f.int(3, 0, 20), delay: f.int(20, 0, 240) },
   alerts: { warnFirst: f.int(45, 0, 240), warnSecond: f.int(15, 0, 240), notify: f.bool(true), weekStart: f.int(1, 0, 6) },
-  smrt: { overdue: f.bool(true),
+  smrt: { overdue: f.bool(true), transitRack: f.text("Van", 40),
     departments: f.perCat(f.text("", 200), { dct: "Dry Cleaning Tops", dcb: "Dry Cleaning Bottoms", slt: "Laundry Tops", slb: "Laundry Bottoms", comf: "", tc: "" }),
     itemTypes: f.perCat(f.text("", 200), { dct: "", dcb: "", slt: "", slb: "", comf: "Comforter, Bedspread", tc: "Tablecloth, Table Cloth" }) },
   rippling: { departments: f.list(["Production"]), useTimes: f.bool(true) },

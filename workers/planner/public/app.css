@@ -253,6 +253,7 @@ main > .set-card, main > section.card { margin-bottom: 16px; }
 .num { text-align: right; font-variant-numeric: tabular-nums; }
 .num.dim { color: var(--faint); }
 .count { display: inline-grid; place-items: center; min-width: 24px; height: 22px; padding: 0 7px; border-radius: 999px; background: var(--bad-soft); color: var(--bad); font-size: 12.5px; margin-left: 6px; vertical-align: 2px; }
+.count.soft { background: var(--info-soft); color: var(--info); }
 .late-list { display: flex; flex-direction: column; }
 .late { padding: 10px 0; border-bottom: 1px solid var(--line); display: grid; gap: 4px; }
 .late:last-child { border-bottom: 0; }
