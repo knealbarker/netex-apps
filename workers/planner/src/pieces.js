@@ -221,7 +221,7 @@ export async function piecesView(db, env, { at = new Date() } = {}) {
     .sort((a, b) => (a.due || "").localeCompare(b.due || ""));
   // finished for production but SMRT doesn't show the order ready: on the van and not checked in at the store, or not racked yet
   const notReady = orders.filter(o => !o.done && o.pieces > 0 && o.complete >= o.pieces && o.workDay <= today)
-    .map(o => ({ no: o.no, due: o.due, loc: o.loc, pieces: o.pieces, status: o.status, customer: o.customer, onVan: o.onVan > 0 }))
+    .map(o => ({ no: o.no, due: o.due, loc: o.loc, pieces: o.pieces, status: o.status, customer: o.customer, onVan: o.onVan > 0, shuttle: runFor(o.loc)?.kind === "shuttle" }))
     .sort((a, b) => (a.due || "").localeCompare(b.due || ""));
   const unmapped = {}, undetailed = {};
   for (const o of orders) {

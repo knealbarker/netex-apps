@@ -137,7 +137,7 @@ await t("route orders are planned the work day before they're due; unfinished on
 });
 await t("finished orders not ready in SMRT are listed for the stores, van ones flagged", () => {
   const van = V.notReady.find(o => o.loc === "Greenville");
-  ok(van && van.onVan, JSON.stringify(V.notReady)); eq(van.pieces, 2);
+  ok(van && van.onVan && van.shuttle, JSON.stringify(V.notReady)); eq(van.pieces, 2);
   ok(!V.late.some(o => o.loc === "Greenville"), "not in production's late list");
   ok(V.notReady.some(o => !o.onVan && o.status === "assembled"), "the other all-assembled order, not on the van");
 });
