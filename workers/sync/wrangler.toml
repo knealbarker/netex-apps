@@ -26,7 +26,7 @@ BACKFILL_OLDEST_DAY = "2021-01-01"
 LIVE_START_HOUR = "4"
 LIVE_END_HOUR = "21"
 RIPPLING_INTEGRATION_ID = "rippling"
-FORWARD_TO = "neal@towncountryclean.com"   # every email to reports@ is still forwarded here
+FORWARD_TO = "neal@towncountryclean.com"   # emails to reports@ that aren't a readable Rippling export are forwarded here
 
 # Secret (set once in the Cloudflare dashboard: Workers > netex-sync > Settings > Variables and Secrets):
 #   SMRT_KEY  - the SMRT API key. Never put it in this file or in GitHub.

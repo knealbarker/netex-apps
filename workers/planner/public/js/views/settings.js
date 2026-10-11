@@ -36,6 +36,10 @@ const GROUPS = [
     ["washers", "Number of washers", "int", "", { min: 0, max: 20 }],
     ["delay", "First load ready after", "int", "Minutes after the first clock-in until pressing can start.", { min: 0, max: 240, unit: "min" }],
   ] },
+  { id: "route", title: "Route deliveries", lead: "Route orders are due by early morning on the route day, so they're normally finished the work day before.", fields: [
+    ["dayBefore", "Plan route orders the work day before they're due", "bool", "Turn off to plan them on their due day like store orders."],
+    ["readyBy", "Ready by, on the route day", "time", ""],
+  ] },
   { id: "alerts", title: "Shuttle alerts", lead: "Warnings on the floor screen before a shuttle leaves with work still unfinished.", fields: [
     ["warnFirst", "First warning", "int", "", { min: 0, max: 240, unit: "min before" }],
     ["warnSecond", "Second warning", "int", "", { min: 0, max: 240, unit: "min before" }],
@@ -54,7 +58,7 @@ const GROUPS = [
   { id: "business", title: "Business", lead: "", fields: [["name", "Business name", "text", "Printed at the top of the plan."]] },
 ];
 
-const SECTIONS = [["day", "Working day"], ["staffing", "Overtime & moves"], ["money", "Labor & prices"], ["stations", "Stations & speeds"], ["wash", "Washers"], ["runs", "Shuttle runs"], ["alerts", "Shuttle alerts"], ["smrt", "SMRT mapping"], ["rippling", "Rippling"], ["business", "Business"], ["import", "Import"]];
+const SECTIONS = [["day", "Working day"], ["staffing", "Overtime & moves"], ["money", "Labor & prices"], ["stations", "Stations & speeds"], ["wash", "Washers"], ["runs", "Shuttle runs"], ["route", "Route deliveries"], ["alerts", "Shuttle alerts"], ["smrt", "SMRT mapping"], ["rippling", "Rippling"], ["business", "Business"], ["import", "Import"]];
 
 export async function render(main, ctx) {
   const { me } = ctx;
@@ -183,7 +187,7 @@ export async function render(main, ctx) {
       <nav class="set-nav" aria-label="Settings sections">${SECTIONS.filter(([id]) => id !== "import" || isOwner).map(([id, l]) => raw(html`<a href="#/settings" data-jump="sec-${id}">${l}</a>`))}</nav>
       <div class="set-cards">
         ${raw(groupCard(GROUPS[0]))}${raw(groupCard(GROUPS[1]))}${raw(groupCard(GROUPS[2]))}${raw(stationsCard())}${raw(groupCard(GROUPS[3]))}
-        ${raw(runsCard())}${raw(groupCard(GROUPS[4]))}${raw(groupCard(GROUPS[5]))}${raw(groupCard(GROUPS[6]))}${raw(groupCard(GROUPS[7]))}${raw(importCard())}
+        ${raw(runsCard())}${raw(groupCard(GROUPS[4]))}${raw(groupCard(GROUPS[5]))}${raw(groupCard(GROUPS[6]))}${raw(groupCard(GROUPS[7]))}${raw(groupCard(GROUPS[8]))}${raw(importCard())}
       </div>
     </div>`;
 

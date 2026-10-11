@@ -5,6 +5,7 @@
 //    has an assembly date, or its order is done. Removed pieces don't count; deleted orders don't count.
 //  - Kind of work: the item type is matched first (comforters, tablecloths), then the financial department.
 //  - Today = pieces due today, less what was finished before today, plus open pieces from overdue orders (last 14 days).
+//  - Route deliveries are due by 8 am on the route day, so they're planned the work day before (Settings > Route deliveries).
 //  - Next work day = pieces due that day, less what's already finished (work done ahead), scaled store by store
 //    to what usually still comes in by each store's drop-off cutoff (from the order history).
 import { loadGroups, loadRuns } from "./settings.js";
@@ -160,19 +161,25 @@ export async function piecesView(db, env, { at = new Date() } = {}) {
   const workDays = groups.day.workDays || [1, 2, 3, 4, 5];
   const { day: today, hm } = localNow(env.TIMEZONE, at);
   const isWorkDay = workDays.includes(weekday(today));
-  const next = nextWorkDay(today, workDays);
+  const next = nextWorkDay(today, workDays), after = nextWorkDay(next, workDays);
+  const route = groups.route || { dayBefore: true, readyBy: "08:00" };
   const cat = categorizer(groups.smrt), runOf = storeToRun(runs);
-  const data = await loadOpen(db, env.ORG_ID, { from: today, to: next, overdueFrom: addDays(today, -OVERDUE_DAYS) });
-  const orders = splitOrders(data, cat, today);
+  const data = await loadOpen(db, env.ORG_ID, { from: today, to: after, overdueFrom: addDays(today, -OVERDUE_DAYS) });
+  // the work day an order belongs to: its due day, or the work day before for route deliveries
+  const orders = splitOrders(data, cat, today)
+    .map(o => ({ ...o, workDay: o.loc === "Route" && route.dayBefore ? prevWorkDay(o.dueDay, workDays) : o.dueDay }))
+    .filter(o => o.workDay <= next);
+  const ROUTE_RUN = { id: "route", name: `Route deliveries · ready by ${route.readyBy} on the route day`, kind: "route", deadline: 24 * 60 };
+  const runFor = loc => (loc === "Route" ? ROUTE_RUN : runOf(loc));
 
   const fc = await forecastRatios(db, env.ORG_ID, { today, next, hm, workDays, runs });
   const mk = () => ({ q: zero(), done: zero(), known: zero(), expected: zero(), pieces: 0, orders: 0, openOrders: 0 });
   const dayView = (d, isToday) => {
     const total = mk(), stores = new Map();
     for (const o of orders) {
-      if (o.dueDay !== d) continue;
-      const r = runOf(o.loc);
-      const st = stores.get(o.loc) || stores.set(o.loc, { loc: o.loc, run: r?.name || null, runId: r?.id || null, deadline: runDeadline(r), ...mk() }).get(o.loc);
+      if (o.workDay !== d) continue;
+      const r = runFor(o.loc);
+      const st = stores.get(o.loc) || stores.set(o.loc, { loc: o.loc, run: r?.name || null, runId: r?.id || null, deadline: r?.deadline ?? runDeadline(r), ...mk() }).get(o.loc);
       for (const [k, p] of Object.entries(o.per)) {
         // today: due today less finished before today (finished today is today's work); later day: less anything finished
         const todo = isToday ? Math.max(0, p[0] - p[2]) : Math.max(0, p[0] - p[1]);
@@ -185,18 +192,18 @@ export async function piecesView(db, env, { at = new Date() } = {}) {
     const beforeDay = today < d;
     for (const st of stores.values()) {
       const cut = fc.cutoffs[st.loc], final = !isToday && beforeDay && cut && hm >= cut;
-      st.ratio = isToday || final ? 1 : (fc.byLoc[st.loc]?.ratio || fc.all.ratio);
+      st.ratio = isToday || final || st.loc === "Route" ? 1 : (fc.byLoc[st.loc]?.ratio || fc.all.ratio);
       st.final = isToday ? true : !!final;
       for (const k of CATS) { st.expected[k] = Math.round(st.q[k] * st.ratio); total.expected[k] += st.expected[k]; }
     }
     const sum = o => CATS.reduce((t, k) => t + o[k], 0);
-    const ahead = isToday ? null : orders.filter(o => o.dueDay === d).reduce((t, o) => t + Object.values(o.per).reduce((a, p) => a + p[3], 0), 0);
+    const ahead = isToday ? null : orders.filter(o => o.workDay === d).reduce((t, o) => t + Object.values(o.per).reduce((a, p) => a + p[3], 0), 0);
     return {
       day: d, isToday, ...total, todo: sum(total.q), doneTotal: sum(total.done), expectedTotal: sum(total.expected), aheadToday: ahead,
       stores: [...stores.values()].sort((a, b) => (a.deadline ?? 9999) - (b.deadline ?? 9999) || a.loc.localeCompare(b.loc)),
     };
   };
-  const overdueOrders = groups.smrt.overdue ? orders.filter(o => o.dueDay < today && !o.done && o.pieces > o.complete) : [];
+  const overdueOrders = groups.smrt.overdue ? orders.filter(o => o.workDay < today && !o.done && o.pieces > o.complete) : [];
   const overdue = { q: zero(), orders: overdueOrders.length };
   for (const o of overdueOrders) for (const [k, p] of Object.entries(o.per)) overdue.q[k] += Math.max(0, p[0] - p[1]);
   overdue.todo = CATS.reduce((t, k) => t + overdue.q[k], 0);
@@ -206,15 +213,15 @@ export async function piecesView(db, env, { at = new Date() } = {}) {
   const prices = Object.fromEntries(Object.entries(pr).filter(([, a]) => a[1] >= 15).map(([k, a]) => [k, Math.round(a[0] / a[1]) / 100]));
 
   // late = not finished and still has pieces to do (an order whose pieces are all assembled is done for production)
-  const late = orders.filter(o => !o.done && o.pieces > o.complete && (o.dueDay < today || (o.dueDay === today && isWorkDay)))
+  const late = orders.filter(o => !o.done && o.pieces > o.complete && (o.workDay < today || (o.workDay === today && isWorkDay)))
     .map(o => ({ no: o.no, due: o.due, status: o.status, loc: o.loc, pieces: o.pieces, left: o.pieces - o.complete, washing: o.washing, open: o.open,
-      cats: Object.entries(o.per).filter(([, p]) => p[0] > p[1]).map(([k]) => k), notes: o.notes, customer: o.customer, overdue: o.dueDay < today }))
+      cats: Object.entries(o.per).filter(([, p]) => p[0] > p[1]).map(([k]) => k), notes: o.notes, customer: o.customer, overdue: o.workDay < today, route: o.loc === "Route" }))
     .sort((a, b) => (a.due || "").localeCompare(b.due || ""));
   const unmapped = {}, undetailed = {};
   for (const o of orders) {
-    if (o.dueDay < today) continue;
+    if (o.workDay < today) continue;
     for (const [d, n] of Object.entries(o.other)) unmapped[d] = (unmapped[d] || 0) + n;
-    if (o.undetailed) undetailed[o.dueDay] = (undetailed[o.dueDay] || 0) + o.undetailed;
+    if (o.undetailed) undetailed[o.workDay] = (undetailed[o.workDay] || 0) + o.undetailed;
   }
 
   const live = await db.prepare("SELECT started_at AS at, finished_at AS done, status, message FROM int_sync_runs WHERE integration_id='smrt' AND message LIKE 'live%' ORDER BY started_at DESC LIMIT 1").first();

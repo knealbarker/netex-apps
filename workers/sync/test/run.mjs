@@ -9,7 +9,7 @@ import { Smrt } from "../src/smrt.js";
 import { runBackfill, backfillProgress } from "../src/backfill.js";
 import { ingestDay } from "../src/ingest.js";
 import { addDays, ulid } from "../src/util.js";
-import { backfillAllowed, liveAllowed, fromRippling } from "../src/index.js";
+import worker, { backfillAllowed, liveAllowed, fromRippling } from "../src/index.js";
 import { runLive, dayRanges } from "../src/live.js";
 import { ingestRippling, parseCsv, ripTime } from "../src/rippling.js";
 
@@ -241,6 +241,32 @@ ok("custom work days: Saturday as a work day waits", !backfillAllowed({ day: "20
   ok("rippling sender: no authentication refused", !fromRippling("no-reply@rippling.com", H({})).ok);
   ok("rippling sender: other domain refused", !fromRippling("no-reply@rippling.com.evil.io", H({ "authentication-results": "dkim=pass header.d=rippling.com" })).ok);
   ok("rippling sender: DKIM for another domain refused", !fromRippling("no-reply@rippling.com", H({ "authentication-results": "dkim=pass header.d=evil.com" })).ok);
+}
+
+// ================= the email handler end to end
+{
+  const { sqlite: E, db: edb } = freshDb();
+  const env = { DB: edb, ORG_ID: "tcc", TIMEZONE: "America/Chicago", RIPPLING_INTEGRATION_ID: "rippling", FORWARD_TO: "neal@example.com" };
+  const csv = "time_entry_id,employee_name,employee_number,title,department_path,work_location,time_entry_date,clock_in_local,clock_out_local,duration_hours,timezone,status,clock_in_source,clock_out_source\r\nz1,Pat Doe,77,Tech,Production,Workshop,10/01/2026,10/01/2026 06:00 AM CDT,10/01/2026 02:00 PM CDT,8,America/Chicago,PAID,Web,Web\r\n";
+  const mime = (from, withCsv = true) => [
+    `From: Rippling <${from}>`, "To: reports@netexcleaners.com", "Subject: Scheduled Report - All Time Clock Entries Export", "MIME-Version: 1.0",
+    'Content-Type: multipart/mixed; boundary="B"', "", "--B", "Content-Type: text/plain", "", "Your report is attached.",
+    ...(withCsv ? ["--B", 'Content-Type: text/csv; name="All Time Clock Entries Export.csv"', 'Content-Disposition: attachment; filename="All Time Clock Entries Export.csv"', "Content-Transfer-Encoding: base64", "", Buffer.from(csv).toString("base64")] : []),
+    "--B--", ""].join("\r\n");
+  const msg = (from, auth, withCsv) => { const fw = []; const raw = mime(from, withCsv);
+    return { fw, from, to: "reports@netexcleaners.com", headers: new Headers(auth ? { "authentication-results": auth } : {}), raw: new Blob([raw]).stream(), rawSize: raw.length, forward: async to => fw.push(to) }; };
+  const good = msg("no-reply@rippling.com", "mx.cloudflare.net; dkim=pass header.d=rippling.com; spf=pass", true);
+  await worker.email(good, env, {});
+  ok("email: Rippling export read and NOT forwarded", good.fw.length === 0 && one(E, "SELECT COUNT(*) n FROM labor_daily_hours").n === 1, good.fw);
+  const fake = msg("no-reply@rippling.com", null, true);
+  await worker.email(fake, env, {});
+  ok("email: unverified 'Rippling' email forwarded, not read", fake.fw[0] === "neal@example.com" && one(E, "SELECT COUNT(*) n FROM core_people WHERE payroll_id='77'").n === 1);
+  const other = msg("someone@gmail.com", "dkim=pass header.d=gmail.com", true);
+  await worker.email(other, env, {});
+  ok("email: other senders forwarded", other.fw[0] === "neal@example.com");
+  const noCsv = msg("no-reply@rippling.com", "dkim=pass header.d=rippling.com", false);
+  await worker.email(noCsv, env, {});
+  ok("email: Rippling email without a CSV forwarded", noCsv.fw[0] === "neal@example.com");
 }
 
 console.log(`\nSMRT calls made by the fake: ${fake.calls}`);

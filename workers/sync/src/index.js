@@ -69,7 +69,9 @@ export default {
   // Email Routing sends reports@netexcleaners.com here. Every message is still forwarded to Neal;
   // Rippling's time-clock export is also read into the hours tables.
   async email(message, env, ctx) {
-    let note = "";
+    // Rippling's export is read and NOT forwarded (Neal doesn't need a copy). Anything else, or a Rippling email that
+    // couldn't be read, is forwarded so nothing is lost silently.
+    let handled = false;
     try {
       const check = fromRippling(message.from, message.headers);
       if (!check.ok && /rippling\.com/i.test(String(message.from || ""))) log({ job: "rippling-email", status: "rejected", ...check });
@@ -80,11 +82,11 @@ export default {
           const text = typeof csv.content === "string" ? csv.content : new TextDecoder().decode(csv.content);
           const res = await ingestRippling(env.DB, { orgId: env.ORG_ID, integrationId: env.RIPPLING_INTEGRATION_ID || "rippling", today: localNow(env.TIMEZONE || "America/Chicago").day, csv: text });
           log({ job: "rippling-email", subject: mail.subject, ...res });
-        } else { note = "no CSV attachment"; log({ job: "rippling-email", status: "skipped", reason: note, subject: mail.subject }); }
+          handled = true;
+        } else log({ job: "rippling-email", status: "skipped", reason: "no CSV attachment", subject: mail.subject });
       }
     } catch (e) { log({ job: "rippling-email", status: "error", error: String(e.message || e) }); }
-    // never lose an email: forward it whatever happened above
-    await message.forward(forwardTo(env));
+    if (!handled) await message.forward(forwardTo(env));
   },
 
   // GET /status -> history progress (only reachable once a netexcleaners.com route behind Cloudflare Access is added)

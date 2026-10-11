@@ -10,7 +10,8 @@ Background jobs for the netexcleaners.com apps (Cloudflare Worker).
 - Stores through the same ingest as the history load, in live mode: due dates moved later open follow-ups.
 
 ## Rippling hours (`src/rippling.js`, email)
-- Email Routing sends reports@netexcleaners.com to this Worker. Every email is forwarded to `FORWARD_TO` whatever happens.
+- Email Routing sends reports@netexcleaners.com to this Worker. A Rippling export that's read is not forwarded; any other
+  email, or a Rippling email that couldn't be read, is forwarded to `FORWARD_TO`.
 - Messages from rippling.com with a passing DKIM (or SPF) check and a CSV attachment are read: rows in the Rippling departments
   (Settings › Rippling) go into labor_daily_hours (finished days) and labor_clock_today (today's punches). New Production
   employees are added to the team. Punches themselves aren't kept.

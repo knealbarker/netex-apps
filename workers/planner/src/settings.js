@@ -27,6 +27,7 @@ export const SCHEMA = {
   staffing: { allowOT: f.bool(true), otMax: f.num(2, 0, 8), otMult: f.num(1.5, 1, 3), allowMoves: f.bool(true), allowClockOut: f.bool(true), minPaid: f.num(4, 0, 12) },
   money: { payAvg: f.num(15, 0, 200), laborTarget: f.num(17, 0, 100), pdfMoney: f.bool(false),
     prices: f.perCat(f.num(0, 0, 1000), { dct: 7.5, dcb: 8, slt: 4.15, slb: 7.25, comf: 30, tc: 12 }) },
+  route: { dayBefore: f.bool(true), readyBy: f.time("08:00") },
   wash: { on: f.bool(true), washers: f.int(3, 0, 20), delay: f.int(20, 0, 240) },
   alerts: { warnFirst: f.int(45, 0, 240), warnSecond: f.int(15, 0, 240), notify: f.bool(true), weekStart: f.int(1, 0, 6) },
   smrt: { overdue: f.bool(true),

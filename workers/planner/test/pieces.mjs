@@ -120,6 +120,19 @@ await t("undetailed order with several departments is reported, not called unmap
   const v = await piecesView(db, env, { at: AT });
   eq(v.undetailed[NEXT], 7); ok(!v.unmapped["Dry Cleaning Tops"], JSON.stringify(v.unmapped));
 });
+await t("route orders are planned the work day before they're due; unfinished ones due today are overdue", async () => {
+  const mk = (no, due, done) => ({ "ID": no, "Status": done ? "ready" : "processing", "Due date": due, "Created": ts("2026-10-09"), "Piece Count": "4", "Return Location": "TCC Sulphur Springs", "Is Route Delivery": "true", "Financial department(s)": DCT });
+  const its = no => Array.from({ length: 4 }, (_, i) => ({ "Sale Id": no, "Barcode": `${no}r${i}`, "Item Status": "detailed", "Financial department": DCT, "Item Type": "Shirt", "Created": ts("2026-10-09") }));
+  await ingestDay(db, { orgId: "tcc", runId: "r1", mode: "backfill", day: "2026-10-09" },
+    [mk("263100001", ts(NEXT, "08:00")), mk("263100002", ts(TODAY, "08:00")), mk("263100003", ts("2026-10-14", "08:00"))],
+    [...its("263100001"), ...its("263100002"), ...its("263100003")]);
+  const v = await piecesView(db, env, { at: AT });
+  const r = v.days[TODAY].stores.find(s => s.loc === "Route");
+  ok(r, "route group in today's plan"); eq(r.q.dct, 4, "the order due tomorrow 8 am"); ok(/ready by 08:00/.test(r.run), r.run);
+  eq(v.days[TODAY].stores[v.days[TODAY].stores.length - 1].loc, "Route", "route last (end of day)");
+  eq(v.days[NEXT].stores.find(s => s.loc === "Route")?.q.dct, 4, "Wednesday's route order is Tuesday's work");
+  ok(v.late.some(x => x.no === "26310-0002" && x.overdue && x.route), "route due today and not done is overdue");
+});
 await t("categorizer: comma lists, case-insensitive", () => {
   const c = categorizer({ departments: { dct: "Dry Cleaning Tops, DC Tops" }, itemTypes: { tc: "Tablecloth, Table Cloth" } });
   eq([c("Shirt", "dc tops"), c("Round TABLE CLOTH", "Dry Cleaning Bottoms"), c("Shirt", "Alterations")], ["dct", "tc", null]);
