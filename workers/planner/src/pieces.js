@@ -63,7 +63,7 @@ function cutoffOf(runs, loc) {
 
 const doneSql = "(s.is_done=1 OR o.ready_at IS NOT NULL OR o.returned_at IS NOT NULL OR o.picked_up_at IS NOT NULL OR o.delivered_at IS NOT NULL)";
 
-async function loadOpen(db, orgId, { from, to, overdueFrom }) {
+export async function loadOpen(db, orgId, { from, to, overdueFrom }) {
   const where = `o.org_id=? AND s.is_void=0 AND o.smrt_deleted_at IS NULL AND (
       substr(o.due_at,1,10) BETWEEN ? AND ?
       OR (substr(o.due_at,1,10) >= ? AND substr(o.due_at,1,10) < ? AND NOT ${doneSql}))`;

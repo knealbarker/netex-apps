@@ -8,6 +8,7 @@ import { listTeam, addPerson, updatePerson, setTrainings } from "./team.js";
 import { importDesktop } from "./import.js";
 import { piecesView } from "./pieces.js";
 import { loadPlan, savePlan, publishPlan, addCallout, removeCallout, publishedPlan } from "./plan.js";
+import { reviewDay, noteFollowup } from "./review.js";
 
 const SECURITY_HEADERS = {
   "x-content-type-options": "nosniff",
@@ -47,6 +48,8 @@ const routes = [
   ["PUT", /^\/api\/plan\/(\d{4}-\d{2}-\d{2})$/, async (req, env, me, m) => json(await savePlan(env.DB, env, me, m[1], await readJson(req)))],
   ["POST", /^\/api\/plan\/(\d{4}-\d{2}-\d{2})\/publish$/, async (req, env, me, m) => json(await publishPlan(env.DB, env, me, m[1], await readJson(req)))],
   ["POST", /^\/api\/plan\/(\d{4}-\d{2}-\d{2})\/callouts$/, async (req, env, me, m) => json(await addCallout(env.DB, env, me, m[1], await readJson(req)), 201)],
+  ["GET", /^\/api\/review\/(\d{4}-\d{2}-\d{2})$/, async (req, env, me, m) => json(await reviewDay(env.DB, env, me, m[1]))],
+  ["PATCH", /^\/api\/followups\/([0-9A-Z]{26})$/, async (req, env, me, m) => json(await noteFollowup(env.DB, env, me, m[1], await readJson(req)))],
   ["DELETE", /^\/api\/plan\/(\d{4}-\d{2}-\d{2})\/callouts\/([0-9A-Z]{26})$/, async (req, env, me, m) => json(await removeCallout(env.DB, env, me, m[1], m[2]))],
   ["GET", /^\/api\/floor\/(\d{4}-\d{2}-\d{2})$/, async (req, env, me, m) => json({ published: await publishedPlan(env.DB, env, m[1]) })],
   ["GET", /^\/api\/system$/, async (req, env) => {
