@@ -267,7 +267,7 @@ await t("Plan: pieces for the next work day, by store, with a late list", async 
   await p.waitForSelector(".tiles");
   const tiles = await p.locator(".tile .t-num").allTextContents();
   ok(tiles.length === 7, JSON.stringify(tiles));
-  ok(await p.isVisible('.dl-row:has-text("Quitman")'), "Quitman row");
+  ok(await p.isVisible('.wv:has-text("Quitman")'), "Quitman deadline");
   await p.screenshot({ path: join(SHOTS, "14-plan.png"), fullPage: true });
 });
 await t("no page errors", async () => { ok(!errors.length, errors.join("\n")); });

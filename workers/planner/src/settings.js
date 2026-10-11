@@ -102,7 +102,7 @@ export async function loadProduction(db, orgId) {
   const q = async (sql, ...a) => (await db.prepare(sql).bind(...a).all()).results;
   const categories = await q("SELECT id, name, color, needs_assembly AS needsAssembly, sort FROM plan_categories ORDER BY sort");
   const stationTypes = await q("SELECT id, name FROM plan_station_types");
-  const stations = await q(`SELECT s.id, s.code, s.label, s.station_type_id AS type, s.max_hours AS maxHours, s.is_active AS active, s.sort
+  const stations = await q(`SELECT s.id, s.code, s.label, s.station_type_id AS type, s.training_id AS training, s.max_hours AS maxHours, s.is_active AS active, s.sort
       FROM plan_stations s JOIN core_locations l ON l.id = s.location_id WHERE l.org_id = ? AND s.deleted_at IS NULL ORDER BY s.sort`, orgId);
   const rates = await q("SELECT station_type_id AS type, category_id AS category, pieces_per_hour AS perHour FROM plan_station_rates WHERE deleted_at IS NULL");
   const wash = await q("SELECT category_id AS category, pieces_per_load AS perLoad, cycle_min AS cycleMin FROM plan_wash_programs WHERE deleted_at IS NULL");
