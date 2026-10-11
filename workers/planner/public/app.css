@@ -225,6 +225,7 @@ div.who-btn { cursor: default; }
 .set-form .switch { margin: 8px 0; }
 .inwrap { display: inline-flex; align-items: center; gap: 8px; flex: none; }
 .inwrap .input { width: 110px; }
+.inwrap input[type="time"].input { width: 140px; }
 .inwrap .unit { color: var(--muted); font-size: 13px; white-space: nowrap; min-width: 18px; }
 .row-field input[type="text"].input { width: 260px; }
 .percat { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 10px 16px; }
@@ -273,6 +274,15 @@ input[type="file"].input { padding: 8px; }
   .rank-grid .who-col { min-width: 150px; }
   .who-btn .avatar { display: none; }
 }
+
+.days-field small { display: block; color: var(--muted); font-size: 12.5px; margin: -4px 0 8px; }
+.day-chips { display: flex; gap: 6px; flex-wrap: wrap; }
+.day-chip { position: relative; cursor: pointer; }
+.day-chip input { position: absolute; opacity: 0; inset: 0; cursor: pointer; margin: 0; }
+.day-chip span { display: inline-grid; place-items: center; min-width: 52px; height: 36px; padding: 0 10px; border-radius: 10px; border: 1px solid var(--line2); color: var(--muted); font-weight: 600; font-size: 13.5px; background: var(--bg2); }
+.day-chip input:checked + span { background: var(--accent); border-color: transparent; color: var(--accent-ink); }
+.day-chip input:focus-visible + span { outline: 2px solid var(--info); outline-offset: 2px; }
+.day-chip input:disabled + span { opacity: .6; }
 
 /* ---------- small screens: tabs move to a bottom bar ---------- */
 @media (max-width: 860px) {

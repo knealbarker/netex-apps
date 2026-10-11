@@ -9,6 +9,7 @@ import { Smrt } from "../src/smrt.js";
 import { runBackfill, backfillProgress } from "../src/backfill.js";
 import { ingestDay } from "../src/ingest.js";
 import { addDays, ulid } from "../src/util.js";
+import { backfillAllowed } from "../src/index.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const MIG = join(here, "../../../db/migrations");
@@ -153,6 +154,14 @@ ok("deleted order logged", one(sqlite, "SELECT COUNT(*) n FROM pos_changes WHERE
 
 // 9. foreign keys still hold
 ok("foreign keys clean", sqlite.prepare("PRAGMA foreign_key_check").all().length === 0);
+// ---- when the history load may run (2026-10-10 is a Saturday, 10-12 a Monday)
+ok("weekend: runs at 10 am", backfillAllowed({ day: "2026-10-10", hour: 10 }));
+ok("weekend: runs on Sunday afternoon", backfillAllowed({ day: "2026-10-11", hour: 15 }));
+ok("work day: waits at 10 am", !backfillAllowed({ day: "2026-10-12", hour: 10 }));
+ok("work day: runs at 9 pm and 3 am", backfillAllowed({ day: "2026-10-12", hour: 21 }) && backfillAllowed({ day: "2026-10-13", hour: 3 }));
+ok("work day: stops at 5 am", !backfillAllowed({ day: "2026-10-13", hour: 5 }));
+ok("custom work days: Saturday as a work day waits", !backfillAllowed({ day: "2026-10-10", hour: 10, workDays: [1, 2, 3, 4, 5, 6] }));
+
 console.log(`\nSMRT calls made by the fake: ${fake.calls}`);
 console.log(failures ? `${failures} FAILED` : "all passed");
 process.exit(failures ? 1 : 0);

@@ -8,7 +8,8 @@ const CATS = Object.keys(CAT_NAMES);
 
 // [key, label, kind, help, extra]
 const GROUPS = [
-  { id: "day", title: "Working day", lead: "The shape of a normal shift.", fields: [
+  { id: "day", title: "Working day", lead: "Work days and the shape of a normal shift.", fields: [
+    ["workDays", "Work days", "days", "Plans, due dates and the daily summary skip the other days. SMRT history loads all day on days off."],
     ["defStart", "Default clock-in", "time", "Used when someone has no usual clock-in."],
     ["fullDay", "Full-day working hours", "num", "Hours of work in a full shift, not counting the break.", { step: 0.25, min: 1, max: 14, unit: "h" }],
     ["breakMin", "Paid break", "int", "", { min: 0, max: 120, unit: "min" }],
@@ -66,6 +67,11 @@ export async function render(main, ctx) {
     const v = S.groups[g][key], id = `${g}-${key}`;
     const unit = x.unit ? raw(html`<span class="unit">${x.unit}</span>`) : "";
     if (kind === "bool") return html`<label class="switch"><div><b>${label}</b>${help ? raw(html`<small>${help}</small>`) : ""}</div><input type="checkbox" role="switch" name="${key}" ${raw(v ? "checked" : "")} ${dis}></label>`;
+    if (kind === "days") {
+      const names = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"], order = [1, 2, 3, 4, 5, 6, 0];
+      return html`<fieldset class="field days-field"><legend>${label}</legend>${help ? raw(html`<small>${help}</small>`) : ""}<div class="day-chips">${order.map(d => raw(html`
+        <label class="day-chip"><input type="checkbox" name="${key}.${d}" ${raw(v.includes(d) ? "checked" : "")} ${dis}><span>${names[d]}</span></label>`))}</div></fieldset>`;
+    }
     if (kind === "perCat" || kind === "perCatText") {
       const textual = kind === "perCatText";
       return html`<fieldset class="field percat"><legend>${label}</legend>${CATS.map(c => raw(html`
@@ -89,6 +95,7 @@ export async function render(main, ctx) {
     for (const [key, , kind] of g.fields) {
       const el = form.elements;
       if (kind === "bool") out[key] = el[key].checked;
+      else if (kind === "days") out[key] = [0, 1, 2, 3, 4, 5, 6].filter(d => el[`${key}.${d}`].checked);
       else if (kind === "perCat") out[key] = Object.fromEntries(CATS.map(c => [c, +el[`${key}.${c}`].value]));
       else if (kind === "perCatText") out[key] = Object.fromEntries(CATS.map(c => [c, el[`${key}.${c}`].value]));
       else if (kind === "num" || kind === "int" || kind === "select") out[key] = el[key].value === "" ? null : +el[key].value;

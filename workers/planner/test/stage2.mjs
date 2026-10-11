@@ -153,6 +153,13 @@ await t("saving a group validates every value", async () => {
   eq((await call("PUT", "/api/settings/money", { body: { prices: { dct: 9 } } })).body.money.prices.dcb, 8);
   eq((await call("GET", "/api/settings")).body.groups.day.defStart, "06:30");
 });
+await t("work days: Mon-Fri by default; must pick at least one valid day", async () => {
+  const { call } = app();
+  eq((await call("GET", "/api/settings")).body.groups.day.workDays, [1, 2, 3, 4, 5]);
+  eq((await call("PUT", "/api/settings/day", { body: { workDays: [6, 1, 1, 2] } })).body.day.workDays, [1, 2, 6]);
+  eq((await call("PUT", "/api/settings/day", { body: { workDays: [] } })).status, 400);
+  eq((await call("PUT", "/api/settings/day", { body: { workDays: [7] } })).status, 400);
+});
 await t("Managers can't change settings", async () => {
   const { call } = app();
   await withRole(call, "manager", "m@example.com");

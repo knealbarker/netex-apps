@@ -18,11 +18,12 @@ const f = {
   bool: d => ({ kind: "bool", d }),
   text: (d, max = 80) => ({ kind: "text", d, max }),
   list: d => ({ kind: "list", d }),
+  days: d => ({ kind: "days", d }),
   perCat: (inner, d) => ({ kind: "perCat", inner, d }),
 };
 export const SCHEMA = {
   business: { name: f.text("Town & Country Cleaners") },
-  day: { defStart: f.time("07:00"), fullDay: f.num(7.5, 1, 14), breakMin: f.int(30, 0, 120), breakAfter: f.num(4, 0, 12), spread: f.int(30, 0, 240), staggerBreaks: f.bool(true) },
+  day: { workDays: f.days([1, 2, 3, 4, 5]), defStart: f.time("07:00"), fullDay: f.num(7.5, 1, 14), breakMin: f.int(30, 0, 120), breakAfter: f.num(4, 0, 12), spread: f.int(30, 0, 240), staggerBreaks: f.bool(true) },
   staffing: { allowOT: f.bool(true), otMax: f.num(2, 0, 8), otMult: f.num(1.5, 1, 3), allowMoves: f.bool(true), allowClockOut: f.bool(true), minPaid: f.num(4, 0, 12) },
   money: { payAvg: f.num(15, 0, 200), laborTarget: f.num(17, 0, 100), pdfMoney: f.bool(false),
     prices: f.perCat(f.num(0, 0, 1000), { dct: 7.5, dcb: 8, slt: 4.15, slb: 7.25, comf: 30, tc: 12 }) },
@@ -49,6 +50,12 @@ function check(group, key, s, v) {
     }
     case "bool": if (typeof v !== "boolean") throw new HttpError(400, `${where}: must be yes or no.`); return v;
     case "text": if (typeof v !== "string" || v.length > s.max) throw new HttpError(400, `${where}: text too long.`); return v.trim();
+    case "days": {
+      if (!Array.isArray(v) || v.some(x => !Number.isInteger(x) || x < 0 || x > 6)) throw new HttpError(400, `${where}: pick days of the week.`);
+      const d = [...new Set(v)].sort();
+      if (!d.length) throw new HttpError(400, "Pick at least one work day.");
+      return d;
+    }
     case "list": if (!Array.isArray(v) || v.some(x => typeof x !== "string")) throw new HttpError(400, `${where}: must be a list.`); return v.map(x => x.trim()).filter(Boolean);
     case "perCat": {
       if (!v || typeof v !== "object") throw new HttpError(400, `${where}: missing values.`);

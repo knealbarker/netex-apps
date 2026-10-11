@@ -188,6 +188,18 @@ await t("Settings: change a value, Save lights up, value persists", async () => 
   ok((await p.inputValue('#sec-money input[name="prices.comf"]')) === "35.7");
   await p.screenshot({ path: join(SHOTS, "10-settings.png"), fullPage: true });
 });
+await t("Settings: work days show Mon–Fri on, and toggling Saturday saves", async () => {
+  ok(await p.isChecked('#sec-day input[name="workDays.1"]') && !(await p.isChecked('#sec-day input[name="workDays.6"]')));
+  await p.click('#sec-day label.day-chip:has(input[name="workDays.6"])');
+  await p.click('#sec-day button[type="submit"]');
+  await p.waitForSelector("#sec-day .saved-note.ok");
+  const s = await (await p.request.get(url + "/api/settings")).json();
+  ok(JSON.stringify(s.groups.day.workDays) === "[1,2,3,4,5,6]", JSON.stringify(s.groups.day.workDays));
+  await p.click('#sec-day label.day-chip:has(input[name="workDays.6"])');
+  await p.click('#sec-day button[type="submit"]');
+  await p.waitForSelector("#sec-day .saved-note.ok");
+  await p.locator("#sec-day").screenshot({ path: join(SHOTS, "13-workdays.png") });
+});
 await t("Settings: a bad value shows the server's message on the card", async () => {
   await p.fill('#sec-day input[name="fullDay"]', "40");
   await p.click('#sec-day button[type="submit"]');

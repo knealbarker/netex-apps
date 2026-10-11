@@ -4,8 +4,9 @@ Background jobs for the netexcleaners.com apps (Cloudflare Worker, runs every 15
 
 ## SMRT history backfill
 - Loads SMRT orders and every piece into the `netex-apps` D1 database, **one created-day at a time, newest first**.
-- Runs only overnight (8 pm–5 am Central, `BACKFILL_START_HOUR` / `BACKFILL_END_HOUR`), 2 days per run
-  (`BACKFILL_DAYS_PER_RUN`) — about 70 days of history per night, roughly 200 small SMRT calls.
+- Runs overnight on work days (8 pm–5 am Central, `BACKFILL_START_HOUR` / `BACKFILL_END_HOUR`) and all day on days off
+  (the planner's Settings › Working day › Work days; Mon–Fri by default). 2 days per run (`BACKFILL_DAYS_PER_RUN`) — about
+  70 days of history per work night (~200 small SMRT calls) and about 190 days per day off (~600 calls).
 - Stops for good after 21 days in a row with no orders (the start of SMRT history) or at `BACKFILL_OLDEST_DAY`.
 - A failed SMRT call stops that run; the same day is retried next run. After 3 failures the day is marked
   `error` in `int_backfill_days` and the job moves on.
