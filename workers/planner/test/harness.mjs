@@ -21,7 +21,7 @@ export function d1(sqlite) {
   });
   return {
     prepare: sql => wrap(sql),
-    batch: async stmts => { sqlite.exec("BEGIN"); try { for (const s of stmts) s._exec(); sqlite.exec("COMMIT"); } catch (e) { sqlite.exec("ROLLBACK"); throw e; } return []; },
+    batch: async stmts => { sqlite.exec("BEGIN"); const out = []; try { for (const s of stmts) out.push({ meta: { changes: s._exec().changes } }); sqlite.exec("COMMIT"); } catch (e) { sqlite.exec("ROLLBACK"); throw e; } return out; },
   };
 }
 

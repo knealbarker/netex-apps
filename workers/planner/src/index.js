@@ -7,6 +7,7 @@ import { allSettings, saveGroup, saveProduction, saveRuns } from "./settings.js"
 import { listTeam, addPerson, updatePerson, setTrainings } from "./team.js";
 import { importDesktop } from "./import.js";
 import { piecesView } from "./pieces.js";
+import { loadPlan, savePlan, publishPlan, addCallout, removeCallout, publishedPlan } from "./plan.js";
 
 const SECURITY_HEADERS = {
   "x-content-type-options": "nosniff",
@@ -42,6 +43,12 @@ const routes = [
   ["PUT", /^\/api\/team\/([0-9A-Z]{26})\/trainings$/, async (req, env, me, m) => json(await setTrainings(env.DB, env, me, m[1], (await readJson(req)).trainings))],
   ["POST", /^\/api\/import\/desktop$/, async (req, env, me) => json(await importDesktop(env.DB, env, me, await readJson(req)))],
   ["GET", /^\/api\/pieces$/, async (req, env) => json(await piecesView(env.DB, env))],
+  ["GET", /^\/api\/plan\/(\d{4}-\d{2}-\d{2})$/, async (req, env, me, m) => json(await loadPlan(env.DB, env, m[1]))],
+  ["PUT", /^\/api\/plan\/(\d{4}-\d{2}-\d{2})$/, async (req, env, me, m) => json(await savePlan(env.DB, env, me, m[1], await readJson(req)))],
+  ["POST", /^\/api\/plan\/(\d{4}-\d{2}-\d{2})\/publish$/, async (req, env, me, m) => json(await publishPlan(env.DB, env, me, m[1], await readJson(req)))],
+  ["POST", /^\/api\/plan\/(\d{4}-\d{2}-\d{2})\/callouts$/, async (req, env, me, m) => json(await addCallout(env.DB, env, me, m[1], await readJson(req)), 201)],
+  ["DELETE", /^\/api\/plan\/(\d{4}-\d{2}-\d{2})\/callouts\/([0-9A-Z]{26})$/, async (req, env, me, m) => json(await removeCallout(env.DB, env, me, m[1], m[2]))],
+  ["GET", /^\/api\/floor\/(\d{4}-\d{2}-\d{2})$/, async (req, env, me, m) => json({ published: await publishedPlan(env.DB, env, m[1]) })],
   ["GET", /^\/api\/system$/, async (req, env) => {
     const db = env.DB;
     const s = await db.prepare("SELECT value_json FROM core_settings WHERE org_id=? AND app_id='core' AND key='smrt_backfill'").bind(env.ORG_ID).first();
