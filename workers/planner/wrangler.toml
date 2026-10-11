@@ -1,0 +1,33 @@
+name = "netex-prodplanner"
+main = "src/index.js"
+compatibility_date = "2026-09-01"
+account_id = "61c6ba95bfea0222857214634869b20a"
+workers_dev = false    # only reachable at prodplanner.netexcleaners.com, behind Cloudflare Access
+preview_urls = false
+
+routes = [{ pattern = "prodplanner.netexcleaners.com", custom_domain = true }]
+
+[assets]
+directory = "./public"
+binding = "ASSETS"
+run_worker_first = true   # the Worker checks the sign-in before any file is served
+
+[[d1_databases]]
+binding = "DB"
+database_name = "netex-apps"
+database_id = "1657081e-9193-4636-a12b-88e0f1f86438"
+migrations_dir = "../../db/migrations"
+
+[vars]
+ORG_ID = "tcc"
+APP_ID = "planner"
+ACCOUNT_ID = "61c6ba95bfea0222857214634869b20a"
+TIMEZONE = "America/Chicago"
+# Cloudflare Access: team sign-in domain and the "Netex apps" application's audience tag (not secret)
+TEAM_DOMAIN = "https://netexcleaners.cloudflareaccess.com"
+ACCESS_AUD = "c8867e4f1d945bfb7fc6b393e7f40f0c3bb050846ca416789136186e32e5de57"
+# Access rule group "Netex users"; the user list keeps it in step when the CF_API_TOKEN secret is set
+ACCESS_GROUP_ID = "2c00c66c-8c20-44bd-95b1-07639add45ab"
+
+# Secrets (set in the Cloudflare dashboard: Workers > netex-prodplanner > Settings > Variables and Secrets). Never in GitHub.
+#   CF_API_TOKEN  - optional; lets the user list add/remove people in the "Netex users" Access group
