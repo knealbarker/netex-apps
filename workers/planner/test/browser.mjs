@@ -5,6 +5,8 @@ import { mkdirSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { freshDb, fakeAccess, makeEnv, serve } from "./harness.mjs";
+import { ingestDay } from "../../sync/src/ingest.js";
+import { nextWorkDay, localNow, addDays } from "../src/pieces.js";
 
 const require = createRequire(import.meta.url);
 let chromium;
@@ -247,6 +249,26 @@ await t("phone: team grid scrolls inside its card, settings stack", async () => 
   await q.goto(url + "/#/settings"); await q.waitForSelector("#sec-runs");
   ok(!(await q.evaluate(() => document.documentElement.scrollWidth > window.innerWidth)), "no sideways scroll on settings");
   await q.screenshot({ path: join(SHOTS, "12-settings-phone.png"), fullPage: true });
+});
+await t("Plan: pieces for the next work day, by store, with a late list", async () => {
+  // a few orders due on the next work day and one overdue, through the same ingest live SMRT data uses
+  const today = localNow("America/Chicago").day, next = nextWorkDay(today, [1, 2, 3, 4, 5]);
+  const ts = (d, hm = "10:00") => `${d}T${hm}:00-05:00`;
+  const orders = [], items = []; let k = 0;
+  const add = (store, due, deps) => { const id = `2699${String(++k).padStart(5, "0")}`;
+    orders.push({ "ID": id, "Status": "processing", "Due date": due, "Created": ts(addDays(today, -3)), "Piece Count": String(deps.length), "Return Location": `TCC ${store}`, "Customer Id": "c1" });
+    deps.forEach((d, i) => items.push({ "Sale Id": id, "Barcode": `${id}${i}`, "Item Status": "detailed", "Financial department": d, "Item Type": "Shirt", "Created": ts(addDays(today, -3)) })); };
+  for (let i = 0; i < 12; i++) add("Quitman", ts(next, "12:00"), ["Dry Cleaning Tops", "Laundry Tops", "Laundry Tops"]);
+  for (let i = 0; i < 8; i++) add("Sulphur Springs", ts(next, "16:00"), ["Laundry Bottoms", "Dry Cleaning Bottoms"]);
+  add("Emory", ts(addDays(today, -4), "13:00"), ["Laundry Bottoms", "Laundry Bottoms"]);
+  await db.prepare("INSERT INTO int_sync_runs(id,integration_id,started_at,finished_at,status,message) VALUES('lv','smrt',?,?,'ok','live: test')").bind(new Date().toISOString(), new Date().toISOString()).run();
+  await ingestDay(db, { orgId: "tcc", runId: "lv", mode: "backfill", day: addDays(today, -3) }, orders, items);
+  await p.goto(url + "/#/plan");
+  await p.waitForSelector(".tiles");
+  const tiles = await p.locator(".tile .t-num").allTextContents();
+  ok(tiles.length === 7, JSON.stringify(tiles));
+  ok(await p.isVisible('.dl-row:has-text("Quitman")'), "Quitman row");
+  await p.screenshot({ path: join(SHOTS, "14-plan.png"), fullPage: true });
 });
 await t("no page errors", async () => { ok(!errors.length, errors.join("\n")); });
 

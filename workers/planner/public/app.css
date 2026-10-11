@@ -223,6 +223,46 @@ div.who-btn { cursor: default; }
 .icon-btn[disabled] { opacity: .3; cursor: default; }
 .tadd { display: flex; flex-wrap: wrap; gap: 6px; }
 
+/* ---------- Plan: pieces ---------- */
+.pill { display: inline-flex; align-items: center; gap: 8px; padding: 6px 12px; border-radius: 999px; background: var(--card); border: 1px solid var(--line2); font-size: 13px; color: var(--muted); white-space: nowrap; }
+.pill i { width: 8px; height: 8px; border-radius: 50%; background: var(--faint); }
+.pill.ok i { background: var(--good); } .pill.warn { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 45%, transparent); } .pill.warn i { background: var(--warn); }
+.seg { display: inline-flex; gap: 4px; padding: 4px; background: var(--bg2); border: 1px solid var(--line); border-radius: 12px; margin-bottom: 16px; }
+.seg button { border: 0; background: none; padding: 7px 14px; border-radius: 9px; font: 600 14px var(--font); color: var(--muted); cursor: pointer; }
+.seg button[aria-selected="true"] { background: var(--card2); color: var(--text); box-shadow: 0 0 0 1px var(--line2); }
+.tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; margin-bottom: 14px; }
+.tile { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: 14px 16px; display: flex; flex-direction: column; gap: 2px; box-shadow: var(--shadow); min-width: 0; }
+.tile.zero { opacity: .55; }
+.tile.total { background: var(--accent-soft); border-color: transparent; }
+.t-label { font-size: 13px; color: var(--muted); font-weight: 600; }
+.t-num { font-size: 30px; font-weight: 800; letter-spacing: -.02em; line-height: 1.1; }
+.t-sub { font-size: 12.5px; color: var(--muted); }
+.t-over { font-size: 12px; color: var(--bad); font-weight: 600; }
+.bar { display: block; height: 6px; border-radius: 999px; background: var(--line); overflow: hidden; margin-top: 6px; }
+.bar i { display: block; height: 100%; background: var(--accent); border-radius: inherit; }
+.note-line { color: var(--muted); font-size: 13px; margin: -4px 0 14px; max-width: 90ch; }
+.muted { color: var(--muted); }
+.set-card + .set-card, .tiles + .set-card, .banner + .set-card, .note-line + .set-card { margin-top: 0; }
+main > .set-card, main > section.card { margin-bottom: 16px; }
+.dl-table { display: flex; flex-direction: column; overflow-x: auto; }
+.dl-row { display: grid; grid-template-columns: minmax(170px, 1.6fr) repeat(7, minmax(64px, 1fr)); gap: 8px; align-items: center; padding: 9px 4px; border-bottom: 1px solid var(--line); min-width: 680px; }
+.dl-row:last-child { border-bottom: 0; }
+.dl-head { font-size: 12px; color: var(--faint); font-weight: 700; text-transform: uppercase; letter-spacing: .04em; }
+.dl-row span:first-child { display: flex; flex-direction: column; }
+.dl-row small { color: var(--muted); font-size: 12px; }
+.num { text-align: right; font-variant-numeric: tabular-nums; }
+.num.dim { color: var(--faint); }
+.count { display: inline-grid; place-items: center; min-width: 24px; height: 22px; padding: 0 7px; border-radius: 999px; background: var(--bad-soft); color: var(--bad); font-size: 12.5px; margin-left: 6px; vertical-align: 2px; }
+.late-list { display: flex; flex-direction: column; }
+.late { padding: 10px 0; border-bottom: 1px solid var(--line); display: grid; gap: 4px; }
+.late:last-child { border-bottom: 0; }
+.l-main { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.l-no { font-weight: 700; font-variant-numeric: tabular-nums; color: var(--info); text-decoration: none; }
+.l-no:hover { text-decoration: underline; }
+.l-meta, .l-where { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 13px; color: var(--muted); }
+.l-where span { background: var(--card2); border-radius: 6px; padding: 1px 8px; color: var(--text); font-size: 12.5px; }
+.next-stage { margin-top: 4px; }
+
 /* ---------- Settings ---------- */
 .settings-layout { display: grid; grid-template-columns: 200px minmax(0, 1fr); gap: 24px; align-items: start; }
 .set-nav { position: sticky; top: 76px; display: flex; flex-direction: column; gap: 2px; }

@@ -54,6 +54,21 @@ export class Smrt {
     return out;
   }
 
+  // every row created in [from, to) (whole days), halving the range whenever SMRT caps the answer
+  async range(id, from, to) {
+    const all = await this.rows(id, from, to);
+    if (all.length < LIMIT) return all;
+    const days = Math.round((Date.parse(to) - Date.parse(from)) / 864e5);
+    if (days <= 1) return this.day(id, from);
+    const mid = addDays(from, Math.floor(days / 2));
+    return [...(await this.range(id, from, mid)), ...(await this.range(id, mid, to))];
+  }
+
+  async rangeObjects(id, from, to) {
+    const cols = await this.columns(id, from);
+    return (await this.range(id, from, to)).map(r => Object.fromEntries(cols.map((c, i) => [c, r[i]])));
+  }
+
   // a report's rows as objects keyed by column name
   async dayObjects(id, day) {
     const cols = await this.columns(id, day);

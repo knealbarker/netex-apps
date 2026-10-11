@@ -6,6 +6,7 @@ import { HttpError, json, readJson } from "./util.js";
 import { allSettings, saveGroup, saveProduction, saveRuns } from "./settings.js";
 import { listTeam, addPerson, updatePerson, setTrainings } from "./team.js";
 import { importDesktop } from "./import.js";
+import { piecesView } from "./pieces.js";
 
 const SECURITY_HEADERS = {
   "x-content-type-options": "nosniff",
@@ -40,6 +41,7 @@ const routes = [
   ["PATCH", /^\/api\/team\/([0-9A-Z]{26})$/, async (req, env, me, m) => json(await updatePerson(env.DB, env, me, m[1], await readJson(req)))],
   ["PUT", /^\/api\/team\/([0-9A-Z]{26})\/trainings$/, async (req, env, me, m) => json(await setTrainings(env.DB, env, me, m[1], (await readJson(req)).trainings))],
   ["POST", /^\/api\/import\/desktop$/, async (req, env, me) => json(await importDesktop(env.DB, env, me, await readJson(req)))],
+  ["GET", /^\/api\/pieces$/, async (req, env) => json(await piecesView(env.DB, env))],
   ["GET", /^\/api\/system$/, async (req, env) => {
     const db = env.DB;
     const s = await db.prepare("SELECT value_json FROM core_settings WHERE org_id=? AND app_id='core' AND key='smrt_backfill'").bind(env.ORG_ID).first();

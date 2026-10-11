@@ -11,7 +11,7 @@ const DONE = new Set(["ready", "complete", "completed", "pickedup", "delivered",
 const CLOSED = new Set(["pickedup", "delivered", "returned", "collected", "closed", "deleted", "disabled", "voided", "void", "cancelled", "canceled"]);
 const VOID = new Set(["deleted", "disabled", "voided", "void", "cancelled", "canceled"]);
 const ASSEMBLED = new Set(["assembled", "racked", "customer"]);
-const CHUNK = 40;            // ids per IN (...) lookup (D1 allows 100 bound values)
+const CHUNK = 90;            // ids per IN (...) lookup (D1 allows 100 bound values)
 const BATCH = 100;           // statements per D1 batch
 const BARCODE_DAYS = 180;    // a barcode seen within this many days is the same piece
 
