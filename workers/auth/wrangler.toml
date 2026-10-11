@@ -1,0 +1,31 @@
+name = "netex-auth"
+main = "src/index.js"
+compatibility_date = "2026-09-01"
+account_id = "61c6ba95bfea0222857214634869b20a"
+workers_dev = false
+preview_urls = false
+
+# auth.netexcleaners.com must NOT be behind Cloudflare Access (it is the sign-in page Access sends people to):
+# a Bypass application for this hostname takes precedence over the *.netexcleaners.com app.
+routes = [{ pattern = "auth.netexcleaners.com", custom_domain = true }]
+
+[[d1_databases]]
+binding = "DB"
+database_name = "netex-apps"
+database_id = "1657081e-9193-4636-a12b-88e0f1f86438"
+migrations_dir = "../../db/migrations"
+
+[triggers]
+crons = ["17 9 * * *"]   # tidy old sign-in state daily
+
+[vars]
+ORG_ID = "tcc"
+ISSUER = "https://auth.netexcleaners.com"
+OIDC_CLIENT_ID = "cloudflare-access"
+# where Cloudflare Access may send people back to (comma-separated)
+REDIRECT_URIS = "https://netexcleaners.cloudflareaccess.com/cdn-cgi/access/callback"
+# Twilio Verify service "Town & Country Cleaners" (an ID, not a secret)
+TWILIO_VERIFY_SID = "VA4935999e6c75445b27078e177ed4a4be"
+
+# Secrets (Workers > netex-auth > Settings > Variables and Secrets). Never in GitHub.
+#   TWILIO_API_KEY_SID, TWILIO_API_KEY_SECRET, OIDC_CLIENT_SECRET

@@ -6,7 +6,7 @@
 //   - The last Owner can't be removed, demoted or turned off.
 // Whoever is active with a role in any app is copied into the Cloudflare Access group "Netex users", so
 // adding someone here is all it takes for them to be able to sign in (once the CF_API_TOKEN secret is set).
-import { HttpError, ulid, nowIso, cleanEmail, cleanName, audit } from "./util.js";
+import { HttpError, ulid, nowIso, cleanEmail, cleanName, cleanPhone, phoneAlias, isPhoneAlias, audit } from "./util.js";
 import { rank, requireRole } from "./auth.js";
 
 const ROLES = ["owner", "admin", "manager", "viewer"];
@@ -14,7 +14,7 @@ const ROLES = ["owner", "admin", "manager", "viewer"];
 export async function listUsers(db, env, me) {
   requireRole(me, "admin");
   const { results } = await db.prepare(`
-    SELECT u.id, u.email, u.display_name AS name, u.status, u.last_seen_at AS lastSeen, u.created_at AS created,
+    SELECT u.id, u.email, u.phone, u.display_name AS name, u.status, u.last_seen_at AS lastSeen, u.created_at AS created,
            r.role_id AS role, p.id AS personId, COALESCE(p.display_name, p.first_name || ' ' || p.last_name) AS personName
       FROM core_users u
       LEFT JOIN core_user_app_roles r ON r.user_id = u.id AND r.app_id = ?
@@ -23,7 +23,7 @@ export async function listUsers(db, env, me) {
     .bind(env.APP_ID, env.ORG_ID).all();
   const order = r => (r ? rank(r) : 0);
   results.sort((a, b) => (a.status === "active" ? 0 : 1) - (b.status === "active" ? 0 : 1) || order(b.role) - order(a.role) || a.name.localeCompare(b.name));
-  return results.map(u => ({ ...u, canEdit: canEdit(me, u) }));
+  return results.map(u => ({ ...u, phoneOnly: isPhoneAlias(u.email), canEdit: canEdit(me, u) }));
 }
 
 function canEdit(me, target) {
@@ -42,32 +42,46 @@ async function ownersLeft(db, env, exceptUserId) {
   return r.n;
 }
 
+/** Email, phone or both. Someone with only a phone gets a stand-in email (their number @phone.netexcleaners.com) that no mail reaches. */
+async function contactFields(db, env, body, current = null) {
+  const hasEmail = body.email !== undefined ? String(body.email ?? "").trim() !== "" : current && !isPhoneAlias(current.email);
+  const phone = body.phone !== undefined ? cleanPhone(body.phone) : current ? current.phone : null;
+  let email = body.email !== undefined && hasEmail ? cleanEmail(body.email) : hasEmail ? current.email : null;
+  if (!email && !phone) throw new HttpError(400, "Enter an email or a mobile number (or both).");
+  if (!email) email = phoneAlias(phone);
+  const exceptId = current ? current.id : "";
+  if (phone && (await db.prepare("SELECT id FROM core_users WHERE org_id=? AND phone=? AND id<>? AND deleted_at IS NULL").bind(env.ORG_ID, phone, exceptId).first()))
+    throw new HttpError(409, "That mobile number is already on someone else's account.");
+  if ((!current || email !== current.email) && (await db.prepare("SELECT id FROM core_users WHERE org_id=? AND lower(email)=? AND id<>? AND deleted_at IS NULL").bind(env.ORG_ID, email, exceptId).first()))
+    throw new HttpError(409, isPhoneAlias(email) ? "That mobile number is already on someone else's account." : "Someone with that email is already on the list.");
+  return { email, phone };
+}
+
 export async function createUser(db, env, me, body) {
   requireRole(me, "admin");
-  const email = cleanEmail(body.email);
   const name = cleanName(body.name);
+  const { email, phone } = await contactFields(db, env, body);
   const role = body.role ?? "viewer";
   checkGrant(me, role);
   const existing = await db.prepare("SELECT id, deleted_at FROM core_users WHERE org_id=? AND lower(email)=?").bind(env.ORG_ID, email).first();
-  if (existing && !existing.deleted_at) throw new HttpError(409, "Someone with that email is already on the list.");
   const id = existing ? existing.id : ulid();
   const now = nowIso();
   const stmts = [];
   if (existing) {
-    stmts.push(db.prepare("UPDATE core_users SET display_name=?, status='active', deleted_at=NULL, updated_at=?, updated_by=?, rev=rev+1 WHERE id=?").bind(name, now, me.id, id));
+    stmts.push(db.prepare("UPDATE core_users SET display_name=?, phone=?, status='active', deleted_at=NULL, updated_at=?, updated_by=?, rev=rev+1 WHERE id=?").bind(name, phone, now, me.id, id));
   } else {
-    stmts.push(db.prepare("INSERT INTO core_users(id, org_id, email, display_name, updated_by) VALUES(?,?,?,?,?)").bind(id, env.ORG_ID, email, name, me.id));
+    stmts.push(db.prepare("INSERT INTO core_users(id, org_id, email, phone, display_name, updated_by) VALUES(?,?,?,?,?,?)").bind(id, env.ORG_ID, email, phone, name, me.id));
   }
   if (role) stmts.push(db.prepare(`INSERT INTO core_user_app_roles(user_id, app_id, role_id, granted_by, granted_at) VALUES(?,?,?,?,?)
      ON CONFLICT(user_id, app_id) DO UPDATE SET role_id=excluded.role_id, granted_by=excluded.granted_by, granted_at=excluded.granted_at`).bind(id, env.APP_ID, role, me.id, now));
   await db.batch(stmts);
-  await audit(db, { orgId: env.ORG_ID, userId: me.id, appId: env.APP_ID, entity: "core_users", entityId: id, action: "create", changes: { email, name, role } });
+  await audit(db, { orgId: env.ORG_ID, userId: me.id, appId: env.APP_ID, entity: "core_users", entityId: id, action: "create", changes: { email, phone, name, role } });
   return { id };
 }
 
 export async function updateUser(db, env, me, id, body) {
   requireRole(me, "admin");
-  const t = await db.prepare(`SELECT u.id, u.email, u.display_name AS name, u.status, r.role_id AS role FROM core_users u
+  const t = await db.prepare(`SELECT u.id, u.email, u.phone, u.display_name AS name, u.status, r.role_id AS role FROM core_users u
       LEFT JOIN core_user_app_roles r ON r.user_id = u.id AND r.app_id = ? WHERE u.id = ? AND u.org_id = ? AND u.deleted_at IS NULL`)
     .bind(env.APP_ID, id, env.ORG_ID).first();
   if (!t) throw new HttpError(404, "That user isn't on the list.");
@@ -76,6 +90,9 @@ export async function updateUser(db, env, me, id, body) {
   const changes = {};
   const name = body.name !== undefined ? cleanName(body.name) : t.name;
   if (name !== t.name) changes.name = [t.name, name];
+  const contact = body.email !== undefined || body.phone !== undefined ? await contactFields(db, env, body, t) : { email: t.email, phone: t.phone };
+  if (contact.email !== t.email) changes.email = [t.email, contact.email];
+  if ((contact.phone || null) !== (t.phone || null)) changes.phone = [t.phone, contact.phone];
   const status = body.status !== undefined ? body.status : t.status;
   if (!["active", "disabled"].includes(status)) throw new HttpError(400, "Status must be active or disabled.");
   if (status !== t.status) changes.status = [t.status, status];
@@ -87,7 +104,7 @@ export async function updateUser(db, env, me, id, body) {
   if (!Object.keys(changes).length) return { id, changed: false };
 
   const now = nowIso();
-  const stmts = [db.prepare("UPDATE core_users SET display_name=?, status=?, updated_at=?, updated_by=?, rev=rev+1 WHERE id=?").bind(name, status, now, me.id, id)];
+  const stmts = [db.prepare("UPDATE core_users SET display_name=?, email=?, phone=?, status=?, updated_at=?, updated_by=?, rev=rev+1 WHERE id=?").bind(name, contact.email, contact.phone, status, now, me.id, id)];
   if ("role" in changes) {
     stmts.push(role
       ? db.prepare(`INSERT INTO core_user_app_roles(user_id, app_id, role_id, granted_by, granted_at) VALUES(?,?,?,?,?)

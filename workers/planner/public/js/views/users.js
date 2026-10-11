@@ -16,6 +16,21 @@ function roleChoices(me, current, { allowNone = true, name = "role" } = {}) {
   </div>`;
 }
 
+export const fmtPhone = p => { const m = /^\+1(\d{3})(\d{3})(\d{4})$/.exec(p || ""); return m ? `(${m[1]}) ${m[2]}-${m[3]}` : p || ""; };
+const contactLine = u => [u.phoneOnly ? "" : u.email, fmtPhone(u.phone)].filter(Boolean).join(" · ");
+const CONTACT_HELP = "Give an email, a mobile number, or both. They sign in with a one-time code sent to either one — by email, or by text to the mobile number.";
+function contactFields(u = null) {
+  return html`<div class="two">
+      <label class="field"><span>Email <em>(optional)</em></span><input class="input" name="email" type="email" autocomplete="off" placeholder="name@example.com" value="${u && !u.phoneOnly ? u.email : ""}"></label>
+      <label class="field"><span>Mobile number <em>(optional)</em></span><input class="input" name="phone" type="tel" inputmode="tel" autocomplete="off" placeholder="(903) 555-0123" value="${u ? fmtPhone(u.phone) : ""}"></label>
+    </div><p class="field-help">${CONTACT_HELP}</p>`;
+}
+function readContact(f) {
+  const email = f.elements.email.value.trim(), phone = f.elements.phone.value.trim();
+  if (!email && !phone) { f.elements.email.setAttribute("aria-invalid", "true"); throw new Error("Enter an email or a mobile number (or both)."); }
+  return { email, phone };
+}
+
 function accessNote(access) {
   if (!access) return;
   if (access.synced) return toast("Sign-in list in Cloudflare updated.");
@@ -35,7 +50,7 @@ export async function render(main, ctx) {
 
   main.innerHTML = html`
     <div class="page-head">
-      <div><h1>Users &amp; access</h1><p>${active} ${active === 1 ? "person" : "people"} can open the planner. People sign in with their email and a one-time code — no passwords.</p></div>
+      <div><h1>Users &amp; access</h1><p>${active} ${active === 1 ? "person" : "people"} can open the planner. People sign in with a one-time code sent to their email or texted to their phone — no passwords.</p></div>
       <button class="btn primary" id="addUser">${raw(PLUS)}Add person</button>
     </div>
     <div class="card list" role="list">
@@ -43,13 +58,13 @@ export async function render(main, ctx) {
       ${users.map(u => raw(html`
         <button class="urow ${u.status === "active" ? "" : "inactive"}" role="listitem" data-id="${u.id}" ${raw(u.canEdit ? "" : "disabled")}
           aria-label="${u.name}, ${u.status === "active" ? roleName(u.role) : "turned off"}${u.canEdit ? ", edit" : ""}">
-          <span class="who"><span class="avatar" aria-hidden="true">${initials(u.name)}</span><div><b>${u.name}${u.id === me.id ? " (you)" : ""}</b><span>${u.email}</span></div></span>
+          <span class="who"><span class="avatar" aria-hidden="true">${initials(u.name)}</span><div><b>${u.name}${u.id === me.id ? " (you)" : ""}</b><span>${contactLine(u)}</span></div></span>
           <span>${u.status === "active" ? raw(html`<span class="chip ${u.role || ""}">${roleName(u.role)}</span>`) : raw('<span class="chip off">Turned off</span>')}</span>
           <span class="seen">${ago(u.lastSeen)}</span>
           ${raw(u.canEdit ? CHEV : "<span></span>")}
         </button>`))}
     </div>
-    ${groupSync ? "" : raw(html`<p class="list-note">${raw(INFO)}<span>Cloudflare isn't linked yet, so after adding someone here also add their email to the “Netex users” group in Cloudflare (Access controls › Policies › Rule groups). Once linked, this list does it for you.</span></p>`)}`;
+    ${groupSync ? "" : raw(html`<p class="list-note">${raw(INFO)}<span>Cloudflare isn't linked yet, so after adding someone here also add their sign-in address to the “Netex users” group in Cloudflare (Access controls › Policies › Rule groups). Once linked, this list does it for you.</span></p>`)}`;
 
   main.querySelector("#addUser").addEventListener("click", () => addDialog(ctx, () => render(main, ctx)));
   main.querySelectorAll(".urow:not([disabled])").forEach(b => b.addEventListener("click", () => {
@@ -64,13 +79,12 @@ function addDialog({ me }, done) {
     submitLabel: "Add person",
     body: html`
       <label class="field"><span>Name</span><input class="input" name="name" autocomplete="off" required maxlength="80" placeholder="e.g. Maria Castillo"></label>
-      <label class="field"><span>Email</span><input class="input" name="email" type="email" autocomplete="off" required placeholder="name@example.com">
-        <small>They'll sign in with this address; a code is emailed to it each time.</small></label>
+      ${raw(contactFields())}
       <div class="field"><span>Role in the planner</span>${raw(roleChoices(me, "viewer", { allowNone: false }))}</div>`,
     onOpen: f => f.elements.name.focus(),
     async onSubmit(f) {
       const role = f.elements.role.value || null;
-      const r = await api("/users", { method: "POST", body: { name: f.elements.name.value, email: f.elements.email.value, role } });
+      const r = await api("/users", { method: "POST", body: { name: f.elements.name.value, ...readContact(f), role } });
       toast(`${f.elements.name.value.trim()} added.`);
       accessNote(r.access);
       done();
@@ -84,12 +98,12 @@ function editDialog({ me }, u, done) {
     title: u.name,
     body: html`
       <label class="field"><span>Name</span><input class="input" name="name" required maxlength="80" value="${u.name}"></label>
-      <div class="field"><span>Email</span><div>${u.email}</div><small>To change an email, turn this person off and add them again with the new address.</small></div>
+      ${raw(contactFields(u))}
       <label class="switch"><div><b>Can sign in</b><small>${self ? "You can't turn yourself off." : "Turn off when someone leaves; their history stays."}</small></div>
         <input type="checkbox" name="active" role="switch" ${raw(u.status === "active" ? "checked" : "")} ${raw(self ? "disabled" : "")}></label>
       <div class="field"><span>Role in the planner</span>${raw(roleChoices(me, u.role))}</div>`,
     async onSubmit(f) {
-      const body = { name: f.elements.name.value, role: f.elements.role.value || null };
+      const body = { name: f.elements.name.value, ...readContact(f), role: f.elements.role.value || null };
       if (!self) body.status = f.elements.active.checked ? "active" : "disabled";
       const r = await api(`/users/${u.id}`, { method: "PATCH", body });
       if (r.changed) { toast("Saved."); accessNote(r.access); done(); }

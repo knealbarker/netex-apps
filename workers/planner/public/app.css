@@ -653,3 +653,4 @@ form.fu { display: grid; grid-template-columns: 190px minmax(0, 1fr) auto auto; 
 form.fu .input { padding: 7px 10px; font-size: 14px; }
 @media (max-width: 980px) { .rv-grid { grid-template-columns: 1fr; } }
 @media (max-width: 640px) { form.fu { grid-template-columns: 1fr 1fr; } form.fu .input { grid-column: 1 / -1; } .day-nav .input { width: auto; flex: 1; } .day-nav { width: 100%; } }
+.field-help { color: var(--muted); font-size: 13px; margin: -6px 0 16px; }

@@ -81,7 +81,7 @@ async function start() {
     ctx.me = user;
     meBtn.textContent = initials(user.name);
     meBtn.setAttribute("aria-label", `Account: ${user.name}`);
-    $("#meName").textContent = user.name; $("#meEmail").textContent = user.email;
+    $("#meName").textContent = user.name; $("#meEmail").textContent = /@phone\.netexcleaners\.com$/.test(user.email) ? "Signs in by text message" : user.email;
     const chip = $("#meRole"); chip.textContent = roleName(user.role); chip.className = `chip ${user.role}`;
     $("#usersLink").hidden = RANK[user.role] < RANK.admin;
   } catch (e) {

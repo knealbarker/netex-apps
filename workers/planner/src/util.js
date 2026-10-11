@@ -29,6 +29,19 @@ export const cleanEmail = v => {
   if (!EMAIL.test(e)) throw new HttpError(400, "Enter a valid email address.");
   return e;
 };
+/** Mobile numbers: US numbers to +1XXXXXXXXXX (same rules as netex-auth); "" or null = no phone. */
+export const PHONE_EMAIL_DOMAIN = "phone.netexcleaners.com";
+export const phoneAlias = phone => `${phone.replace(/\D/g, "")}@${PHONE_EMAIL_DOMAIN}`;
+export const isPhoneAlias = email => String(email || "").toLowerCase().endsWith("@" + PHONE_EMAIL_DOMAIN);
+export const cleanPhone = v => {
+  const s = String(v ?? "").trim();
+  if (!s) return null;
+  const d = s.replace(/\D/g, "");
+  if (s.startsWith("+") && !s.startsWith("+1") && d.length >= 8 && d.length <= 15) return `+${d}`;
+  if (d.length === 10) return `+1${d}`;
+  if (d.length === 11 && d.startsWith("1")) return `+${d}`;
+  throw new HttpError(400, "Enter a 10-digit mobile number, like (903) 555-0123.");
+};
 export const cleanName = (v, what = "Name") => {
   const s = String(v ?? "").trim().replace(/\s+/g, " ");
   if (!s) throw new HttpError(400, `${what} is required.`);
