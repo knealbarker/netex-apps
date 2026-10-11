@@ -11,7 +11,11 @@ export const DEFAULTS = {
   rollup: { Winnsboro: "Sulphur Springs" },  // shown on its own line but counted in this store (Neal, Oct 11)
   hidden: [],                  // SMRT locations that aren't stores (e.g. "Van")
   managersSeeLabor: false,     // Managers/Viewers see labor cost and labor %
-  weekStart: 1,                // 1 = Monday
+  weekStart: 1,                // 1 = Monday; also the overtime work week
+  overtime: true,              // hours past overtimeAfter in a work week cost overtimeMultiplier x
+  overtimeAfter: 40,
+  overtimeMultiplier: 1.5,
+  summary: { enabled: false, to: [], hour: 7, days: [1, 2, 3, 4, 5, 6] },   // daily email: local hour, days of week it goes out (0 = Sunday)
 };
 
 const num = (v, min, max, what) => {
@@ -24,7 +28,19 @@ const name = v => String(v ?? "").trim().replace(/\s+/g, " ").slice(0, 60);
 export async function loadSettings(db, env) {
   const r = await db.prepare("SELECT value_json FROM core_settings WHERE org_id=? AND app_id='retail' AND key='snapshot'").bind(env.ORG_ID).first();
   const s = r ? JSON.parse(r.value_json) : {};
-  return { ...DEFAULTS, ...s, avgRates: { ...DEFAULTS.avgRates, ...(s.avgRates || {}) }, rollup: s.rollup || DEFAULTS.rollup, hidden: s.hidden || [] };
+  return { ...DEFAULTS, ...s, avgRates: { ...DEFAULTS.avgRates, ...(s.avgRates || {}) }, rollup: s.rollup || DEFAULTS.rollup, hidden: s.hidden || [], summary: { ...DEFAULTS.summary, ...(s.summary || {}) } };
+}
+
+const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+function cleanSummary(v = {}) {
+  const to = [...new Set((Array.isArray(v.to) ? v.to : String(v.to || "").split(/[\s,;]+/)).map(e => String(e).trim().toLowerCase()).filter(Boolean))];
+  const bad = to.find(e => !EMAIL.test(e));
+  if (bad) throw new HttpError(400, `“${bad}” isn't an email address.`);
+  if (to.length > 10) throw new HttpError(400, "Send the summary to 10 people at most.");
+  const hour = Math.round(num(v.hour ?? 7, 0, 23, "Send time"));
+  const days = [...new Set((Array.isArray(v.days) ? v.days : [1, 2, 3, 4, 5, 6]).map(Number).filter(d => d >= 0 && d <= 6))].sort();
+  if (v.enabled && !to.length) throw new HttpError(400, "Add at least one email address for the daily summary.");
+  return { enabled: !!v.enabled, to, hour, days };
 }
 
 export function cleanSettings(b) {
@@ -36,6 +52,10 @@ export function cleanSettings(b) {
     avgRates: {}, rollup: {}, hidden: [],
     managersSeeLabor: !!b.managersSeeLabor,
     weekStart: [0, 1].includes(+b.weekStart) ? +b.weekStart : 1,
+    overtime: b.overtime === undefined ? true : !!b.overtime,
+    overtimeAfter: num(b.overtimeAfter ?? 40, 0, 80, "Overtime after"),
+    overtimeMultiplier: num(b.overtimeMultiplier ?? 1.5, 1, 3, "Overtime rate"),
+    summary: cleanSummary(b.summary),
   };
   for (const [k, v] of Object.entries(b.avgRates || {})) { const n = name(k); if (n) out.avgRates[n] = num(v, 0, 200, `Hourly rate for ${n}`); }
   for (const [k, v] of Object.entries(b.rollup || {})) { const a = name(k), t = name(v); if (a && t && a !== t) out.rollup[a] = t; }

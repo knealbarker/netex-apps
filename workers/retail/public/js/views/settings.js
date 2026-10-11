@@ -52,6 +52,28 @@ export async function render(main, ctx) {
       </section>
 
       <section class="card set-card">
+        <h2>Overtime</h2>
+        <label class="switch"><div><b>Cost overtime</b><small>Hours past the limit in a person's work week (all stores together) cost more. The work week starts on the day above.</small></div><input type="checkbox" name="overtime" ${raw(s.overtime ? "checked" : "")}></label>
+        <div class="two">
+          <label class="field"><span>Overtime after</span><div class="suffix"><input class="input" name="overtimeAfter" inputmode="decimal" value="${s.overtimeAfter}"><i>h / week</i></div></label>
+          <label class="field"><span>Overtime rate</span><div class="suffix"><input class="input" name="overtimeMultiplier" inputmode="decimal" value="${s.overtimeMultiplier}"><i>× pay</i></div></label>
+        </div>
+      </section>
+
+      <section class="card set-card">
+        <h2>Daily summary email</h2>
+        <label class="switch"><div><b>Send the daily summary</b><small>Yesterday by store, with week-to-date and month-to-date. Always includes labor $ and labor %.</small></div><input type="checkbox" name="sumOn" ${raw(s.summary.enabled ? "checked" : "")}></label>
+        <label class="field"><span>Send to</span><input class="input" name="sumTo" placeholder="neal@towncountryclean.com, manager@example.com" value="${s.summary.to.join(", ")}">
+          <small>Each address has to be verified once in Cloudflare › Email Routing › Destination addresses (Cloudflare emails them a link).</small></label>
+        <div class="two">
+          <label class="field"><span>Send at</span><select class="input" name="sumHour">${Array.from({ length: 24 }, (_, h) => raw(html`<option value="${h}" ${raw(h === s.summary.hour ? "selected" : "")}>${h === 0 ? "12 am" : h < 12 ? `${h} am` : h === 12 ? "12 pm" : `${h - 12} pm`}</option>`))}</select><small>Central time</small></label>
+          <fieldset class="field days"><span>On</span><div>${["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"].map((d, i) => raw(html`<label class="daychip"><input type="checkbox" name="sumDay" value="${i}" ${raw(s.summary.days.includes(i) ? "checked" : "")}><b>${d}</b></label>`))}</div></fieldset>
+        </div>
+        <div class="sum-actions"><a class="btn small" href="/api/summary/preview" target="_blank" rel="noopener">Preview yesterday's email</a><button class="btn small" type="button" id="testSend">Send a test now</button></div>
+        <p class="muted" id="testMsg" aria-live="polite"></p>
+      </section>
+
+      <section class="card set-card">
         <h2>Who sees labor cost</h2>
         <label class="switch"><div><b>Managers and Viewers see labor $ and labor %</b><small>Admins and the Owner always do. Nobody sees individual pay rates here.</small></div><input type="checkbox" name="managersSeeLabor" ${raw(s.managersSeeLabor ? "checked" : "")}></label>
       </section>
@@ -69,7 +91,9 @@ export async function render(main, ctx) {
   f.addEventListener("submit", async e => {
     e.preventDefault();
     const el = f.elements, body = { targetRetail: el.targetRetail.value, targetPlant: el.targetPlant.value, burdenPct: el.burdenPct.value, defaultRate: el.defaultRate.value,
-      weekStart: el.weekStart.value, managersSeeLabor: el.managersSeeLabor.checked, avgRates: {}, rollup: {}, hidden: [] };
+      weekStart: el.weekStart.value, managersSeeLabor: el.managersSeeLabor.checked, avgRates: {}, rollup: {}, hidden: [],
+      overtime: el.overtime.checked, overtimeAfter: el.overtimeAfter.value, overtimeMultiplier: el.overtimeMultiplier.value,
+      summary: { enabled: el.sumOn.checked, to: el.sumTo.value, hour: +el.sumHour.value, days: [...f.querySelectorAll("[name=sumDay]:checked")].map(i => +i.value) } };
     for (const i of f.querySelectorAll("[name^='rate:']")) body.avgRates[i.name.slice(5)] = i.value;
     for (const i of f.querySelectorAll("[name^='roll:']")) if (i.value) body.rollup[i.name.slice(5)] = i.value;
     for (const i of f.querySelectorAll("[name^='hide:']")) if (i.checked) body.hidden.push(i.name.slice(5));
@@ -77,6 +101,13 @@ export async function render(main, ctx) {
     try { await api("/settings", { method: "PUT", body }); toast("Settings saved."); }
     catch (x) { toast(x.message, "bad", 7000); }
     finally { btn.disabled = false; }
+  });
+
+  main.querySelector("#testSend").addEventListener("click", async e => {
+    const msg = main.querySelector("#testMsg"); e.target.disabled = true; msg.textContent = "Sending… (uses the saved list; save first if you changed it)";
+    try { const r = await api("/summary/test", { method: "POST", body: {} }); msg.textContent = `Sent to ${r.sent.join(", ")}.${r.failed.length ? ` Not sent: ${r.failed.map(x => x.to).join(", ")}.` : ""}`; }
+    catch (x) { msg.textContent = x.message; }
+    finally { e.target.disabled = false; }
   });
 
   const load = main.querySelector("#load");

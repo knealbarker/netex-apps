@@ -24,10 +24,18 @@ Users & access (Admins and the Owner) is the same screen and code as the planner
   Finished days from `labor_daily_hours`; today from today's punches.
 - **Labor $**: hours × the person's pay rate (`labor_pay_rates`, read from a pay-rate column in the Rippling report once it has one),
   or the department's average rate (Settings) until then, plus the payroll burden %.
+- **Overtime**: hours past 40 in a person's work week (all locations together, week starts on Settings' day) cost 1.5×;
+  the overtime falls on the week's last days. A range starting mid-week still counts that week's earlier days. Settings can change or turn it off.
 - **Labor %**: labor $ ÷ revenue for the same days. Store target 17%. Workshop + Laundry Hub are shown against company revenue.
 - **Winnsboro** has no staff; Settings › Stores rolls it into Sulphur Springs (its own line, counted in SS's totals).
 - Deleted orders are left out. Each range is compared with the same number of days just before it.
-- Not yet: overtime premium (hours are costed at straight time), ADP history before Rippling.
+- Not yet: ADP history before Rippling.
+
+## Daily summary email
+Settings › Daily summary email: on/off, recipients, hour (Central) and days. The Worker's hourly cron (:05) sends yesterday's
+store table plus week-to-date and month-to-date once a day, from reports@netexcleaners.com through the `SEND_EMAIL`
+binding (Cloudflare Email Routing). **Every recipient must be verified once** under Email Routing › Destination addresses.
+Settings has "Preview yesterday's email" and "Send a test now" (to the saved list, or to you if it's empty).
 
 ## Data it relies on (netex-sync)
 - Rippling: every department and work location is stored (migration 0007; before, only Production was kept).

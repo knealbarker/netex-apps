@@ -7,6 +7,15 @@ preview_urls = false
 
 routes = [{ pattern = "retailview.netexcleaners.com", custom_domain = true }]
 
+# hourly at :05; the summary email itself goes out at the hour set in Settings (Central time)
+[triggers]
+crons = ["5 * * * *"]
+
+# Daily summary email through Cloudflare Email Routing (sender: reports@netexcleaners.com).
+# Recipients must be verified under Email Routing > Destination addresses.
+[[send_email]]
+name = "SEND_EMAIL"
+
 [assets]
 directory = "./public"
 binding = "ASSETS"

@@ -2,7 +2,8 @@
 import { freshDb, fakeAccess, makeEnv } from "./harness.mjs";
 import { handle } from "../src/index.js";
 import { seed } from "./seed.mjs";
-import { addDays } from "../src/snapshot.js";
+import { addDays, markOvertime, weekStartOf } from "../src/snapshot.js";
+import { buildSummary, scheduledSummary, mime } from "../src/summary.js";
 
 let pass = 0, fail = 0;
 const t = async (name, fn) => { try { await fn(); pass++; console.log("  ok  " + name); } catch (e) { fail++; console.log("  FAIL " + name + "\n       " + (e.stack || e).split("\n").slice(0, 3).join("\n       ")); } };
@@ -18,11 +19,12 @@ const NOW = "2026-10-10T12:00:00-05:00";   // Sam clocked in at 8 am -> 4 h so f
 const { db, sqlite } = freshDb();
 const env = makeEnv(db, { NOW });
 const seeded = await seed(db, { last: LAST, days: 7, today: TODAY });
+let fakeSend = null;
 const call = async (method, path, { as = NEAL, body } = {}) => {
   const headers = new Headers();
   if (as) headers.set("cf-access-jwt-assertion", await A.token({ email: as }));
   if (body) headers.set("content-type", "application/json");
-  const r = await handle(new Request(`https://retailview.netexcleaners.com${path}`, { method, headers, body: body ? JSON.stringify(body) : undefined }), env, { fetchImpl: A.fetchImpl });
+  const r = await handle(new Request(`https://retailview.netexcleaners.com${path}`, { method, headers, body: body ? JSON.stringify(body) : undefined }), env, { fetchImpl: A.fetchImpl, send: fakeSend });
   const type = r.headers.get("content-type") || "";
   return { status: r.status, body: type.includes("json") ? await r.json() : await r.text() };
 };
@@ -172,6 +174,78 @@ await t("Users & access works per app: roles here are for the Retail Snapshot", 
   const r = await call("GET", "/api/users"); eq(r.status, 200);
   eq(r.body.users.find(u => u.email === "pm@x.com").role, null);
   eq((await call("GET", "/api/users", { as: "mgr@x.com" })).status, 403);
+});
+
+console.log("overtime");
+await t("hours past 40 in a work week fall on the last days, across stores", async () => {
+  const rows = [["2026-10-05", 10, "A"], ["2026-10-06", 10, "A"], ["2026-10-07", 10, "B"], ["2026-10-08", 8, "A"], ["2026-10-09", 6, "B"], ["2026-10-12", 9, "A"]]
+    .map(([day, hours, loc]) => ({ pid: "p1", day, hours, loc }));
+  markOvertime(rows, { weekStart: 1, after: 40 });
+  eq(rows.map(r => r.otHours), [0, 0, 0, 0, 4, 0]);
+  eq(weekStartOf("2026-10-11", 1), "2026-10-05"); eq(weekStartOf("2026-10-11", 0), "2026-10-11");
+});
+await t("a range starting mid-week still counts the week's earlier days", async () => {
+  const { db: odb } = freshDb(); const oenv = makeEnv(odb, { NOW });
+  await seed(odb, { last: LAST, days: 14, today: TODAY });          // everyone works 7 days x 8 h = 56 h a week
+  const call2 = async q => (await handle(new Request(`https://retailview.netexcleaners.com/api/snapshot?${q}`, { headers: { "cf-access-jwt-assertion": await A.token({ email: NEAL }) } }), oenv, { fetchImpl: A.fetchImpl })).json();
+  // Fri Oct 9 alone: Sam already has 32 h Mon-Thu, so Fri's 8 h are straight time (40); week of Sep 28: Sat+Sun past 40
+  const fri = await call2("from=2026-10-09&to=2026-10-09");
+  eq(fri.stores.find(x => x.name === "Sulphur Springs").otHours, 0);
+  const sun = await call2("from=2026-10-04&to=2026-10-04");
+  const ss = sun.stores.find(x => x.name === "Sulphur Springs");
+  eq(ss.otHours, 16);                                               // Sam and Jo: Sunday is hours 49-56 of their week
+  near(ss.cost, 16 * 15 * 1.5);
+  eq(sun.overtime, { after: 40, multiplier: 1.5 });
+  const week = await call2("from=2026-09-28&to=2026-10-04");
+  near(week.stores.find(x => x.name === "Emory").otHours, 2);       // 7 x 6 h = 42
+});
+await t("overtime can be turned off", async () => {
+  const cur = (await call("GET", "/api/settings")).body.settings;
+  await call("PUT", "/api/settings", { body: { ...cur, overtime: false } });
+  const d = (await call("GET", `/api/snapshot?from=${FROM}&to=${LAST}`)).body;
+  eq(d.overtime, null); eq(d.totals.retail.otHours, 0);
+  await call("PUT", "/api/settings", { body: cur });
+});
+
+console.log("daily summary email");
+await t("summary: yesterday by store, week and month to date, labor flagged", async () => {
+  const m = await buildSummary(db, env, LAST, { now: Date.parse(NOW) });
+  ok(/Retail snapshot · Fri, Oct 9/.test(m.subject), m.subject);
+  for (const x of ["Sulphur Springs", "Emory", "Greenville", "Quitman", "Workshop", "Week to date", "Month to date", "incl. Winnsboro"]) ok(m.html.includes(x), x);
+  ok(/Store labor/.test(m.text) && /Week to date/.test(m.text));
+});
+await t("MIME: subject encoded, both parts decode back", async () => {
+  const raw = mime({ from: "reports@netexcleaners.com", to: "a@b.com", subject: "Snapshot · Fri", html: "<p>héllo</p>", text: "héllo" });
+  ok(/Subject: =\?UTF-8\?B\?/.test(raw)); ok(/multipart\/alternative/.test(raw));
+  const parts = raw.split(/\r\n\r\n/).slice(1);
+  ok(parts.some(p => { try { return new TextDecoder().decode(Uint8Array.from(atob(p.split("\r\n--")[0].replace(/\r\n/g, "")), c => c.charCodeAt(0))) === "héllo"; } catch { return false; } }));
+});
+await t("scheduled: off until turned on; sends once at the hour on a send day", async () => {
+  const sent = []; const send = async (from, to, raw) => sent.push({ from, to, raw });
+  const at = h => Date.parse(`2026-10-10T${String(h).padStart(2, "0")}:30:00-05:00`);   // Saturday
+  eq((await scheduledSummary(env, { now: at(9), send })).status, "off");
+  const cur = (await call("GET", "/api/settings")).body.settings;
+  eq((await call("PUT", "/api/settings", { body: { ...cur, summary: { enabled: true, to: [], hour: 7, days: [6] } } })).status, 400);
+  await call("PUT", "/api/settings", { body: { ...cur, summary: { enabled: true, to: "neal@towncountryclean.com, mgr@x.com", hour: 7, days: [6] } } });
+  eq((await scheduledSummary(env, { now: at(6), send })).status, "not yet");
+  const r = await scheduledSummary(env, { now: at(7), send });
+  eq(r.status, "sent"); eq(r.for, "2026-10-09"); eq(sent.length, 2); eq(sent[0].from, "reports@netexcleaners.com");
+  eq((await scheduledSummary(env, { now: at(8), send })).status, "already sent"); eq(sent.length, 2);
+  eq((await scheduledSummary(env, { now: Date.parse("2026-10-11T08:00:00-05:00"), send })).status, "not a send day");
+  await call("PUT", "/api/settings", { body: cur });
+});
+await t("test send and preview: Admins only; a failed address says what to do", async () => {
+  eq((await call("POST", "/api/summary/test", { as: "mgr@x.com", body: {} })).status, 403);
+  fakeSend = async () => { throw new Error("destination address not verified"); };
+  const bad = await call("POST", "/api/summary/test", { body: {} });
+  eq(bad.status, 502); ok(/Destination addresses/.test(bad.body.error));
+  const got = []; fakeSend = async (f, to) => got.push(to);
+  const good = await call("POST", "/api/summary/test", { body: {} });
+  eq(good.status, 200); eq(got, [NEAL]);
+  fakeSend = null;
+  const pv = await call("GET", `/api/summary/preview?day=${LAST}`);
+  eq(pv.status, 200); ok(String(pv.body).includes("Month to date"));
+  eq((await call("GET", `/api/summary/preview?day=${LAST}`, { as: "mgr@x.com" })).status, 403);
 });
 
 console.log(`\n${pass} passed, ${fail} failed`);

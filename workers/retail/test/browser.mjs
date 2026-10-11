@@ -82,6 +82,25 @@ await t("Settings: targets, rates, stores and the Rippling import (Owner)", asyn
   await p.waitForSelector(".toast");
   await p.screenshot({ path: join(SHOTS, "4-settings.png"), fullPage: true });
 });
+await t("Settings: overtime and daily summary controls; email preview renders", async () => {
+  ok(await p.isChecked('input[name="overtime"]'));
+  await p.check('input[name="sumOn"]'); await p.fill('input[name="sumTo"]', "neal@towncountryclean.com");
+  await p.click('#f [type="submit"]');
+  await p.waitForFunction(() => [...document.querySelectorAll(".toast")].some(t => /saved/i.test(t.textContent)));
+  await p.locator(".set-card").filter({ hasText: "Daily summary" }).screenshot({ path: join(SHOTS, "8-summary-settings.png") });
+  const pv = await page({ width: 760, height: 900 }, "light");
+  await pv.goto(url + "/api/summary/preview?day=2026-10-09");
+  ok((await pv.textContent("h1")).includes("October 9"));
+  await pv.screenshot({ path: join(SHOTS, "9-email.png"), fullPage: true });
+});
+await t("overtime shows in the store table and hours grid (30 days of 7-day weeks)", async () => {
+  await p.goto(url + "/#/snapshot?p=last7");
+  await p.waitForSelector(".stable .srow.grand");
+  ok(await p.locator(".stable .ot").count() > 0);
+  await p.goto(url + "/#/hours?p=lastweek");
+  await p.waitForSelector(".hgrid");
+  ok(await p.locator(".hgrid .ot").count() > 0);
+});
 const light = await page({ width: 1360, height: 900 }, "light");
 await t("light theme", async () => {
   await light.goto(url + "/#/snapshot?p=last7");

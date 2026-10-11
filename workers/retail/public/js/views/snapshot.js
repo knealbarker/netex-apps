@@ -193,7 +193,7 @@ function renderSnapshot(body, d, st) {
     { label: "Sales", num: $f(C.sales), sub: html`${intTxt(C.orders)} orders detailed · ${raw(delta(C.sales, C.prev?.sales))}`, tip: "Pre-tax value of orders detailed in this range" },
     { label: "Revenue", num: $f(C.revenue), sub: html`paid in this range · ${raw(delta(C.revenue, C.prev?.revenue))}`, tip: "Pre-tax value of orders paid in this range" },
     { label: "Sales collected", num: pctTxt(C.collectedPct), sub: html`${$f(C.collected)} of this range's sales is paid`, tip: "Of the sales detailed in this range, how much has been paid so far" },
-    { label: "Store hours", num: hrs(R.hours), sub: html`${R.salesPerHour != null ? `${$f(R.salesPerHour)} sales per hour` : "no hours yet"} · ${raw(delta(R.hours, R.prev?.hours, { lowerIsBetter: true }))}` },
+    { label: "Store hours", num: hrs(R.hours), sub: html`${R.salesPerHour != null ? `${$f(R.salesPerHour)} sales per hour` : "no hours yet"}${R.otHours ? ` · ${hrs(R.otHours)} overtime` : ""} · ${raw(delta(R.hours, R.prev?.hours, { lowerIsBetter: true }))}` },
   ];
   if (d.labor) {
     tiles.push({ label: "Store labor %", num: raw(laborBadge(R.laborPct, tr)), sub: html`${$f(R.cost)} store labor · target ${tr}% · ${raw(delta(R.laborPct, R.prev?.laborPct, { kind: "pct", lowerIsBetter: true }))}`, big: true });
@@ -208,7 +208,7 @@ function renderSnapshot(body, d, st) {
       <span role="cell">${plant ? "" : $f(l.sales)}</span>
       <span role="cell">${plant ? "" : $f(l.revenue)}</span>
       <span role="cell">${plant ? "" : pctTxt(l.collectedPct)}</span>
-      <span role="cell">${hrs(l.hours)}</span>
+      <span role="cell">${hrs(l.hours)}${d.overtime && l.otHours ? raw(html`<small class="ot" title="${hrs(l.otHours)} overtime hours, costed at ${d.overtime.multiplier}×">${hrs(l.otHours)} OT</small>`) : ""}</span>
       <span role="cell">${plant ? "" : $f(l.salesPerHour)}</span>
       ${d.labor ? raw(html`<span role="cell">${$f(l.cost)}${l.estPct ? raw(html` <small class="est" title="${l.estPct}% of these hours use an average rate">est</small>`) : ""}</span>
         <span role="cell">${plant ? raw(html`<span class="lp plain" title="of company revenue">${pctTxt(l.laborPct)}</span>`) : sub && !l.hours ? raw(html`<span class="lp none" title="Its labor is counted in the store it rolls into">—</span>`) : raw(laborBadge(l.laborPct, base))}</span>`) : ""}
@@ -234,7 +234,7 @@ function renderSnapshot(body, d, st) {
       ${d.plants.map(p => raw(row(p, { plant: true, cls: "plant" })))}
       ${raw(row({ ...C, name: "Company" }, { cls: "total grand" }))}
     </section>
-    <p class="note-line">Sales count when an order is detailed; revenue when it's paid. Both are before tax and go to the store the order was detailed into. Workshop and Laundry Hub labor % is of company revenue.${d.labor && d.burdenPct ? ` Labor $ includes ${d.burdenPct}% payroll burden.` : ""}</p>
+    <p class="note-line">Sales count when an order is detailed; revenue when it's paid. Both are before tax and go to the store the order was detailed into. Workshop and Laundry Hub labor % is of company revenue.${d.overtime ? ` Hours over ${d.overtime.after} in a work week cost ${d.overtime.multiplier}×.` : ""}${d.labor && d.burdenPct ? ` Labor $ includes ${d.burdenPct}% payroll burden.` : ""}</p>
 
     <section class="card daily">
       <div class="daily-head">
@@ -292,7 +292,7 @@ function renderHours(body, d, st) {
           <div class="hrow head" role="row"><span role="columnheader">Person</span>${many ? "" : raw(days.map(dd => html`<span role="columnheader" class="${dd === d.today ? "is-today" : ""}">${wk(dd).slice(0, 2)}<br>${nice(dd).replace(/^\w+ /, "")}</span>`).join(""))}<span role="columnheader">Total</span></div>
           ${ps.map(p => raw(html`<div class="hrow" role="row"><span role="cell" class="nm">${p.name}${p.live ? raw(" <i class='live' title='On the clock now'></i>") : ""}<small>${p.depts.join(", ")}</small></span>
             ${many ? "" : raw(days.map(dd => `<span role="cell" class="${p.days[dd] ? "" : "zero"} ${dd === d.today ? "is-today" : ""}">${p.days[dd] ? hrs(p.days[dd]) : "·"}</span>`).join(""))}
-            <span role="cell" class="tot">${hrs(p.hours)}</span></div>`))}
+            <span role="cell" class="tot">${hrs(p.hours)}${p.otHours ? raw(html`<small class="ot">${hrs(p.otHours)} OT</small>`) : ""}</span></div>`))}
           <div class="hrow total" role="row"><span role="cell">Total</span>${many ? "" : raw(dayTot.map((v, i) => `<span role="cell" class="${days[i] === d.today ? "is-today" : ""}">${v ? hrs(v) : "·"}</span>`).join(""))}<span role="cell" class="tot">${hrs(dayTot.reduce((a, b) => a + b, 0))}</span></div>
         </div></section>`);
     }) : raw(html`<div class="card empty"><h2>No hours in this range</h2><p>Hours come from Rippling's time clock report.</p></div>`)}

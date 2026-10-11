@@ -5,7 +5,8 @@ import { currentUser, verifyAccessJwt, requireRole } from "../../planner/src/aut
 import { listUsers, createUser, updateUser, syncAccessGroup } from "../../planner/src/users.js";
 import { HttpError, json, readJson, audit } from "../../planner/src/util.js";
 import { ingestRippling } from "../../sync/src/rippling.js";
-import { snapshot, localToday } from "./snapshot.js";
+import { snapshot, localToday, addDays } from "./snapshot.js";
+import { buildSummary, deliver, scheduledSummary } from "./summary.js";
 import { loadSettings, saveSettings, settingsContext } from "./settings.js";
 
 const SECURITY_HEADERS = {
@@ -46,6 +47,24 @@ const routes = [
     await audit(env.DB, { orgId: env.ORG_ID, userId: me.id, appId: env.APP_ID, entity: "labor_daily_hours", entityId: "rippling-import", action: "create", changes: { rows: res.rows, used: res.used, days: res.days } });
     return json(res);
   }],
+  // Daily summary: preview (any day) and a test send (to the summary list, or to you if the list is empty). Admins and the Owner.
+  ["GET", /^\/api\/summary\/preview$/, async (req, env, me) => {
+    requireRole(me, "admin");
+    const d = new URL(req.url).searchParams.get("day") || addDays(localToday(env.TIMEZONE), -1);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) throw new HttpError(400, "Use a date like 2026-10-12.");
+    const msg = await buildSummary(env.DB, env, d);
+    return new Response(msg.html, { headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" } });
+  }],
+  ["POST", /^\/api\/summary\/test$/, async (req, env, me, m, opts) => {
+    requireRole(me, "admin");
+    const s = await loadSettings(env.DB, env);
+    const to = s.summary.to.length ? s.summary.to : [me.email];
+    const msg = await buildSummary(env.DB, env, addDays(localToday(env.TIMEZONE), -1));
+    let res;
+    try { res = await deliver(env, msg, to, { send: opts.send }); } catch (e) { throw new HttpError(503, String(e.message || e)); }
+    if (!res.sent.length) throw new HttpError(502, `Couldn't send: ${res.failed.map(f => `${f.to} (${f.error})`).join("; ")}. Each address must be verified in Cloudflare › Email Routing › Destination addresses.`);
+    return json(res);
+  }],
   ["GET", /^\/api\/users$/, async (req, env, me) => json({ users: await listUsers(env.DB, env, me), groupSync: Boolean(env.CF_API_TOKEN && env.ACCESS_GROUP_ID) })],
   ["POST", /^\/api\/users$/, async (req, env, me) => {
     const r = await createUser(env.DB, env, me, await readJson(req));
@@ -64,7 +83,7 @@ export async function handle(req, env, opts = {}) {
       const me = await currentUser(req, env, opts);
       for (const [method, re, fn] of routes) {
         const m = url.pathname.match(re);
-        if (m && req.method === method) return await fn(req, env, me, m);
+        if (m && req.method === method) return await fn(req, env, me, m, opts);
       }
       const anyPath = routes.some(([, re]) => re.test(url.pathname));
       throw new HttpError(anyPath ? 405 : 404, anyPath ? "Method not allowed." : "Not found.");
@@ -87,4 +106,9 @@ export async function handle(req, env, opts = {}) {
 
 export default {
   async fetch(req, env) { return withHeaders(await handle(req, env)); },
+  // hourly: the daily summary email goes out at the hour set in Settings
+  async scheduled(event, env, ctx) {
+    try { console.log(JSON.stringify({ job: "retail-summary", ...(await scheduledSummary(env)) })); }
+    catch (e) { console.log(JSON.stringify({ job: "retail-summary", status: "error", error: String(e.message || e) })); }
+  },
 };

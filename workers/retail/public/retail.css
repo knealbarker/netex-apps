@@ -122,3 +122,16 @@
   .loc-row { grid-template-columns: 1fr; }
   .kpis { grid-template-columns: 1fr 1fr; }
 }
+
+/* overtime + summary */
+.ot { display: block; font-size: 11px; font-weight: 700; color: var(--warn); letter-spacing: .02em; }
+.hrow .tot .ot { text-align: right; }
+.days { border: 0; padding: 0; margin: 0 0 16px; }
+.days > span { font-size: 13px; font-weight: 600; color: var(--muted); margin-bottom: 6px; display: block; }
+.days > div { display: flex; gap: 6px; flex-wrap: wrap; }
+.daychip { cursor: pointer; }
+.daychip input { position: absolute; opacity: 0; pointer-events: none; }
+.daychip b { display: inline-grid; place-items: center; width: 38px; height: 34px; border-radius: 9px; border: 1px solid var(--line2); background: var(--bg2); font-size: 13px; color: var(--muted); }
+.daychip input:checked + b { background: var(--accent-soft); border-color: var(--accent); color: var(--text); }
+.daychip input:focus-visible + b { outline: 2px solid var(--info); outline-offset: 2px; }
+.sum-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 6px; }
