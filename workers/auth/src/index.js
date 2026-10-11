@@ -167,15 +167,19 @@ async function safeEqual(a, b) {
 
 async function token(req, env, form) {
   const c = clientAuth(req, form);
-  if (c.id !== env.OIDC_CLIENT_ID || !(await safeEqual(c.secret, env.OIDC_CLIENT_SECRET))) return json({ error: "invalid_client" }, 401);
+  const how = (req.headers.get("authorization") || "").startsWith("Basic ") ? "basic" : form.get("client_secret") ? "post" : "none";
+  if (c.id !== env.OIDC_CLIENT_ID || !(await safeEqual(c.secret, env.OIDC_CLIENT_SECRET))) {
+    console.log(JSON.stringify({ token: "invalid_client", how, clientIdOk: c.id === env.OIDC_CLIENT_ID, secretLen: String(c.secret || "").length, expectedLen: String(env.OIDC_CLIENT_SECRET || "").length }));
+    return json({ error: "invalid_client" }, 401);
+  }
   if (form.get("grant_type") !== "authorization_code") return json({ error: "unsupported_grant_type" }, 400);
   const hash = await sha256(String(form.get("code") || ""));
   const row = await env.DB.prepare("SELECT c.*, r.redirect_uri, r.nonce, r.code_challenge, r.client_id AS rclient FROM auth_codes c JOIN auth_requests r ON r.id=c.request_id WHERE c.code_hash=?").bind(hash).first();
-  if (!row || row.used_at || row.expires_at < iso() || row.rclient !== c.id) return json({ error: "invalid_grant" }, 400);
-  if (form.get("redirect_uri") && form.get("redirect_uri") !== row.redirect_uri) return json({ error: "invalid_grant" }, 400);
+  if (!row || row.used_at || row.expires_at < iso() || row.rclient !== c.id) { console.log(JSON.stringify({ token: "invalid_grant", found: !!row, used: !!row?.used_at })); return json({ error: "invalid_grant" }, 400); }
+  if (form.get("redirect_uri") && form.get("redirect_uri") !== row.redirect_uri) { console.log(JSON.stringify({ token: "redirect_mismatch", got: form.get("redirect_uri") })); return json({ error: "invalid_grant" }, 400); }
   if (row.code_challenge) {
     const v = form.get("code_verifier") || "";
-    if (b64u(await crypto.subtle.digest("SHA-256", enc.encode(v))) !== row.code_challenge) return json({ error: "invalid_grant" }, 400);
+    if (b64u(await crypto.subtle.digest("SHA-256", enc.encode(v))) !== row.code_challenge) { console.log(JSON.stringify({ token: "pkce_mismatch", verifierLen: v.length })); return json({ error: "invalid_grant" }, 400); }
   }
   const used = await env.DB.prepare("UPDATE auth_codes SET used_at=? WHERE code_hash=? AND used_at IS NULL").bind(iso(), hash).run();
   if (!used.meta || used.meta.changes !== 1) return json({ error: "invalid_grant" }, 400);
@@ -215,6 +219,7 @@ function discovery(env) {
 
 export async function handle(req, env, { fetchImpl = fetch } = {}) {
   const u = new URL(req.url), path = u.pathname;
+  if (path === "/token" || path === "/userinfo" || path === "/jwks") console.log(JSON.stringify({ req: req.method + " " + path, ct: req.headers.get("content-type"), ua: (req.headers.get("user-agent") || "").slice(0, 60) }));
   try {
     if (req.method === "GET" && path === "/.well-known/openid-configuration") return discovery(env);
     if (req.method === "GET" && path === "/jwks") { const k = await signingKey(env.DB); return json({ keys: [{ ...JSON.parse(k.public_jwk), kid: k.kid, alg: "RS256", use: "sig" }] }, 200, { "cache-control": "max-age=300" }); }

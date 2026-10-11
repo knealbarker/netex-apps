@@ -15,6 +15,9 @@ database_name = "netex-apps"
 database_id = "1657081e-9193-4636-a12b-88e0f1f86438"
 migrations_dir = "../../db/migrations"
 
+[observability]
+enabled = true   # request logs (no secrets are logged)
+
 [triggers]
 crons = ["17 9 * * *"]   # tidy old sign-in state daily
 
