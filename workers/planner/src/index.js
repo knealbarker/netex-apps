@@ -3,6 +3,9 @@
 import { currentUser, verifyAccessJwt } from "./auth.js";
 import { listUsers, createUser, updateUser, syncAccessGroup } from "./users.js";
 import { HttpError, json, readJson } from "./util.js";
+import { allSettings, saveGroup, saveProduction, saveRuns } from "./settings.js";
+import { listTeam, addPerson, updatePerson, setSkill } from "./team.js";
+import { importDesktop } from "./import.js";
 
 const SECURITY_HEADERS = {
   "x-content-type-options": "nosniff",
@@ -28,6 +31,15 @@ const routes = [
     const r = await updateUser(env.DB, env, me, m[1], await readJson(req));
     return json({ ...r, access: r.changed ? await syncAccessGroup(env.DB, env) : { synced: false, reason: "unchanged" } });
   }],
+  ["GET", /^\/api\/settings$/, async (req, env) => json(await allSettings(env.DB, env))],
+  ["PUT", /^\/api\/settings\/production$/, async (req, env, me) => json(await saveProduction(env.DB, env, me, await readJson(req)))],
+  ["PUT", /^\/api\/settings\/runs$/, async (req, env, me) => json({ runs: await saveRuns(env.DB, env, me, (await readJson(req)).runs) })],
+  ["PUT", /^\/api\/settings\/(\w+)$/, async (req, env, me, m) => json({ [m[1]]: await saveGroup(env.DB, env, me, m[1], await readJson(req)) })],
+  ["GET", /^\/api\/team$/, async (req, env) => json(await listTeam(env.DB, env))],
+  ["POST", /^\/api\/team$/, async (req, env, me) => json(await addPerson(env.DB, env, me, await readJson(req)), 201)],
+  ["PATCH", /^\/api\/team\/([0-9A-Z]{26})$/, async (req, env, me, m) => json(await updatePerson(env.DB, env, me, m[1], await readJson(req)))],
+  ["PUT", /^\/api\/team\/([0-9A-Z]{26})\/skills\/(\w+)$/, async (req, env, me, m) => json(await setSkill(env.DB, env, me, m[1], m[2], (await readJson(req)).rank ?? null))],
+  ["POST", /^\/api\/import\/desktop$/, async (req, env, me) => json(await importDesktop(env.DB, env, me, await readJson(req)))],
   ["GET", /^\/api\/system$/, async (req, env) => {
     const db = env.DB;
     const s = await db.prepare("SELECT value_json FROM core_settings WHERE org_id=? AND app_id='core' AND key='smrt_backfill'").bind(env.ORG_ID).first();

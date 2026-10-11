@@ -3,12 +3,14 @@ import { api } from "./api.js";
 import { html, initials, roleName, RANK, toast } from "./ui.js";
 import * as users from "./views/users.js";
 import * as soon from "./views/soon.js";
+import * as team from "./views/team.js";
+import * as settings from "./views/settings.js";
 
 const $ = s => document.querySelector(s);
 const main = $("#main");
 const VIEWS = {
   plan: m => soon.render(m, ctx, "plan"), floor: m => soon.render(m, ctx, "floor"), review: m => soon.render(m, ctx, "review"),
-  team: m => soon.render(m, ctx, "team"), settings: m => soon.render(m, ctx, "settings"),
+  team: m => team.render(m, ctx), settings: m => settings.render(m, ctx),
   users: m => users.render(m, ctx),
 };
 const TITLES = { plan: "Plan", floor: "Floor", review: "Review", team: "Team", settings: "Settings", users: "Users & access" };

@@ -18,6 +18,9 @@ to that group by hand (Access controls › Policies › Rule groups).
 - `src/index.js` — routes and security headers; every path goes through the sign-in check (`run_worker_first`).
 - `src/auth.js` — Access token check and the signed-in user.
 - `src/users.js` — user list rules and the Access group sync.
+- `src/team.js` — the production team (core_people in Production), usual clock-ins, station rankings (plan_skills).
+- `src/settings.js` — settings groups (core_settings, validated by a schema), speeds, wash programs, stations, shuttle runs.
+- `src/import.js` — Owner-only import of the desktop planner's planner-data.json and Plan History (Settings › Import). Safe to repeat.
 - `public/` — the app (no build step): `index.html`, `app.css` (design tokens, dark and light), `js/app.js` (shell and
   router), `js/views/*` (one file per section).
 
@@ -31,4 +34,5 @@ token with **Account › Access: Organizations, Identity Providers, and Groups �
 
 ## Tests
 - `node workers/planner/test/run.mjs` — sign-in checks, user list rules, group sync (Node's SQLite stands in for D1).
+- `node workers/planner/test/stage2.mjs` — team, settings and the desktop import (`DESKTOP_DIR`/`HISTORY_DIR` add a real-file run).
 - `node workers/planner/test/browser.mjs` — the real pages in headless Chromium through the Worker code; screenshots in `test/shots`.

@@ -128,6 +128,102 @@ await t("light theme renders", async () => {
   ok(bg === "rgb(244, 246, 250)", bg);
   await q.screenshot({ path: join(SHOTS, "8-light.png") });
 });
+// ---------- stage 2: import, team grid, settings ----------
+const DESK = {
+  biz: "Town & Country Cleaners", defStart: "07:00", fullDay: 7.5, breakMin: 30, washOn: true, washers: 3, washSlt: 65, washSlb: 25, washComf: 2, washTc: 10, cycLaundry: 45, cycComf: 60, cycTc: 40,
+  employees: [
+    { id: "a", name: "Ana Uno", start: "05:00", skills: { slt1: true, slb1: 3, dco: 2, asm1: 2 }, rip: "38", ripName: "Ana Uno" },
+    { id: "b", name: "Beto Dos", start: "07:30", skills: { dct1: 1, dct2: 2, dct3: 3, dcb1: 1 }, rip: "40", ripName: "Beto Dos" },
+    { id: "c", name: "Cora Tres", start: "05:35", skills: { slt2: 1, slb1: 1, slb2: 2, asm2: 1 }, rip: "41", ripName: "Cora Tres" },
+  ],
+  price: { dct: 6.79, dcb: 7.53, slt: 3.84, slb: 6.91, comf: 35.7, tc: 14.04 }, payAvg: 13, laborTarget: 17,
+  rates: { slb: 20, sltSolo: 50, sltPair: 80, dct: 25, dcb: 25, tc: 6, asm: 100, comf: 3 },
+  shuttles: { runs: [{ id: "wq", name: "Winnsboro + Quitman", back: 30, stops: [{ store: "Winnsboro", cutoff: "11:00", arrive: "11:30", drive: 30, stay: 15 }, { store: "Quitman", cutoff: "11:30", arrive: "12:00", drive: 15, stay: 15 }] }],
+    counter: { name: "Sulphur Springs store", store: "Sulphur Springs", ready: "16:00", cutoff: "18:00" }, warn: [45, 15] },
+};
+const HIST = { v: 1, day: "2026-09-08", actual: { people: [{ rip: "40", name: "Beto Dos", in: 3.83, out: 12.35, hours: 8.52 }] } };
+await t("Settings › Import: the Owner imports the desktop files", async () => {
+  await p.goto(url + "/#/settings");
+  await p.waitForSelector("#sec-import");
+  await p.setInputFiles('#sec-import input[name="data"]', { name: "planner-data.json", mimeType: "application/json", buffer: Buffer.from(JSON.stringify(DESK)) });
+  await p.setInputFiles('#sec-import input[name="history"]', [{ name: "2026-09-08.json", mimeType: "application/json", buffer: Buffer.from(JSON.stringify(HIST)) }]);
+  await p.click('#sec-import button[type="submit"]');
+  await p.waitForSelector("#sec-import .import-result:not([hidden])");
+  ok(/3 people added/.test(await p.textContent("#sec-import .import-result")), await p.textContent("#sec-import .import-result"));
+});
+await t("Team: grid shows rankings; clicking cycles and saves", async () => {
+  await p.goto(url + "/#/team");
+  await p.waitForSelector(".rank-grid");
+  const cell = '.rk[data-s="dct1"]:not(.r1)';
+  const first = await p.$(`tr:has-text("Ana Uno") .rk[data-s="dct1"]`);
+  ok((await first.textContent()) === "–");
+  await first.click(); await p.waitForTimeout(150);
+  ok((await first.textContent()) === "1st");
+  await p.screenshot({ path: join(SHOTS, "9-team.png") });
+  await p.waitForTimeout(1200);
+  const team = await (await p.request.get(url + "/api/team")).json();
+  ok(team.people.find(x => x.name === "Ana Uno").skills.dct1 === 1, "saved");
+});
+await t("Team: thin coverage banner names stations with fewer than 2 trained", async () => {
+  ok(/Thin coverage/.test(await p.textContent(".banner.warn")));
+});
+await t("Team: add a person through the dialog", async () => {
+  await p.click("#addPerson");
+  await p.fill('dialog input[name="firstName"]', "Dee");
+  await p.fill('dialog input[name="lastName"]', "Cuatro");
+  await p.fill('dialog input[name="usualStart"]', "06:15");
+  await p.click('dialog button[type="submit"]');
+  await p.waitForSelector('tr:has-text("Dee Cuatro")');
+});
+await t("Settings: change a value, Save lights up, value persists", async () => {
+  await p.goto(url + "/#/settings");
+  await p.waitForSelector("#sec-day");
+  ok(await p.isDisabled('#sec-day button[type="submit"]'));
+  await p.fill('#sec-day input[name="fullDay"]', "8");
+  ok(!(await p.isDisabled('#sec-day button[type="submit"]')));
+  await p.click('#sec-day button[type="submit"]');
+  await p.waitForSelector("#sec-day .saved-note.ok");
+  const s = await (await p.request.get(url + "/api/settings")).json();
+  ok(s.groups.day.fullDay === 8);
+  ok((await p.inputValue('#sec-money input[name="prices.comf"]')) === "35.7");
+  await p.screenshot({ path: join(SHOTS, "10-settings.png"), fullPage: true });
+});
+await t("Settings: a bad value shows the server's message on the card", async () => {
+  await p.fill('#sec-day input[name="fullDay"]', "40");
+  await p.click('#sec-day button[type="submit"]');
+  await p.waitForSelector("#sec-day .saved-note.bad");
+  ok(/between/.test(await p.textContent("#sec-day .saved-note")));
+});
+await t("Settings: runs editor adds a stop and saves", async () => {
+  await p.click('#sec-runs .run[data-i="0"] .add-stop');
+  await p.fill('#sec-runs .run[data-i="0"] .stop[data-j="2"] input[name="store"]', "Mineola");
+  await p.fill('#sec-runs .run[data-i="0"] .stop[data-j="2"] input[name="arrive"]', "12:40");
+  await p.click('#sec-runs button[type="submit"]');
+  await p.waitForSelector("#sec-runs .saved-note.ok");
+  const s = await (await p.request.get(url + "/api/settings")).json();
+  ok(s.runs[0].stops.map(x => x.store).join() === "Winnsboro,Quitman,Mineola", JSON.stringify(s.runs[0].stops));
+});
+await t("Settings: a Viewer sees values but can't edit", async () => {
+  who = "maria@example.com";
+  const q = await page();
+  await q.goto(url + "/#/settings");
+  await q.waitForSelector("#sec-day");
+  ok(await q.isDisabled('#sec-day input[name="fullDay"]'));
+  ok(!(await q.$('#sec-day button[type="submit"]')));
+  ok(!(await q.$("#sec-import")));
+  await q.goto(url + "/#/team"); await q.waitForSelector(".rank-grid");
+  ok(await q.isDisabled(".rk[data-p]"));
+  who = "neal@towncountryclean.com";
+});
+await t("phone: team grid scrolls inside its card, settings stack", async () => {
+  const q = await page({ width: 390, height: 844 });
+  await q.goto(url + "/#/team"); await q.waitForSelector(".rank-grid");
+  ok(!(await q.evaluate(() => document.documentElement.scrollWidth > window.innerWidth)), "no page-level sideways scroll on team");
+  await q.screenshot({ path: join(SHOTS, "11-team-phone.png") });
+  await q.goto(url + "/#/settings"); await q.waitForSelector("#sec-runs");
+  ok(!(await q.evaluate(() => document.documentElement.scrollWidth > window.innerWidth)), "no sideways scroll on settings");
+  await q.screenshot({ path: join(SHOTS, "12-settings-phone.png"), fullPage: true });
+});
 await t("no page errors", async () => { ok(!errors.length, errors.join("\n")); });
 
 await browser.close(); server.close();

@@ -19,6 +19,7 @@ export function toast(message, kind = "ok", ms = 4200) {
   el.className = `toast ${kind}`;
   el.innerHTML = html`<i></i><span>${message}</span>`;
   box.append(el);
+  while (box.children.length > 3) box.firstElementChild.remove(); // keep the stack short
   setTimeout(() => el.remove(), ms);
 }
 

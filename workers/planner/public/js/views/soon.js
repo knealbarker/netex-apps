@@ -17,16 +17,6 @@ const SECTIONS = {
     lead: "How the day went against the plan, and the history behind it.",
     items: ["Pieces and revenue per labor hour by day", "Follow-ups: due dates moved later, with notes saved to SMRT", "Plan history"],
   },
-  team: {
-    title: "Team", icon: '<circle cx="9" cy="8" r="3.2"/><path d="M3.5 19c.6-3.2 2.9-5 5.5-5s4.9 1.8 5.5 5"/>',
-    lead: "Everyone on the production team, what they're trained on and how fast they are.",
-    items: ["Imported from the desktop planner's team list", "Skills and rankings per station", "Hours from Rippling each day"],
-  },
-  settings: {
-    title: "Settings", icon: '<circle cx="12" cy="12" r="3"/><path d="M12 2.8v2.4M12 18.8v2.4M2.8 12h2.4M18.8 12h2.4"/>',
-    lead: "Stations, run rates, wash programs and the working day.",
-    items: ["Imported from the desktop planner's settings", "Changes are saved for every PC at once"],
-  },
 };
 
 export function render(main, ctx, view) {
