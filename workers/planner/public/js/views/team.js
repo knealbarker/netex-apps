@@ -1,88 +1,106 @@
-// Team: who's on the production team and how well they run each station.
-// The grid works like the desktop app: click a box to cycle 1st → 2nd → 3rd → not trained.
+// Team: who's on the production team and what each person is trained on, in order
+// (1 = where they belong first, then the next best place, and so on).
+// Training is per kind of work: SLB 1/2 share one training, as do DCT 1-3.
 import { api } from "../api.js";
 import { html, raw, toast, initials, RANK, openDialog } from "../ui.js";
 
-const RANK_LABEL = { 1: "1st", 2: "2nd", 3: "3rd" };
-const NEXT = { undefined: 1, 1: 2, 2: 3, 3: null };
 const PLUS = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>';
-const SHORT = { slo: "SL Op", dco: "DC Op" };
+const PEN = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20h4L19 9l-4-4L4 16z"/><path d="M14 6l4 4"/></svg>';
 
 export async function render(main, ctx) {
   const { me } = ctx;
-  const canRank = RANK[me.role] >= RANK.manager, canEdit = RANK[me.role] >= RANK.admin;
+  const canTrain = RANK[me.role] >= RANK.manager, canEdit = RANK[me.role] >= RANK.admin;
   main.innerHTML = html`<div class="loading"><span class="spin"></span>Loading team…</div>`;
   const data = await api("/team");
-  let showFormer = false;
-
-  function coverage() {
-    const active = data.people.filter(p => p.status === "active");
-    return data.stations.map(s => ({ s, first: active.filter(p => p.skills[s.code] === 1).length, any: active.filter(p => p.skills[s.code]).length }));
-  }
+  let showFormer = false, focus = null; // focus = training id picked in the coverage strip
+  const tName = id => data.trainings.find(t => t.id === id);
 
   function draw() {
-    const people = data.people.filter(p => showFormer || p.status === "active");
-    const cov = coverage();
-    const thin = cov.filter(c => c.any < 2);
-    const former = data.people.filter(p => p.status !== "active").length;
+    const active = data.people.filter(p => p.status === "active");
+    const cov = data.trainings.map(t => ({ t, trained: active.filter(p => p.trainings.includes(t.id)).length, first: active.filter(p => p.trainings[0] === t.id).length }));
+    let people = data.people.filter(p => showFormer || p.status === "active");
+    if (focus) { // who can run this, best first
+      const pos = p => { const i = p.trainings.indexOf(focus); return i < 0 ? 99 : i; };
+      people = [...people].sort((a, b) => pos(a) - pos(b) || a.name.localeCompare(b.name));
+    }
+    const thin = cov.filter(c => c.trained < 2);
+    const former = data.people.length - active.length;
     main.innerHTML = html`
       <div class="page-head">
-        <div><h1>Team</h1><p>${data.people.filter(p => p.status === "active").length} people on the production team.
-          ${canRank ? "Click a box to rank a station: 1st (best fit) → 2nd (good backup) → 3rd (can fill in) → not trained." : "Station rankings decide who the plan puts where."}</p></div>
+        <div><h1>Team</h1><p>${active.length} people on the production team. Each person's trainings are listed in order: 1 is where they belong first.</p></div>
         <div class="head-actions">
           ${former ? raw(html`<label class="check"><input type="checkbox" id="former" ${raw(showFormer ? "checked" : "")}> Show former (${former})</label>`) : ""}
           ${canEdit ? raw(html`<button class="btn primary" id="addPerson">${raw(PLUS)}Add person</button>`) : ""}
         </div>
       </div>
-      ${thin.length ? raw(html`<div class="banner warn"><b>Thin coverage:</b> ${thin.map(c => `${c.s.label} (${c.any} trained)`).join(" · ")}. One sick day leaves these stations without a trained person.</div>`) : ""}
-      <div class="card grid-wrap">
-        <table class="rank-grid">
-          <thead><tr><th class="who-col" scope="col">Person</th>
-            ${data.stations.map(s => raw(html`<th scope="col" title="${s.label}"><span>${SHORT[s.code] || s.label}</span><small>${cov.find(c => c.s.code === s.code).any} trained</small></th>`))}
-          </tr></thead>
-          <tbody>
-          ${people.map(p => raw(html`<tr class="${p.status === "active" ? "" : "former"}" data-id="${p.id}">
-            <th scope="row" class="who-col">${canEdit ? raw(html`<button class="who-btn" data-edit="${p.id}">`) : raw('<div class="who-btn">')}
-              <span class="avatar" aria-hidden="true">${initials(p.name)}</span>
-              <span class="who-txt"><b>${p.name}</b><small>${[p.usualStart ? `In ${p.usualStart}` : "", p.payrollId ? `Rippling #${p.payrollId}` : "", p.status === "active" ? "" : "Former"].filter(Boolean).join(" · ")}</small></span>
-            ${raw(canEdit ? "</button>" : "</div>")}</th>
-            ${data.stations.map(s => { const r = p.skills[s.code]; return raw(html`<td><button class="rk ${r ? `r${r}` : ""}" data-p="${p.id}" data-s="${s.code}" ${raw(canRank && p.status === "active" ? "" : "disabled")}
-              aria-label="${p.name} at ${s.label}: ${r ? RANK_LABEL[r] : "not trained"}">${r ? RANK_LABEL[r] : "–"}</button></td>`); })}
-          </tr>`))}
-          ${people.length ? "" : raw(`<tr><td colspan="${data.stations.length + 1}" class="empty-row">No one on the team yet.</td></tr>`)}
-          </tbody>
-        </table>
+      <div class="cov" role="group" aria-label="Who can run each kind of work. Pick one to sort the team by it.">
+        ${cov.map(c => raw(html`<button class="cov-tile ${c.trained < 2 ? "thin" : ""} ${focus === c.t.id ? "on" : ""}" data-focus="${c.t.id}" aria-pressed="${focus === c.t.id}"
+            title="${c.t.name}${c.t.stations.length > 1 ? ` — covers ${c.t.stations.join(", ")}` : ""}">
+          <b>${c.t.short}</b><span>${c.trained} trained</span><small>${c.first} first choice</small></button>`))}
       </div>
-      <p class="legend"><span><i class="rk r1">1st</i> best fit</span><span><i class="rk r2">2nd</i> good backup</span><span><i class="rk r3">3rd</i> can fill in</span><span><i class="rk">–</i> not trained</span></p>`;
+      ${thin.length ? raw(html`<div class="banner warn"><b>Thin coverage:</b> ${thin.map(c => `${c.t.short} (${c.trained})`).join(" · ")} — one sick day leaves these without a trained person.</div>`) : ""}
+      ${focus ? raw(html`<p class="focus-note">Sorted by who runs <b>${tName(focus).name}</b> best. <button class="linkish" id="clearFocus">Show everyone A–Z</button></p>`) : ""}
+      <div class="card list team-list" role="list">
+        ${people.map(p => raw(html`<div class="trow ${p.status === "active" ? "" : "former"}" role="listitem">
+          ${canEdit ? raw(html`<button class="who-btn" data-edit="${p.id}" aria-label="Edit ${p.name}">`) : raw('<div class="who-btn">')}
+            <span class="avatar" aria-hidden="true">${initials(p.name)}</span>
+            <span class="who-txt"><b>${p.name}</b><small>${[p.usualStart ? `In ${p.usualStart}` : "", p.payrollId ? `Rippling #${p.payrollId}` : "", p.status === "active" ? "" : "Former"].filter(Boolean).join(" · ")}</small></span>
+          ${raw(canEdit ? "</button>" : "</div>")}
+          <ol class="tchips" aria-label="Trainings in order">
+            ${p.trainings.length ? p.trainings.map((t, i) => raw(html`<li class="tchip ${focus === t ? "hit" : ""} ${i === 0 ? "first" : ""}" title="${tName(t)?.name || t}"><i>${i + 1}</i>${tName(t)?.short || t}</li>`))
+              : raw('<li class="tnone">No trainings yet</li>')}
+          </ol>
+          ${canTrain && p.status === "active" ? raw(html`<button class="btn ghost small" data-train="${p.id}">${raw(PEN)}Trainings</button>`) : raw("<span></span>")}
+        </div>`))}
+        ${people.length ? "" : raw('<div class="empty-row">No one on the team yet.</div>')}
+      </div>`;
 
     main.querySelector("#former")?.addEventListener("change", e => { showFormer = e.target.checked; draw(); });
     main.querySelector("#addPerson")?.addEventListener("click", () => personDialog(null, reload));
+    main.querySelector("#clearFocus")?.addEventListener("click", () => { focus = null; draw(); });
+    main.querySelectorAll("[data-focus]").forEach(b => b.addEventListener("click", () => { focus = focus === b.dataset.focus ? null : b.dataset.focus; draw(); main.querySelector(`[data-focus="${b.dataset.focus}"]`)?.focus(); }));
     main.querySelectorAll("[data-edit]").forEach(b => b.addEventListener("click", () => personDialog(data.people.find(p => p.id === b.dataset.edit), reload)));
-    main.querySelectorAll(".rk[data-p]:not([disabled])").forEach(b => b.addEventListener("click", () => cycle(b)));
-  }
-
-  async function cycle(btn) {
-    const p = data.people.find(x => x.id === btn.dataset.p), code = btn.dataset.s;
-    const before = p.skills[code], next = NEXT[before];
-    if (next) p.skills[code] = next; else delete p.skills[code];
-    paint(btn, next);
-    try { await api(`/team/${p.id}/skills/${code}`, { method: "PUT", body: { rank: next } }); }
-    catch (e) {
-      if (before) p.skills[code] = before; else delete p.skills[code];
-      paint(btn, before);
-      toast(e.message, "bad");
-    }
-    // update the counts in the header and the coverage banner without redrawing (keeps focus on the box)
-    clearTimeout(cycle.t); cycle.t = setTimeout(() => { const f = document.activeElement?.dataset; draw(); if (f?.p) main.querySelector(`.rk[data-p="${f.p}"][data-s="${f.s}"]`)?.focus(); }, 900);
-  }
-  function paint(btn, r) {
-    btn.className = `rk ${r ? `r${r}` : ""}`;
-    btn.textContent = r ? RANK_LABEL[r] : "–";
-    const p = data.people.find(x => x.id === btn.dataset.p), s = data.stations.find(x => x.code === btn.dataset.s);
-    btn.setAttribute("aria-label", `${p.name} at ${s.label}: ${r ? RANK_LABEL[r] : "not trained"}`);
+    main.querySelectorAll("[data-train]").forEach(b => b.addEventListener("click", () => trainingsDialog(data.people.find(p => p.id === b.dataset.train), data.trainings, reload)));
   }
   async function reload() { Object.assign(data, await api("/team")); draw(); }
   draw();
+}
+
+// Ordered list editor: move up/down, remove, add from what's left.
+function trainingsDialog(p, trainings, done) {
+  let list = [...p.trainings];
+  const byId = Object.fromEntries(trainings.map(t => [t.id, t]));
+  const body = () => html`
+    <p class="dlg-lead">Put them in order: 1 is where ${p.firstName} belongs first, then the next best place. The plan fills stations in this order.</p>
+    <ol class="tlist" aria-label="Trainings in order">${list.map((t, i) => raw(html`
+      <li><i>${i + 1}</i><span><b>${byId[t]?.short || t}</b><small>${byId[t]?.name || ""}${byId[t]?.stations.length > 1 ? ` · ${byId[t].stations.join(", ")}` : ""}</small></span>
+        <button type="button" class="icon-btn" data-up="${i}" aria-label="Move ${byId[t]?.short} up" ${raw(i === 0 ? "disabled" : "")}>↑</button>
+        <button type="button" class="icon-btn" data-down="${i}" aria-label="Move ${byId[t]?.short} down" ${raw(i === list.length - 1 ? "disabled" : "")}>↓</button>
+        <button type="button" class="icon-btn" data-del="${i}" aria-label="Remove ${byId[t]?.short}">×</button></li>`))}
+      ${list.length ? "" : raw('<li class="tnone">Not trained on anything yet. Add below.</li>')}</ol>
+    ${trainings.length > list.length ? raw(html`<div class="field"><span>Add a training</span><div class="tadd">${trainings.filter(t => !list.includes(t.id)).map(t => raw(html`
+      <button type="button" class="btn small" data-add="${t.id}" title="${t.name}">+ ${t.short}</button>`))}</div></div>`) : ""}`;
+  const dlg = openDialog({
+    title: `Trainings — ${p.name}`,
+    body: `<div class="tedit">${body()}</div>`,
+    async onSubmit() {
+      await api(`/team/${p.id}/trainings`, { method: "PUT", body: { trainings: list } });
+      toast(`Saved ${p.firstName}'s trainings.`);
+      done();
+    },
+  });
+  const box = dlg.querySelector(".tedit");
+  box.addEventListener("click", e => {
+    const b = e.target.closest("button"); if (!b) return;
+    const d = b.dataset; let focusSel = null;
+    if (d.up) { const i = +d.up; [list[i - 1], list[i]] = [list[i], list[i - 1]]; focusSel = i - 1 > 0 ? `[data-up="${i - 1}"]` : `[data-down="${i - 1}"]`; }
+    else if (d.down) { const i = +d.down; [list[i + 1], list[i]] = [list[i], list[i + 1]]; focusSel = i + 1 < list.length - 1 ? `[data-down="${i + 1}"]` : `[data-up="${i + 1}"]`; }
+    else if (d.del) { list.splice(+d.del, 1); focusSel = ".tadd button"; }
+    else if (d.add) { list.push(d.add); focusSel = `[data-up="${list.length - 1}"]`; }
+    else return;
+    box.innerHTML = body();
+    (box.querySelector(focusSel) || box.querySelector("button"))?.focus();
+  });
 }
 
 function personDialog(p, done) {
@@ -105,7 +123,7 @@ function personDialog(p, done) {
     async onSubmit(f) {
       const e = f.elements;
       const body = { firstName: e.firstName.value, lastName: e.lastName.value, displayName: e.displayName.value, usualStart: e.usualStart.value || null, payrollId: e.payrollId.value, note: e.note.value };
-      if (isNew) { await api("/team", { method: "POST", body }); toast(`${body.firstName} added. Rank their stations in the grid.`); }
+      if (isNew) { await api("/team", { method: "POST", body }); toast(`${body.firstName} added. Add their trainings next.`); }
       else { body.status = e.active.checked ? "active" : "inactive"; await api(`/team/${p.id}`, { method: "PATCH", body }); toast("Saved."); }
       done();
     },

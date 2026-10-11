@@ -33,7 +33,7 @@ const DESKTOP = {
   stationMax: { dcb1: 6 },
   employees: [
     { id: "e1", name: "Ana Uno", start: "05:00", skills: { slt1: true, slb1: 3, dco: 2 }, rip: "38", ripName: "Ana Uno" },
-    { id: "e2", name: "Beto Dos", start: "07:30", skills: { dct1: 1, dct2: 2, nope: 1 }, rip: "40", ripName: "Beto Dos" },
+    { id: "e2", name: "Beto Dos", start: "07:30", skills: { dct2: 2, dct1: 1, dcb1: 1, nope: 1 }, rip: "40", ripName: "Beto Dos" },
   ],
   users: [{ id: "u", name: "Neal", role: "Owner", pinHash: "x" }],
   price: { dct: 6.79, dcb: 7.53, slt: 3.84, slb: 6.91, comf: 35.7, tc: 14.04 }, payAvg: 13, otMult: 1.5, laborTarget: 17, pdfMoney: false,
@@ -55,11 +55,13 @@ await t("imports team, rankings, settings, speeds, wash, runs and history", asyn
   const { call, sqlite } = app();
   const r = await call("POST", "/api/import/desktop", { body: { data: DESKTOP, history: HISTORY } });
   eq(r.status, 200, JSON.stringify(r.body));
-  eq(r.body.peopleAdded, 3); eq(r.body.skills, 5); eq(r.body.planDays, 1); eq(r.body.hoursRows, 2); eq(r.body.runs, 2);
+  eq(r.body.peopleAdded, 3); eq(r.body.trainings, 5); eq(r.body.planDays, 1); eq(r.body.hoursRows, 2); eq(r.body.runs, 2);
   ok(r.body.skipped.some(s => s.includes("nope")), "unknown station reported");
   const team = (await call("GET", "/api/team")).body;
   eq(team.people.filter(p => p.status === "active").map(p => p.name), ["Ana Uno", "Beto Dos"]);
-  eq(Object.entries(team.people.find(p => p.name === "Ana Uno").skills).sort(), [["dco", 2], ["slb1", 3], ["slt1", 1]]);
+  eq(team.people.find(p => p.name === "Ana Uno").trainings, ["slt1", "dco", "slb"], "ordered by rank");
+  eq(team.people.find(p => p.name === "Beto Dos").trainings, ["dct", "dcb"], "DCT 1 and 2 collapse into one DCT; ties keep station order");
+  eq(team.trainings.find(x => x.id === "dct").stations, ["DCT 1", "DCT 2", "DCT 3"]);
   eq(team.people.find(p => p.name === "Gone Person").status, "inactive");
   eq(team.people.find(p => p.name === "Ana Uno").usualStart, "05:00");
   const s = (await call("GET", "/api/settings")).body;
@@ -83,7 +85,7 @@ await t("running it twice changes nothing new", async () => {
   eq(r.body.peopleAdded, 0);
   eq(sqlite.prepare("SELECT COUNT(*) n FROM core_people").get().n, 3);
   eq(sqlite.prepare("SELECT COUNT(*) n FROM plan_publications").get().n, 1);
-  eq(sqlite.prepare("SELECT COUNT(*) n FROM plan_skills").get().n, 5);
+  eq(sqlite.prepare("SELECT COUNT(*) n FROM plan_person_trainings").get().n, 5);
   eq(sqlite.prepare("SELECT COUNT(*) n FROM plan_runs WHERE is_active=1").get().n, 2);
   eq(sqlite.prepare("SELECT COUNT(*) n FROM core_locations WHERE name='Quitman'").get().n, 1);
 });
@@ -116,17 +118,32 @@ await t("Admin adds a person; Rippling id must be unique; Viewer can read but no
   eq((await call("GET", "/api/team", { as: "v@example.com" })).body.people.length, 1);
   eq((await call("POST", "/api/team", { as: "v@example.com", body: { firstName: "X" } })).status, 403);
 });
-await t("Manager can rank stations; ranks validated; clearing removes", async () => {
+await t("Manager sets an ordered training list; duplicates and unknowns refused; empty clears", async () => {
   const { call } = app();
   const { id } = (await call("POST", "/api/team", { body: { firstName: "Cara" } })).body;
   await withRole(call, "manager", "m@example.com");
-  eq((await call("PUT", `/api/team/${id}/skills/dct1`, { as: "m@example.com", body: { rank: 2 } })).status, 200);
-  eq((await call("GET", "/api/team")).body.people[0].skills, { dct1: 2 });
-  eq((await call("PUT", `/api/team/${id}/skills/dct1`, { body: { rank: 4 } })).status, 400);
-  eq((await call("PUT", `/api/team/${id}/skills/zzz`, { body: { rank: 1 } })).status, 404);
-  await call("PUT", `/api/team/${id}/skills/dct1`, { body: { rank: null } });
-  eq((await call("GET", "/api/team")).body.people[0].skills, {});
+  eq((await call("PUT", `/api/team/${id}/trainings`, { as: "m@example.com", body: { trainings: ["dcb", "slb", "iab1"] } })).status, 200);
+  eq((await call("GET", "/api/team")).body.people[0].trainings, ["dcb", "slb", "iab1"]);
+  eq((await call("PUT", `/api/team/${id}/trainings`, { body: { trainings: ["slb", "slb"] } })).status, 400);
+  eq((await call("PUT", `/api/team/${id}/trainings`, { body: { trainings: ["slb1"] } })).status, 400);
+  await call("PUT", `/api/team/${id}/trainings`, { body: { trainings: [] } });
+  eq((await call("GET", "/api/team")).body.people[0].trainings, []);
+  await withRole(call, "viewer", "v@example.com");
+  eq((await call("PUT", `/api/team/${id}/trainings`, { as: "v@example.com", body: { trainings: ["slb"] } })).status, 403);
   eq((await call("PATCH", `/api/team/${id}`, { as: "m@example.com", body: { firstName: "Z" } })).status, 403);
+});
+await t("migration carries old station ranks into ordered trainings", async () => {
+  // replay 0001-0004, add old-style ranks, then run 0005
+  const { DatabaseSync } = await import("node:sqlite");
+  const { readFileSync, readdirSync } = await import("node:fs");
+  const MIG = new URL("../../../db/migrations/", import.meta.url).pathname;
+  const files = readdirSync(MIG).filter(f => f.endsWith(".sql")).sort();
+  const q = new DatabaseSync(":memory:");
+  for (const f of files.filter(f => f < "0005")) q.exec(readFileSync(MIG + f, "utf8"));
+  q.exec(`INSERT INTO core_people(id,org_id,first_name,last_name) VALUES('P1','tcc','A','B');
+    INSERT INTO plan_skills(person_id,station_id,rank) VALUES('P1','st-slb2',1),('P1','st-slb1',3),('P1','st-dct3',2),('P1','st-dct1',2),('P1','st-dco',2),('P1','st-asm2',3);`);
+  for (const f of files.filter(f => f >= "0005")) q.exec(readFileSync(MIG + f, "utf8"));
+  eq(q.prepare("SELECT training_id t FROM plan_person_trainings WHERE person_id='P1' ORDER BY priority").all().map(r => r.t), ["slb", "dct", "dco", "iab2"]);
 });
 await t("turning someone off sets left_on and sorts them last", async () => {
   const { call, sqlite } = app();
@@ -174,7 +191,7 @@ await t("speeds, wash, stations save; bad numbers refused", async () => {
   eq(r.body.stations.find(x => x.code === "dct3").active, false);
   eq((await call("PUT", "/api/settings/production", { body: { rates: [{ type: "slb", category: "slb", perHour: -1 }] } })).status, 400);
   eq((await call("PUT", "/api/settings/production", { body: { rates: [{ type: "nope", category: "slb", perHour: 1 }] } })).status, 400);
-  eq((await call("GET", "/api/team")).body.stations.length, 11, "turned-off station hidden from team grid");
+  eq((await call("GET", "/api/team")).body.trainings.find(x => x.id === "dct").stations, ["DCT 1", "DCT 2"], "turned-off station no longer listed under DCT");
 });
 await t("runs: save, edit, remove; bad stops refused", async () => {
   const { call } = app();

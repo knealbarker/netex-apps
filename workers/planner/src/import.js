@@ -6,7 +6,7 @@
 import { HttpError, ulid, nowIso, audit } from "./util.js";
 import { requireRole } from "./auth.js";
 import { loadGroups, validateGroup, putGroupStmt, productionStmts, runsStmts } from "./settings.js";
-import { productionIds } from "./team.js";
+import { productionIds, trainingStmts } from "./team.js";
 
 const CATS = ["dct", "dcb", "slt", "slb", "comf", "tc"];
 const DAY = /^\d{4}-\d{2}-\d{2}$/;
@@ -79,7 +79,7 @@ export async function importDesktop(db, env, me, body) {
   const orgId = env.ORG_ID, now = nowIso();
   const { departmentId, locationId } = await productionIds(db, orgId);
   const stmts = [];
-  const summary = { peopleAdded: 0, peopleUpdated: 0, skills: 0, settings: 0, runs: 0, planDays: 0, hoursRows: 0, skipped: [] };
+  const summary = { peopleAdded: 0, peopleUpdated: 0, trainings: 0, settings: 0, runs: 0, planDays: 0, hoursRows: 0, skipped: [] };
 
   // ---- people (match by Rippling id, then by full name)
   const existing = (await db.prepare("SELECT id, payroll_id AS payrollId, lower(trim(first_name || ' ' || last_name)) AS full FROM core_people WHERE org_id=? AND deleted_at IS NULL").bind(orgId).all()).results;
@@ -106,6 +106,8 @@ export async function importDesktop(db, env, me, body) {
   };
 
   const stations = new Map((await db.prepare("SELECT code, id FROM plan_stations WHERE location_id=?").bind(locationId).all()).results.map(s => [s.code, s.id]));
+  // desktop ranks are per station (1st/2nd/3rd, ties allowed); here each person has one ordered list per training
+  const trainingOf = new Map((await db.prepare("SELECT s.code, s.training_id AS t, tr.sort FROM plan_stations s JOIN plan_trainings tr ON tr.id = s.training_id WHERE s.location_id=?").bind(locationId).all()).results.map(r => [r.code, r]));
   const empToPerson = new Map();
   for (const e of d.employees) {
     if (!e || !e.name) continue;
@@ -114,13 +116,16 @@ export async function importDesktop(db, env, me, body) {
     stmts.push(db.prepare(`INSERT INTO plan_person_prefs(person_id, usual_start, updated_by) VALUES(?,?,?)
       ON CONFLICT(person_id) DO UPDATE SET usual_start=COALESCE(excluded.usual_start, usual_start), updated_at=?, updated_by=excluded.updated_by, rev=rev+1`)
       .bind(pid, /^\d\d:\d\d$/.test(e.start || "") ? e.start : null, me.id, now));
-    stmts.push(db.prepare("DELETE FROM plan_skills WHERE person_id=?").bind(pid)); // the desktop list is the whole truth for these people
+    const best = new Map();
     for (const [code, v] of Object.entries(e.skills || {})) {
-      const sid = stations.get(code); const rank = v === true ? 1 : +v;
-      if (!sid || ![1, 2, 3].includes(rank)) { summary.skipped.push(`${e.name}: ranking ${code}=${v}`); continue; }
-      stmts.push(db.prepare("INSERT INTO plan_skills(person_id, station_id, rank, updated_by) VALUES(?,?,?,?)").bind(pid, sid, rank, me.id));
-      summary.skills++;
+      const tr = trainingOf.get(code), rank = v === true ? 1 : +v;
+      if (!tr || ![1, 2, 3].includes(rank)) { summary.skipped.push(`${e.name}: ranking ${code}=${v}`); continue; }
+      const cur = best.get(tr.t);
+      if (!cur || rank < cur.rank) best.set(tr.t, { rank, sort: tr.sort });
     }
+    const list = [...best.entries()].sort((a, b) => a[1].rank - b[1].rank || a[1].sort - b[1].sort).map(([t]) => t);
+    stmts.push(...trainingStmts(db, pid, list, me.id)); // the desktop list is the whole truth for these people
+    summary.trainings += list.length;
   }
 
   // ---- settings groups

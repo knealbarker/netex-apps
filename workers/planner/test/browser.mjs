@@ -151,18 +151,30 @@ await t("Settings › Import: the Owner imports the desktop files", async () => 
   await p.waitForSelector("#sec-import .import-result:not([hidden])");
   ok(/3 people added/.test(await p.textContent("#sec-import .import-result")), await p.textContent("#sec-import .import-result"));
 });
-await t("Team: grid shows rankings; clicking cycles and saves", async () => {
+await t("Team: each person shows trainings in order; DCT 1-3 count as one", async () => {
   await p.goto(url + "/#/team");
-  await p.waitForSelector(".rank-grid");
-  const cell = '.rk[data-s="dct1"]:not(.r1)';
-  const first = await p.$(`tr:has-text("Ana Uno") .rk[data-s="dct1"]`);
-  ok((await first.textContent()) === "–");
-  await first.click(); await p.waitForTimeout(150);
-  ok((await first.textContent()) === "1st");
+  await p.waitForSelector(".team-list");
+  const beto = await p.locator('.trow:has-text("Beto Dos") .tchip').allTextContents();
+  ok(JSON.stringify(beto) === JSON.stringify(["1DCT", "2DCB"]), JSON.stringify(beto));
   await p.screenshot({ path: join(SHOTS, "9-team.png") });
-  await p.waitForTimeout(1200);
+});
+await t("Team: trainings editor reorders, removes and adds, then saves", async () => {
+  await p.click('.trow:has-text("Ana Uno") [data-train]');
+  await p.waitForSelector("dialog .tlist");
+  await p.click('dialog [data-down="0"]');               // SLT 1 below IAB 1
+  await p.click('dialog .tadd [data-add="dct"]');        // add DCT at the end
+  await p.locator("dialog").screenshot({ path: join(SHOTS, "9b-trainings.png") });
+  await p.click('dialog button[type="submit"]');
+  await p.waitForSelector("dialog", { state: "detached" });
   const team = await (await p.request.get(url + "/api/team")).json();
-  ok(team.people.find(x => x.name === "Ana Uno").skills.dct1 === 1, "saved");
+  const ana = team.people.find(x => x.name === "Ana Uno").trainings;
+  ok(JSON.stringify(ana) === JSON.stringify(["iab1", "slt1", "dco", "slb", "dct"]), JSON.stringify(ana));
+});
+await t("Team: picking a training in the strip sorts people by who runs it best", async () => {
+  await p.click('[data-focus="slb"]');
+  const first = await p.locator(".trow .who-txt b").first().textContent();
+  ok(first === "Cora Tres", first);
+  await p.click('[data-focus="slb"]');
 });
 await t("Team: thin coverage banner names stations with fewer than 2 trained", async () => {
   ok(/Thin coverage/.test(await p.textContent(".banner.warn")));
@@ -173,7 +185,7 @@ await t("Team: add a person through the dialog", async () => {
   await p.fill('dialog input[name="lastName"]', "Cuatro");
   await p.fill('dialog input[name="usualStart"]', "06:15");
   await p.click('dialog button[type="submit"]');
-  await p.waitForSelector('tr:has-text("Dee Cuatro")');
+  await p.waitForSelector('.trow:has-text("Dee Cuatro")');
 });
 await t("Settings: change a value, Save lights up, value persists", async () => {
   await p.goto(url + "/#/settings");
@@ -223,13 +235,13 @@ await t("Settings: a Viewer sees values but can't edit", async () => {
   ok(await q.isDisabled('#sec-day input[name="fullDay"]'));
   ok(!(await q.$('#sec-day button[type="submit"]')));
   ok(!(await q.$("#sec-import")));
-  await q.goto(url + "/#/team"); await q.waitForSelector(".rank-grid");
-  ok(await q.isDisabled(".rk[data-p]"));
+  await q.goto(url + "/#/team"); await q.waitForSelector(".team-list");
+  ok(!(await q.$("[data-train]")), "viewer has no Trainings button");
   who = "neal@towncountryclean.com";
 });
 await t("phone: team grid scrolls inside its card, settings stack", async () => {
   const q = await page({ width: 390, height: 844 });
-  await q.goto(url + "/#/team"); await q.waitForSelector(".rank-grid");
+  await q.goto(url + "/#/team"); await q.waitForSelector(".team-list");
   ok(!(await q.evaluate(() => document.documentElement.scrollWidth > window.innerWidth)), "no page-level sideways scroll on team");
   await q.screenshot({ path: join(SHOTS, "11-team-phone.png") });
   await q.goto(url + "/#/settings"); await q.waitForSelector("#sec-runs");

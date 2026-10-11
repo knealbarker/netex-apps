@@ -169,7 +169,7 @@ export async function render(main, ctx) {
   }
 
   const importCard = () => !isOwner ? "" : html`<section class="card set-card" id="sec-import">
-      <header><h2>Import from the desktop planner</h2><p>Brings over the team, station rankings, settings, shuttle runs and plan history. Safe to run again: it updates the same people and days instead of adding copies.</p></header>
+      <header><h2>Import from the desktop planner</h2><p>Brings over the team, trainings, settings, shuttle runs and plan history. Safe to run again: it updates the same people and days instead of adding copies.</p></header>
       <form class="set-form" novalidate data-kind="import">
         <label class="field"><span>planner-data.json</span><input class="input" type="file" name="data" accept=".json,application/json"><small>On the office PC: %APPDATA%\\Production Planner\\planner-data.json</small></label>
         <label class="field"><span>Plan History files <em>(optional)</em></span><input class="input" type="file" name="history" accept=".json,application/json" multiple><small>Documents\\Production Planner\\Plan History — select them all.</small></label>
@@ -237,7 +237,7 @@ export async function render(main, ctx) {
     const r = await api("/import/desktop", { method: "POST", body: { data, history } });
     const box = form.querySelector(".import-result");
     box.hidden = false;
-    box.innerHTML = html`<b>Imported.</b> ${r.peopleAdded} people added, ${r.peopleUpdated} updated, ${r.skills} station rankings, ${r.settings} settings groups, ${r.runs} runs,
+    box.innerHTML = html`<b>Imported.</b> ${r.peopleAdded} people added, ${r.peopleUpdated} updated, ${r.trainings} trainings, ${r.settings} settings groups, ${r.runs} runs,
       ${r.planDays} past plans and ${r.hoursRows} days of hours.${r.skipped.length ? raw(html`<br><small>Skipped: ${r.skipped.join("; ")}</small>`) : ""}`;
     S = await api("/settings");
     toast("Import finished. Check the Team page.");

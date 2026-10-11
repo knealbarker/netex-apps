@@ -4,7 +4,7 @@ import { currentUser, verifyAccessJwt } from "./auth.js";
 import { listUsers, createUser, updateUser, syncAccessGroup } from "./users.js";
 import { HttpError, json, readJson } from "./util.js";
 import { allSettings, saveGroup, saveProduction, saveRuns } from "./settings.js";
-import { listTeam, addPerson, updatePerson, setSkill } from "./team.js";
+import { listTeam, addPerson, updatePerson, setTrainings } from "./team.js";
 import { importDesktop } from "./import.js";
 
 const SECURITY_HEADERS = {
@@ -38,7 +38,7 @@ const routes = [
   ["GET", /^\/api\/team$/, async (req, env) => json(await listTeam(env.DB, env))],
   ["POST", /^\/api\/team$/, async (req, env, me) => json(await addPerson(env.DB, env, me, await readJson(req)), 201)],
   ["PATCH", /^\/api\/team\/([0-9A-Z]{26})$/, async (req, env, me, m) => json(await updatePerson(env.DB, env, me, m[1], await readJson(req)))],
-  ["PUT", /^\/api\/team\/([0-9A-Z]{26})\/skills\/(\w+)$/, async (req, env, me, m) => json(await setSkill(env.DB, env, me, m[1], m[2], (await readJson(req)).rank ?? null))],
+  ["PUT", /^\/api\/team\/([0-9A-Z]{26})\/trainings$/, async (req, env, me, m) => json(await setTrainings(env.DB, env, me, m[1], (await readJson(req)).trainings))],
   ["POST", /^\/api\/import\/desktop$/, async (req, env, me) => json(await importDesktop(env.DB, env, me, await readJson(req)))],
   ["GET", /^\/api\/system$/, async (req, env) => {
     const db = env.DB;
