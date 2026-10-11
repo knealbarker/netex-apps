@@ -26,7 +26,12 @@ Users & access (Admins and the Owner) is the same screen and code as the planner
   or the department's average rate (Settings) until then, plus the payroll burden %.
 - **Overtime**: hours past 40 in a person's work week (all locations together, week starts on Settings' day) cost 1.5×;
   the overtime falls on the week's last days. A range starting mid-week still counts that week's earlier days. Settings can change or turn it off.
-- **Labor %**: labor $ ÷ revenue for the same days. Store target 17%. Workshop + Laundry Hub are shown against company revenue.
+- **Labor %**: labor $ ÷ revenue for the same days. Store target 17%.
+- **Production value** (Workshop, Laundry Hub): pre-tax value (base + upcharge − discount) of the pieces each plant finished.
+  Settings › Production work says which plant does each SMRT department (default: dry cleaning, laundry tops/bottoms,
+  household → Workshop; Wash & Fold → Laundry Hub). Pieces count on their assembly date; never-assembled pieces (wash & fold)
+  on the order's ready date. Plant labor % = plant labor $ ÷ production value (production target in Settings). Departments
+  no plant is assigned are listed under the table, not counted.
 - **Winnsboro** has no staff; Settings › Stores rolls it into Sulphur Springs (its own line, counted in SS's totals).
 - Deleted orders are left out. Each range is compared with the same number of days just before it.
 - Not yet: ADP history before Rippling.

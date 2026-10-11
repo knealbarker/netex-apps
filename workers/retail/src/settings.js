@@ -15,7 +15,12 @@ export const DEFAULTS = {
   overtime: true,              // hours past overtimeAfter in a work week cost overtimeMultiplier x
   overtimeAfter: 40,
   overtimeMultiplier: 1.5,
-  summary: { enabled: false, to: [], hour: 7, days: [1, 2, 3, 4, 5, 6] },   // daily email: local hour, days of week it goes out (0 = Sunday)
+  summary: { enabled: false, to: [], hour: 7, days: [1, 2, 3, 4, 5, 6] },
+  // which plant does the work for each SMRT financial department; its pieces' value is that plant's production value
+  plantWork: {
+    "Dry Cleaning Tops": "Workshop", "Dry Cleaning Bottoms": "Workshop", "Laundry Tops": "Workshop", "Laundry Bottoms": "Workshop",
+    "Household": "Workshop", "Wash & Fold": "Laundry Hub",
+  },   // daily email: local hour, days of week it goes out (0 = Sunday)
 };
 
 const num = (v, min, max, what) => {
@@ -28,7 +33,7 @@ const name = v => String(v ?? "").trim().replace(/\s+/g, " ").slice(0, 60);
 export async function loadSettings(db, env) {
   const r = await db.prepare("SELECT value_json FROM core_settings WHERE org_id=? AND app_id='retail' AND key='snapshot'").bind(env.ORG_ID).first();
   const s = r ? JSON.parse(r.value_json) : {};
-  return { ...DEFAULTS, ...s, avgRates: { ...DEFAULTS.avgRates, ...(s.avgRates || {}) }, rollup: s.rollup || DEFAULTS.rollup, hidden: s.hidden || [], summary: { ...DEFAULTS.summary, ...(s.summary || {}) } };
+  return { ...DEFAULTS, ...s, avgRates: { ...DEFAULTS.avgRates, ...(s.avgRates || {}) }, rollup: s.rollup || DEFAULTS.rollup, hidden: s.hidden || [], summary: { ...DEFAULTS.summary, ...(s.summary || {}) }, plantWork: s.plantWork || DEFAULTS.plantWork };
 }
 
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -56,7 +61,9 @@ export function cleanSettings(b) {
     overtimeAfter: num(b.overtimeAfter ?? 40, 0, 80, "Overtime after"),
     overtimeMultiplier: num(b.overtimeMultiplier ?? 1.5, 1, 3, "Overtime rate"),
     summary: cleanSummary(b.summary),
+    plantWork: {},
   };
+  for (const [k, v] of Object.entries(b.plantWork || {})) { const d = name(k), pl = name(v); if (d && pl) out.plantWork[d] = pl; }
   for (const [k, v] of Object.entries(b.avgRates || {})) { const n = name(k); if (n) out.avgRates[n] = num(v, 0, 200, `Hourly rate for ${n}`); }
   for (const [k, v] of Object.entries(b.rollup || {})) { const a = name(k), t = name(v); if (a && t && a !== t) out.rollup[a] = t; }
   for (const h of b.hidden || []) { const n = name(h); if (n && !out.hidden.includes(n)) out.hidden.push(n); }
@@ -77,9 +84,10 @@ export async function saveSettings(db, env, me, body) {
 export async function settingsContext(db, env) {
   const locations = (await db.prepare("SELECT name, kind FROM core_locations WHERE org_id=? AND deleted_at IS NULL ORDER BY kind DESC, name").bind(env.ORG_ID).all()).results;
   const departments = (await db.prepare("SELECT name FROM core_departments WHERE org_id=? AND deleted_at IS NULL ORDER BY name").bind(env.ORG_ID).all()).results.map(d => d.name);
+  const posDepartments = (await db.prepare("SELECT name FROM pos_departments WHERE org_id=? AND deleted_at IS NULL ORDER BY name").bind(env.ORG_ID).all()).results.map(d => d.name);
   const rates = await db.prepare(`SELECT COUNT(DISTINCT h.person_id) AS people, COUNT(DISTINCT r.person_id) AS withRate
       FROM labor_daily_hours h LEFT JOIN labor_pay_rates r ON r.person_id=h.person_id AND r.deleted_at IS NULL
       WHERE h.work_date >= date('now','-35 days') AND h.deleted_at IS NULL`).first();
   const last = await db.prepare("SELECT value_json FROM core_settings WHERE org_id=? AND app_id='core' AND key='rippling_last'").bind(env.ORG_ID).first();
-  return { locations, departments, rates, rippling: last ? JSON.parse(last.value_json) : null };
+  return { locations, departments, posDepartments, rates, rippling: last ? JSON.parse(last.value_json) : null };
 }

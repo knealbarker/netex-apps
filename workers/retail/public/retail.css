@@ -11,7 +11,8 @@
 .custom .input { padding: 6px 10px; width: auto; }
 
 /* tiles */
-.kpis { grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); }
+.kpis { grid-template-columns: repeat(auto-fill, minmax(158px, 1fr)); }
+.kpis .t-num { font-size: 26px; }
 .kpis .t-num { font-size: 28px; }
 .tile.accent { box-shadow: 0 0 0 1px var(--line2) inset, var(--shadow); }
 .dl { font-weight: 600; white-space: nowrap; }
@@ -135,3 +136,5 @@
 .daychip input:checked + b { background: var(--accent-soft); border-color: var(--accent); color: var(--text); }
 .daychip input:focus-visible + b { outline: 2px solid var(--info); outline-offset: 2px; }
 .sum-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 6px; }
+.unit { color: var(--faint); font-size: 11px; font-weight: 600; }
+.dep-row { grid-template-columns: minmax(140px, 1fr) minmax(150px, auto); }

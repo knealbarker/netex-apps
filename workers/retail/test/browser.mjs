@@ -40,7 +40,7 @@ await t("Snapshot opens on the last 7 days with tiles, stores and charts", async
   await p.waitForSelector(".stable .srow.grand");
   ok((await p.textContent("main h1")) === "Retail Snapshot");
   ok(await p.isVisible('[data-p="last7"][aria-selected="true"]'));
-  ok((await p.locator(".kpis .tile").count()) === 6, "6 tiles for the Owner");
+  ok((await p.locator(".kpis .tile").count()) === 7, "7 tiles for the Owner");
   ok((await p.textContent(".stable")).includes("Winnsboro"));
   ok((await p.locator(".charts svg").count()) === 2);
   await p.screenshot({ path: join(SHOTS, "1-snapshot.png"), fullPage: true });
@@ -102,6 +102,16 @@ await t("overtime shows in the store table and hours grid (30 days of 7-day week
   ok(await p.locator(".hgrid .ot").count() > 0);
 });
 const light = await page({ width: 1360, height: 900 }, "light");
+await t("Workshop picked: production value and labor % charts; Settings lists production work", async () => {
+  await p.goto(url + "/#/snapshot?p=last7&store=Workshop");
+  await p.waitForSelector(".stable .srow.grand");
+  ok((await p.textContent(".charts figcaption")).includes("Production value"));
+  ok((await p.textContent(".stable")).includes("pcs"));
+  await p.screenshot({ path: join(SHOTS, "10-workshop.png"), fullPage: true });
+  await p.goto(url + "/#/settings");
+  await p.waitForSelector('select[name="work:Wash & Fold"]');
+  ok((await p.inputValue('select[name="work:Wash & Fold"]')) === "Laundry Hub");
+});
 await t("light theme", async () => {
   await light.goto(url + "/#/snapshot?p=last7");
   await light.waitForSelector(".stable .srow.grand");

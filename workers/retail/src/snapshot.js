@@ -10,6 +10,10 @@
 //              cost time and a half. The hours past 40 fall on the last days of the week, in order. (Settings: on/off,
 //              threshold, multiplier.) Weeks that began before the range still count their earlier days toward the 40.
 //   Labor %  = labor $ / revenue for the same days. Target 17% (Settings).
+//   Production value (Workshop, Laundry Hub) = pre-tax value of the pieces they finished: each piece's SMRT financial
+//              department says which plant does the work (Settings › Production work). A piece counts on the day it was
+//              assembled; work that's never assembled (wash & fold) counts on the day its order was ready. Value =
+//              base + upcharge - discount. A plant's labor % = its labor $ / its production value (Neal, Oct 11).
 // Locations listed under Settings > Rolled into (Winnsboro -> Sulphur Springs) are shown on their own line but counted
 // in the store they roll into. Deleted orders are left out everywhere.
 import { HttpError } from "../../planner/src/util.js";
@@ -24,7 +28,7 @@ export function localToday(tz = "America/Chicago", at = new Date()) {
   const p = Object.fromEntries(new Intl.DateTimeFormat("en-CA", { timeZone: tz, year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(at).map(x => [x.type, x.value]));
   return `${p.year}-${p.month}-${p.day}`;
 }
-const KEYS = ["orders", "pieces", "sales", "collected", "revenue", "hours", "cost", "estHours", "otHours"];
+const KEYS = ["orders", "pieces", "sales", "collected", "revenue", "hours", "cost", "estHours", "otHours", "work", "workPieces"];
 const blank = () => Object.fromEntries(KEYS.map(k => [k, 0]));
 const add = (t, s) => { for (const k of KEYS) t[k] += s[k] || 0; return t; };
 const r2 = n => Math.round(n * 100) / 100;
@@ -86,6 +90,18 @@ async function gather(db, env, from, to, { s = {}, now = Date.now() } = {}) {
   if (s.overtime !== false) markOvertime(hours, { weekStart: s.weekStart ?? 1, after: s.overtimeAfter ?? 40 });
   const inRange = hours.filter(h => h.day >= from);
   hours.length = 0; hours.push(...inRange);
+  // production value: finished pieces by department (assembled pieces, plus never-assembled pieces of orders ready that day)
+  const valueSql = "SUM(COALESCE(i.base_cents,0) + COALESCE(i.upcharge_cents,0) - COALESCE(i.discount_cents,0))";
+  const work = [
+    ...(await db.prepare(`SELECT substr(i.assembled_at,1,10) AS day, d.name AS dept, COUNT(*) AS pieces, ${valueSql} AS value
+        FROM pos_items i JOIN pos_orders o ON o.id=i.order_id JOIN pos_order_statuses s ON s.id=o.status_id LEFT JOIN pos_departments d ON d.id=i.department_id
+       WHERE o.org_id=? AND s.is_void=0 AND o.smrt_deleted_at IS NULL AND i.removed_at IS NULL AND i.assembled_at >= ? AND i.assembled_at < ?
+       GROUP BY 1, 2`).bind(org, from, end).all()).results,
+    ...(await db.prepare(`SELECT substr(o.ready_at,1,10) AS day, d.name AS dept, COUNT(*) AS pieces, ${valueSql} AS value
+        FROM pos_orders o JOIN pos_order_statuses s ON s.id=o.status_id JOIN pos_items i ON i.order_id=o.id LEFT JOIN pos_departments d ON d.id=i.department_id
+       WHERE o.org_id=? AND s.is_void=0 AND o.smrt_deleted_at IS NULL AND i.removed_at IS NULL AND i.assembled_at IS NULL AND o.ready_at >= ? AND o.ready_at < ?
+       GROUP BY 1, 2`).bind(org, from, end).all()).results,
+  ];
   const pids = [...new Set(hours.map(h => h.pid))];
   const rates = new Map();
   for (let i = 0; i < pids.length; i += 90) {
@@ -93,7 +109,7 @@ async function gather(db, env, from, to, { s = {}, now = Date.now() } = {}) {
     const rs = (await db.prepare(`SELECT person_id AS pid, effective_on AS on_, hourly_cents AS c FROM labor_pay_rates WHERE deleted_at IS NULL AND person_id IN (${c.map(() => "?").join(",")}) ORDER BY effective_on`).bind(...c).all()).results;
     for (const r of rs) (rates.get(r.pid) || rates.set(r.pid, []).get(r.pid)).push(r);
   }
-  return { sales, revenue, hours, rates, today };
+  return { sales, revenue, hours, rates, today, work };
 }
 
 /** Wage cost of one person-day row, and whether it used an average rate. */
@@ -140,6 +156,14 @@ export async function snapshot(db, env, me, from, to, { now = Date.now() } = {})
       for (const t of line(w)) add(t, v); if (detail) add(dayRow(r.day, w), v); }
     for (const r of g.revenue) { const w = where(r.loc); const v = { revenue: r.revenue / 100 };
       for (const t of line(w)) add(t, v); if (detail) add(dayRow(r.day, w), v); }
+    const unmapped = new Map();
+    for (const r of g.work) {
+      const plantName = s.plantWork[r.dept || ""];
+      if (!plantName) { unmapped.set(r.dept || "(none)", (unmapped.get(r.dept || "(none)") || 0) + r.pieces); continue; }
+      const w = { line: plantName, part: plantName, plant: true };
+      const v = { work: (r.value || 0) / 100, workPieces: r.pieces };
+      for (const t of line(w)) add(t, v); if (detail) add(dayRow(r.day, w), v);
+    }
     for (const h of g.hours) {
       const w = where(h.loc); const { cost, est } = costOf(h, g.rates, s);
       const v = { hours: h.hours, cost, estHours: est ? h.hours : 0, otHours: h.otHours || 0 };
@@ -158,7 +182,7 @@ export async function snapshot(db, env, me, from, to, { now = Date.now() } = {})
     const retail = stores.reduce((t, l) => add(t, l), blank());
     const plant = plants.reduce((t, l) => add(t, l), blank());
     const company = add(add(blank(), retail), plant);
-    return { stores, plants, retail, plant, company, daily, people };
+    return { stores, plants, retail, plant, company, daily, people, unmapped };
   };
 
   const cur = shape(await gather(db, env, from, to, { s, now }), { detail: true });
@@ -171,12 +195,14 @@ export async function snapshot(db, env, me, from, to, { now = Date.now() } = {})
     const o = { name: l.name, orders: l.orders, pieces: l.pieces, sales: money(l.sales), collected: money(l.collected), revenue: money(l.revenue),
       collectedPct: l.sales > 0 ? r2(l.collected / l.sales * 100) : null, hours: r2(l.hours), otHours: r2(l.otHours),
       salesPerHour: l.hours > 0 ? money(l.sales / l.hours) : null, revenuePerHour: l.hours > 0 ? money(l.revenue / l.hours) : null };
-    if (labor) Object.assign(o, { cost: money(l.cost), laborPct: pct(l.cost, revenueBase ?? l.revenue), estPct: l.hours > 0 ? Math.round(l.estHours / l.hours * 100) : 0 });
+    if (l.kind === "plant" || revenueBase === "work") Object.assign(o, { work: money(l.work), workPieces: l.workPieces, workPerHour: l.hours > 0 ? money(l.work / l.hours) : null,
+      piecesPerHour: l.hours > 0 ? r2(l.workPieces / l.hours) : null });
+    if (labor) Object.assign(o, { cost: money(l.cost), laborPct: pct(l.cost, revenueBase === "work" ? l.work : revenueBase ?? l.revenue), estPct: l.hours > 0 ? Math.round(l.estHours / l.hours * 100) : 0 });
     return o;
   };
   const lineOut = (l, base) => ({ ...out(l, base), kind: l.kind, parts: l.parts.size > 1 ? [...l.parts.values()].map(p => out(p, base)) : [] });
   const prevByName = new Map([...prev.stores, ...prev.plants].map(l => [l.name, l]));
-  const prevOut = l => l ? { sales: money(l.sales), revenue: money(l.revenue), hours: r2(l.hours), ...(labor ? { laborPct: pct(l.cost, l.revenue) } : {}) } : null;
+  const prevOut = (l, base) => l ? { sales: money(l.sales), revenue: money(l.revenue), work: money(l.work), hours: r2(l.hours), ...(labor ? { laborPct: pct(l.cost, base === "work" ? l.work : l.revenue) } : {}) } : null;
 
   const days = []; for (let d = from; d <= to; d = addDays(d, 1)) days.push(d);
   const lineNames = [...cur.stores, ...cur.plants].map(l => l.name);
@@ -185,8 +211,10 @@ export async function snapshot(db, env, me, from, to, { now = Date.now() } = {})
     const tot = { retail: blank(), plant: blank() };
     for (const l of [...cur.stores, ...cur.plants]) if (D.lines[l.name]) add(l.kind === "plant" ? tot.plant : tot.retail, D.lines[l.name]);
     const comp = add(add(blank(), tot.retail), tot.plant);
-    const row = x => ({ orders: x.orders, sales: money(x.sales), revenue: money(x.revenue), hours: r2(x.hours), otHours: r2(x.otHours), ...(labor ? { cost: money(x.cost), laborPct: pct(x.cost, x.revenue) } : {}) });
-    return { day: d, lines: Object.fromEntries(lineNames.map(n => [n, row(D.lines[n] || blank())])), retail: row(tot.retail),
+    const row = (x, plant) => ({ orders: x.orders, sales: money(x.sales), revenue: money(x.revenue), work: money(x.work), workPieces: x.workPieces, hours: r2(x.hours), otHours: r2(x.otHours),
+      ...(labor ? { cost: money(x.cost), laborPct: pct(x.cost, plant ? x.work : x.revenue) } : {}) });
+    const plantNames = new Set(cur.plants.map(l => l.name));
+    return { day: d, lines: Object.fromEntries(lineNames.map(n => [n, row(D.lines[n] || blank(), plantNames.has(n))])), retail: row(tot.retail), plant: row(tot.plant, true),
       company: { ...row(comp), ...(labor ? { laborPct: pct(comp.cost, comp.revenue), plantPct: pct(tot.plant.cost, comp.revenue) } : {}) } };
   });
 
@@ -202,13 +230,16 @@ export async function snapshot(db, env, me, from, to, { now = Date.now() } = {})
     targets: { retail: s.targetRetail, plant: s.targetPlant }, burdenPct: s.burdenPct,
     overtime: s.overtime ? { after: s.overtimeAfter, multiplier: s.overtimeMultiplier } : null,
     stores: cur.stores.map(l => ({ ...lineOut(l), prev: prevOut(prevByName.get(l.name)) })),
-    plants: cur.plants.map(l => ({ ...lineOut(l, cur.company.revenue), prev: null })),
+    plants: cur.plants.map(l => ({ ...lineOut(l, "work"), revenueSharePct: labor ? pct(l.cost, cur.company.revenue) : undefined, prev: prevOut(prevByName.get(l.name), "work") })),
     totals: {
       retail: { ...out(cur.retail), prev: prevOut(prev.retail) },
-      plant: { hours: r2(cur.plant.hours), otHours: r2(cur.plant.otHours), ...(labor ? { cost: money(cur.plant.cost), laborPct: pct(cur.plant.cost, cur.company.revenue), estPct: cur.plant.hours > 0 ? Math.round(cur.plant.estHours / cur.plant.hours * 100) : 0 } : {}) },
+      plant: { hours: r2(cur.plant.hours), otHours: r2(cur.plant.otHours), work: money(cur.plant.work), workPieces: cur.plant.workPieces,
+        ...(labor ? { cost: money(cur.plant.cost), laborPct: pct(cur.plant.cost, cur.plant.work), revenueSharePct: pct(cur.plant.cost, cur.company.revenue),
+          estPct: cur.plant.hours > 0 ? Math.round(cur.plant.estHours / cur.plant.hours * 100) : 0 } : {}), prev: prevOut(prev.plant, "work") },
       company: { ...out(cur.company), prev: prevOut(prev.company) },
     },
     prevRange: { from: pFrom, to: pTo },
+    unmappedWork: [...cur.unmapped.entries()].map(([dept, pieces]) => ({ dept, pieces })).sort((a, b) => b.pieces - a.pieces),
     daily,
     people: [...cur.people.values()].map(p => ({ line: p.line, personId: p.personId, name: p.name, depts: [...p.depts], days: p.days, hours: r2(p.hours), otHours: r2(p.otHours), live: p.live }))
       .sort((a, b) => a.line.localeCompare(b.line) || b.hours - a.hours),

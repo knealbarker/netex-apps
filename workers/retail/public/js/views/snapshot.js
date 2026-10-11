@@ -188,7 +188,7 @@ function notes(d) {
 }
 
 function renderSnapshot(body, d, st) {
-  const t = d.totals, R = t.retail, C = t.company, tr = d.targets.retail;
+  const t = d.totals, R = t.retail, C = t.company, P = t.plant, tr = d.targets.retail, tp = d.targets.plant;
   const tiles = [
     { label: "Sales", num: $f(C.sales), sub: html`${intTxt(C.orders)} orders detailed · ${raw(delta(C.sales, C.prev?.sales))}`, tip: "Pre-tax value of orders detailed in this range" },
     { label: "Revenue", num: $f(C.revenue), sub: html`paid in this range · ${raw(delta(C.revenue, C.prev?.revenue))}`, tip: "Pre-tax value of orders paid in this range" },
@@ -197,21 +197,22 @@ function renderSnapshot(body, d, st) {
   ];
   if (d.labor) {
     tiles.push({ label: "Store labor %", num: raw(laborBadge(R.laborPct, tr)), sub: html`${$f(R.cost)} store labor · target ${tr}% · ${raw(delta(R.laborPct, R.prev?.laborPct, { kind: "pct", lowerIsBetter: true }))}`, big: true });
-    tiles.push({ label: "Total labor %", num: pctTxt(C.laborPct), sub: html`stores ${pctTxt(R.laborPct != null && C.revenue ? R.cost / C.revenue * 100 : null)} + production ${pctTxt(t.plant.laborPct)} of revenue`, tip: "All labor (stores, Workshop, Laundry Hub) divided by company revenue" });
+    if (d.plants.length) tiles.push({ label: "Production labor %", num: raw(laborBadge(P.laborPct, tp)), sub: html`${$f(P.cost)} labor · ${$f(P.work)} production value · target ${tp}% · ${raw(delta(P.laborPct, P.prev?.laborPct, { kind: "pct", lowerIsBetter: true }))}`, tip: "Workshop + Laundry Hub labor $ divided by the value of the pieces they finished" });
+    tiles.push({ label: "Total labor %", num: pctTxt(C.laborPct), sub: html`all labor ${$f(C.cost)} ÷ revenue`, tip: "All labor (stores, Workshop, Laundry Hub) divided by company revenue" });
   }
 
   const cols = d.labor ? 9 : 7;
-  const row = (l, { cls = "", sub = false, plant = false, base = tr } = {}) => html`
+  const row = (l, { cls = "", sub = false, plant = false, base = plant ? tp : tr } = {}) => html`
     <div class="srow ${cls} ${sub ? "sub" : ""}" role="row" style="--cols:${cols}">
-      <span role="cell" class="nm">${sub ? raw("<i aria-hidden='true'>↳</i>") : ""}${l.name}${plant ? raw(" <small>production</small>") : ""}</span>
-      <span role="cell">${plant ? "" : intTxt(l.orders)}</span>
-      <span role="cell">${plant ? "" : $f(l.sales)}</span>
+      <span role="cell" class="nm">${sub ? raw("<i aria-hidden='true'>↳</i>") : ""}${l.name}${plant && !cls.includes("total") ? raw(" <small>production</small>") : ""}</span>
+      <span role="cell">${plant ? raw(html`${intTxt(l.workPieces)} <small class="unit">pcs</small>`) : intTxt(l.orders)}</span>
+      <span role="cell">${plant ? raw(html`<span title="Value of the pieces finished here">${$f(l.work)}</span> <small class="unit">value</small>`) : $f(l.sales)}</span>
       <span role="cell">${plant ? "" : $f(l.revenue)}</span>
       <span role="cell">${plant ? "" : pctTxt(l.collectedPct)}</span>
       <span role="cell">${hrs(l.hours)}${d.overtime && l.otHours ? raw(html`<small class="ot" title="${hrs(l.otHours)} overtime hours, costed at ${d.overtime.multiplier}×">${hrs(l.otHours)} OT</small>`) : ""}</span>
-      <span role="cell">${plant ? "" : $f(l.salesPerHour)}</span>
+      <span role="cell">${plant ? $f(l.workPerHour) : $f(l.salesPerHour)}</span>
       ${d.labor ? raw(html`<span role="cell">${$f(l.cost)}${l.estPct ? raw(html` <small class="est" title="${l.estPct}% of these hours use an average rate">est</small>`) : ""}</span>
-        <span role="cell">${plant ? raw(html`<span class="lp plain" title="of company revenue">${pctTxt(l.laborPct)}</span>`) : sub && !l.hours ? raw(html`<span class="lp none" title="Its labor is counted in the store it rolls into">—</span>`) : raw(laborBadge(l.laborPct, base))}</span>`) : ""}
+        <span role="cell">${sub && !l.hours ? raw(html`<span class="lp none" title="Its labor is counted in the store it rolls into">—</span>`) : raw(laborBadge(l.laborPct, base))}</span>`) : ""}
     </div>`;
   const header = raw(html`<div class="srow head" role="row" style="--cols:${cols}">
       <span role="columnheader">Store</span><span role="columnheader">Orders</span><span role="columnheader">Sales</span><span role="columnheader">Revenue</span>
@@ -222,6 +223,7 @@ function renderSnapshot(body, d, st) {
   const pick = st.store && lines.includes(st.store) ? st.store : "";
   const series = d.daily.map(x => ({ day: x.day, ...(pick ? x.lines[pick] : x.retail), company: x.company }));
   const isPlant = d.plants.some(p => p.name === pick);
+  const unmapped = d.unmappedWork || [];
 
   body.innerHTML = html`
     ${notes(d)}
@@ -232,9 +234,10 @@ function renderSnapshot(body, d, st) {
       ${d.stores.length ? d.stores.map(s => raw([row(s), ...s.parts.map(p => row(p, { sub: true }))].join(""))) : raw(html`<div class="empty-row">No sales or hours in this range.</div>`)}
       ${raw(row({ ...R, name: "All stores" }, { cls: "total" }))}
       ${d.plants.map(p => raw(row(p, { plant: true, cls: "plant" })))}
+      ${d.plants.length > 1 ? raw(row({ ...P, name: "All production", workPerHour: P.hours > 0 ? P.work / P.hours : null }, { plant: true, cls: "total" })) : ""}
       ${raw(row({ ...C, name: "Company" }, { cls: "total grand" }))}
     </section>
-    <p class="note-line">Sales count when an order is detailed; revenue when it's paid. Both are before tax and go to the store the order was detailed into. Workshop and Laundry Hub labor % is of company revenue.${d.overtime ? ` Hours over ${d.overtime.after} in a work week cost ${d.overtime.multiplier}×.` : ""}${d.labor && d.burdenPct ? ` Labor $ includes ${d.burdenPct}% payroll burden.` : ""}</p>
+    <p class="note-line">Sales count when an order is detailed; revenue when it's paid. Both are before tax and go to the store the order was detailed into. Workshop and Laundry Hub are measured on production value: the pre-tax value of the pieces they finished (assembled, or ready for wash &amp; fold).${d.overtime ? ` Hours over ${d.overtime.after} in a work week cost ${d.overtime.multiplier}×.` : ""}${d.labor && d.burdenPct ? ` Labor $ includes ${d.burdenPct}% payroll burden.` : ""}</p>
 
     <section class="card daily">
       <div class="daily-head">
@@ -248,16 +251,19 @@ function renderSnapshot(body, d, st) {
             ${raw(barChart(series, { value: r => r.revenue || 0, fmt: v => usd0.format(v), title: "Revenue by day", label: r => `<b>${wk(r.day)} ${nice(r.day)}</b><br>Revenue ${$f(r.revenue)}<br>Sales ${$f(r.sales)}` }))}</figure>`) : ""}
           ${d.labor && !isPlant ? raw(html`<figure><figcaption>Labor % by day${pick ? ` · ${pick}` : " · all stores"}</figcaption>
             ${raw(lineChart(series, { value: r => r.laborPct, target: tr, title: "Labor percent by day", label: r => `<b>${wk(r.day)} ${nice(r.day)}</b><br>Labor ${r.laborPct == null ? "—" : r.laborPct.toFixed(1) + "%"}<br>${$f(r.cost)} labor · ${$f(r.revenue)} revenue` }))}</figure>`) : ""}
-          ${isPlant ? raw(html`<figure><figcaption>Hours by day · ${pick}</figcaption>
-            ${raw(barChart(series, { value: r => r.hours || 0, fmt: v => `${v.toFixed(0)} h`, title: "Hours by day", label: r => `<b>${wk(r.day)} ${nice(r.day)}</b><br>${hrs(r.hours)} hours` }))}</figure>`) : ""}
+          ${isPlant ? raw(html`<figure><figcaption>Production value by day · ${pick}</figcaption>
+            ${raw(barChart(series, { value: r => r.work || 0, fmt: v => usd0.format(v), title: "Production value by day", label: r => `<b>${wk(r.day)} ${nice(r.day)}</b><br>${$f(r.work)} value · ${intTxt(r.workPieces)} pieces<br>${hrs(r.hours)} hours` }))}</figure>`) : ""}
+          ${isPlant && d.labor ? raw(html`<figure><figcaption>Labor % of production value · ${pick}</figcaption>
+            ${raw(lineChart(series, { value: r => r.laborPct, target: tp, title: "Production labor percent by day", label: r => `<b>${wk(r.day)} ${nice(r.day)}</b><br>Labor ${r.laborPct == null ? "—" : r.laborPct.toFixed(1) + "%"}<br>${$f(r.cost)} labor · ${$f(r.work)} value` }))}</figure>`) : ""}
         </div>`) : ""}
       <div class="dtable" role="table" aria-label="Day by day">
-        <div class="drow head" role="row" style="--cols:${d.labor ? 7 : 5}"><span>Day</span><span>Orders</span><span>Sales</span><span>Revenue</span><span>Hours</span>${d.labor ? raw("<span>Labor $</span><span>Labor %</span>") : ""}</div>
+        <div class="drow head" role="row" style="--cols:${d.labor ? 7 : 5}"><span>Day</span>${isPlant ? raw("<span>Pieces</span><span>Value</span><span>Value / hr</span>") : raw("<span>Orders</span><span>Sales</span><span>Revenue</span>")}<span>Hours</span>${d.labor ? raw("<span>Labor $</span><span>Labor %</span>") : ""}</div>
         ${series.slice().reverse().map(r => raw(html`<div class="drow ${r.day === d.today ? "is-today" : ""}" role="row" style="--cols:${d.labor ? 7 : 5}">
-          <span>${wk(r.day)} ${nice(r.day)}${r.day === d.today ? raw(" <small class='chip'>so far</small>") : ""}</span><span>${isPlant ? "" : intTxt(r.orders)}</span><span>${isPlant ? "" : $f(r.sales)}</span><span>${isPlant ? "" : $f(r.revenue)}</span><span>${hrs(r.hours)}</span>
-          ${d.labor ? raw(html`<span>${$f(r.cost)}</span><span>${isPlant ? "" : raw(laborBadge(r.laborPct, tr))}</span>`) : ""}</div>`))}
+          <span>${wk(r.day)} ${nice(r.day)}${r.day === d.today ? raw(" <small class='chip'>so far</small>") : ""}</span><span>${isPlant ? intTxt(r.workPieces) : intTxt(r.orders)}</span><span>${isPlant ? $f(r.work) : $f(r.sales)}</span><span>${isPlant ? $f(r.hours > 0 ? r.work / r.hours : null) : $f(r.revenue)}</span><span>${hrs(r.hours)}</span>
+          ${d.labor ? raw(html`<span>${$f(r.cost)}</span><span>${raw(laborBadge(r.laborPct, isPlant ? tp : tr))}</span>`) : ""}</div>`))}
       </div>
     </section>
+    ${unmapped.length && d.plants.length ? raw(html`<p class="note-line">Not counted in production value: ${unmapped.map(u => `${u.dept} (${u.pieces} pcs)`).join(", ")}. An Admin can assign these departments under Settings › Production work.</p>`) : ""}
     ${freshLine(d)}`;
   body.querySelector("#pick").addEventListener("change", e => { st.store = e.target.value; writeHash("snapshot", st); renderSnapshot(body, d, st); tooltip(body); });
 }

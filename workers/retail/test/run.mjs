@@ -83,10 +83,25 @@ await t("labor $ uses each person's rate, the department average when there's no
 await t("labor % = labor $ / revenue; none when there's no revenue", async () => {
   near(store("Emory").laborPct, 17.5); near(snap.totals.retail.laborPct, 27.46); eq(store("Quitman").laborPct, null);
 });
-await t("Workshop and Laundry Hub: hours, labor $ and % of company revenue", async () => {
+await t("Workshop and Laundry Hub: hours, labor $, production value, labor % of their own work", async () => {
   const ws = snap.plants.find(p => p.name === "Workshop"), hub = snap.plants.find(p => p.name === "Laundry Hub");
-  near(ws.hours, 280); near(ws.cost, 4200); near(hub.cost, 896); near(snap.totals.plant.laborPct, 34.95);
+  near(ws.hours, 280); near(ws.cost, 4200); near(hub.cost, 896);
+  near(ws.work, 13140); eq(ws.workPieces, 126); near(ws.laborPct, 31.96); near(ws.piecesPerHour, 0.45);
+  near(hub.work, 600); eq(hub.workPieces, 6); near(hub.laborPct, 149.33);           // wash & fold counts when the order is ready
+  near(snap.totals.plant.work, 13740); near(snap.totals.plant.laborPct, 37.09); near(snap.totals.plant.revenueSharePct, 34.95);
   near(snap.totals.company.cost, 9100); near(snap.totals.company.laborPct, 62.41);
+  near(snap.totals.company.sales, 19250);                                           // production value isn't added to sales
+});
+await t("pieces in departments no plant does are listed, not guessed", async () => {
+  eq(snap.unmappedWork, [{ dept: "Shoe Repair", pieces: 6 }]);
+});
+await t("Settings › Production work moves a department to another plant", async () => {
+  const cur = (await call("GET", "/api/settings")).body.settings;
+  await call("PUT", "/api/settings", { body: { ...cur, plantWork: { ...cur.plantWork, "Shoe Repair": "Laundry Hub" } } });
+  const d = (await call("GET", `/api/snapshot?from=${FROM}&to=${LAST}`)).body;
+  near(d.plants.find(p => p.name === "Laundry Hub").work, 600 + 6 * 140); eq(d.unmappedWork, []);
+  await call("PUT", "/api/settings", { body: cur });
+  ok((await call("GET", "/api/settings")).body.posDepartments.includes("Wash & Fold"));
 });
 await t("daily rows add up to the totals", async () => {
   eq(snap.daily.length, 7);

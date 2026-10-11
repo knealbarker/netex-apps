@@ -35,8 +35,11 @@ export async function buildSummary(db, env, day, { now = Date.now() } = {}) {
       <td style="padding:7px 10px;border-bottom:1px solid #e1e6ef;${bold ? "font-weight:700" : ""}">${esc(l.name)}${l.parts?.length ? `<div style="font-size:12px;color:#8a93a5">incl. ${esc(l.parts.filter(p => p.name !== l.name).map(p => p.name).join(", "))}</div>` : ""}</td>
       ${td(usd(l.sales), bold ? "font-weight:700" : "")}${td(usd(l.revenue), bold ? "font-weight:700" : "")}${td(hrs(l.hours))}${td(usd(l.cost))}
       ${td(`${pct(l.laborPct)} ${flag(l.laborPct)}`, `font-weight:700;color:${color(l.laborPct)}`)}</tr>`;
-  const plantRow = p => `<tr><td style="padding:7px 10px;border-bottom:1px solid #e1e6ef;color:#5d6779">${esc(p.name)} <span style="font-size:12px">production</span></td>
-      ${td("")}${td("")}${td(hrs(p.hours))}${td(usd(p.cost))}${td(`${pct(p.laborPct)}`, "color:#5d6779")}</tr>`;
+  const tp = s.targetPlant;
+  const pcolor = v => (v == null ? "#5d6779" : v <= tp ? "#12a36b" : v <= tp + 3 ? "#b77806" : "#d83347");
+  const plantRow = (p, bold = false) => `<tr><td style="padding:7px 10px;border-bottom:1px solid #e1e6ef;color:#5d6779;${bold ? "font-weight:700" : ""}">${esc(p.name)} <span style="font-size:12px">production</span></td>
+      ${td(`${(p.workPieces || 0).toLocaleString()} pcs`, "color:#5d6779")}${td(`${usd(p.work)} <span style="font-size:11px;color:#8a93a5">value</span>`)}${td(hrs(p.hours))}${td(usd(p.cost))}
+      ${td(`${pct(p.laborPct)} ${p.laborPct == null ? "" : p.laborPct <= tp ? "✓" : "▲"}`, `font-weight:700;color:${pcolor(p.laborPct)}`)}</tr>`;
   const period = (label, x) => `<tr><td style="padding:7px 10px;border-bottom:1px solid #e1e6ef;font-weight:600">${label}<div style="font-size:12px;color:#8a93a5">${shortDay(x.from)} – ${shortDay(x.to)}</div></td>
       ${td(usd(x.totals.company.sales))}${td(usd(x.totals.company.revenue))}${td(pct(x.totals.company.collectedPct))}
       ${td(`${pct(x.totals.retail.laborPct)} ${flag(x.totals.retail.laborPct)}`, `font-weight:700;color:${color(x.totals.retail.laborPct)}`)}${td(pct(x.totals.company.laborPct))}</tr>`;
@@ -52,15 +55,17 @@ export async function buildSummary(db, env, day, { now = Date.now() } = {}) {
     <table role="presentation" style="width:100%;border-collapse:separate;border-spacing:8px 0;margin:0 -8px 16px"><tr>
       ${[["Sales", usd(C.sales), `${C.orders} orders detailed`], ["Revenue", usd(C.revenue), "paid yesterday"],
          ["Store labor", `<span style="color:${color(R.laborPct)}">${pct(R.laborPct)} ${flag(R.laborPct)}</span>`, `target ${tr}% · ${usd(R.cost)}`],
-         ["Total labor", pct(C.laborPct), `stores + production · ${usd(C.cost)}`]]
-        .map(([l, v, sub]) => `<td style="background:#fff;border:1px solid #e1e6ef;border-radius:12px;padding:12px 14px;vertical-align:top;width:25%">
+         ...(y.plants.length ? [["Production labor", `<span style="color:${pcolor(y.totals.plant.laborPct)}">${pct(y.totals.plant.laborPct)}</span>`, `of ${usd(y.totals.plant.work)} value · target ${tp}%`]] : []),
+         ["Total labor", pct(C.laborPct), `all labor ÷ revenue · ${usd(C.cost)}`]]
+        .map(([l, v, sub]) => `<td style="background:#fff;border:1px solid #e1e6ef;border-radius:12px;padding:12px 14px;vertical-align:top;">
           <div style="font-size:12px;color:#5d6779;font-weight:600">${l}</div><div style="font-size:22px;font-weight:800;margin:2px 0">${v}</div><div style="font-size:12px;color:#5d6779">${sub}</div></td>`).join("")}
     </tr></table>
     <table style="width:100%;border-collapse:collapse;background:#fff;border:1px solid #e1e6ef;border-radius:12px;font-size:14px">
       <tr><th style="padding:7px 10px;border-bottom:2px solid #d3dae6;text-align:left;font-size:12px;color:#5d6779;text-transform:uppercase;letter-spacing:.04em">Store</th>${th("Sales")}${th("Revenue")}${th("Hours")}${th("Labor $")}${th("Labor %")}</tr>
       ${y.stores.map(l => storeRow(l)).join("")}
       ${storeRow({ ...R, name: "All stores" }, true)}
-      ${y.plants.map(plantRow).join("")}
+      ${y.plants.map(p => plantRow(p)).join("")}
+      ${y.plants.length > 1 ? plantRow({ ...y.totals.plant, name: "All production" }, true) : ""}
     </table>
     <h2 style="font-size:16px;margin:22px 0 8px">So far</h2>
     <table style="width:100%;border-collapse:collapse;background:#fff;border:1px solid #e1e6ef;border-radius:12px;font-size:14px">
@@ -76,7 +81,7 @@ export async function buildSummary(db, env, day, { now = Date.now() } = {}) {
   const text = [`Retail snapshot — ${longDay(day)}`, "",
     `Sales ${usd(C.sales)} (${C.orders} orders) · Revenue ${usd(C.revenue)} · Store labor ${pct(R.laborPct)} (target ${tr}%) · Total labor ${pct(C.laborPct)}`, "",
     ...y.stores.map(l => `${l.name}: sales ${usd(l.sales)}, revenue ${usd(l.revenue)}, ${hrs(l.hours)} h, labor ${pct(l.laborPct)}`),
-    ...y.plants.map(p => `${p.name}: ${hrs(p.hours)} h, ${usd(p.cost)} (${pct(p.laborPct)} of revenue)`), "",
+    ...y.plants.map(p => `${p.name}: ${p.workPieces || 0} pieces, ${usd(p.work)} production value, ${hrs(p.hours)} h, labor ${pct(p.laborPct)} of value`), "",
     `Week to date: sales ${usd(w.totals.company.sales)}, revenue ${usd(w.totals.company.revenue)}, store labor ${pct(w.totals.retail.laborPct)}, total ${pct(w.totals.company.laborPct)}`,
     `Month to date: sales ${usd(m.totals.company.sales)}, revenue ${usd(m.totals.company.revenue)}, store labor ${pct(m.totals.retail.laborPct)}, total ${pct(m.totals.company.laborPct)}`,
     ...(notes.length ? ["", ...notes] : []), "", `${APP_URL}/#/snapshot?p=yesterday`].join("\n");

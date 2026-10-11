@@ -6,14 +6,25 @@ import { addDays } from "../src/snapshot.js";
 
 const ORDER_COLS = ["ID","Customer Id","Agent","Payment Setting","Created by","Detailed by","Return Location","Returned by","Status","Order Type","Piece Count","Original Piece Count","Weight In","Weight Out","Price","Paid amount (inc. deposits)","Is Paid","Is Pre Paid","Weight","Discounted Amount","Before Discount Amount","Total Tax","Taxable Amount","Created","Due date","Detailed date","Assembled by","Is Route Delivery","Is Route Pickup","Assembly date","Returned date","Ready date","Paid date","Deleted date","Payment Method","Paid by","Promotion","Promotion applied date","Financial department(s)","Surcharge Amount"];
 
+const ITEM_COLS = ["Sale Id","Item Status","Lot status","Price","Discounted amount","Item base price","Up Charge Amount","Created","Item Type","Financial department","Barcode","Item assembly date","Item removal date","Item Notes","Order Notes"];
+/** Pieces for an order: [department, assembled?] per piece, each worth `each` dollars before tax. */
+export function items(o, list, each, assembledOn) {
+  return list.map(([dept, asm], i) => {
+    const it = Object.fromEntries(ITEM_COLS.map(c => [c, null]));
+    return Object.assign(it, { "Sale Id": o.ID, "Item Status": asm ? "assembled" : "detailed", "Item base price": String(Math.round(each * 100)), "Price": String(Math.round(each * 108.25)),
+      "Created": o.Created, "Item Type": dept === "Wash & Fold" ? "Wash & Fold" : "Shirt", "Financial department": dept, "Barcode": `${o.ID}${i}`,
+      "Item assembly date": asm ? `${assembledOn}T10:00:00-05:00` : null });
+  });
+}
+
 /** One order: pre-tax `net` dollars (tax 8.25% on top), detailed on `day`, paid on `paid` (or not). */
-export function order(no, { store = "TCC Sulphur Springs", day, net = 20, paid = null, status = "processing", pieces = 3, deleted = false, detailed = true }) {
+export function order(no, { store = "TCC Sulphur Springs", day, net = 20, paid = null, status = "processing", pieces = 3, deleted = false, detailed = true, ready = null }) {
   const o = Object.fromEntries(ORDER_COLS.map(c => [c, null]));
   const tax = Math.round(net * 100 * 0.0825), cents = Math.round(net * 100);
   Object.assign(o, { "ID": String(no), "Customer Id": "c" + no, "Agent": store, "Return Location": store, "Status": deleted ? "deleted" : status, "Order Type": "Dry Cleaning",
     "Piece Count": String(pieces), "Price": String(cents + tax), "Total Tax": String(tax), "Taxable Amount": String(cents), "Before Discount Amount": String(cents),
     "Created": `${day}T09:15:00-05:00`, "Detailed date": detailed ? `${day}T09:20:00-05:00` : null, "Due date": `${addDays(day, 1)}T16:00:00-05:00`,
-    "Paid date": paid ? `${paid}T11:00:00-05:00` : null, "Paid amount (inc. deposits)": paid ? String(cents + tax) : "0", "Deleted date": deleted ? `${day}T10:00:00-05:00` : null,
+    "Paid date": paid ? `${paid}T11:00:00-05:00` : null, "Ready date": ready ? `${ready}T09:00:00-05:00` : null, "Paid amount (inc. deposits)": paid ? String(cents + tax) : "0", "Deleted date": deleted ? `${day}T10:00:00-05:00` : null,
     "Financial department(s)": "Dry Cleaning Tops" });
   return o;
 }
@@ -38,14 +49,16 @@ export async function seed(db, { last, days = 7, today = addDays(last, 1) }) {
   const csv = [HDR]; let e = 0;
   for (let i = days - 1; i >= 0; i--) {
     const day = addDays(last, -i), next = addDays(day, 1);
-    const orders = [];
-    for (let k = 0; k < 3; k++) orders.push(order(++n, { day, net: 400, paid: next }));
-    orders.push(order(++n, { store: "TCC Winnsboro", day, net: 150, paid: next }));
-    for (let k = 0; k < 2; k++) orders.push(order(++n, { store: "TCC Quitman", day, net: 160 }));
-    orders.push(order(++n, { store: "TCC Emory", day, net: 560, paid: next }));
-    for (let k = 0; k < 2; k++) orders.push(order(++n, { store: "TCC Greenville", day, net: 260, paid: next }));
+    const orders = [], its = [];
+    const DC = ["Dry Cleaning Tops", true], LT = ["Laundry Tops", true];
+    { const o = order(++n, { day, net: 400, paid: next, pieces: 4, ready: next }); orders.push(o); its.push(...items(o, [DC, LT, DC, ["Wash & Fold", false]], 100, next)); }
+    for (let k = 0; k < 2; k++) { const o = order(++n, { day, net: 400, paid: next, pieces: 4 }); orders.push(o); its.push(...items(o, [DC, LT, DC, LT], 100, next)); }
+    { const o = order(++n, { store: "TCC Winnsboro", day, net: 150, paid: next }); orders.push(o); its.push(...items(o, [DC, DC, LT], 50, next)); }
+    for (let k = 0; k < 2; k++) { const o = order(++n, { store: "TCC Quitman", day, net: 160, pieces: 2 }); orders.push(o); its.push(...items(o, [["Dry Cleaning Tops", false], ["Laundry Tops", false]], 80, next)); }
+    { const o = order(++n, { store: "TCC Emory", day, net: 560, paid: next, pieces: 4 }); orders.push(o); its.push(...items(o, [DC, DC, LT, ["Shoe Repair", true]], 140, next)); }
+    for (let k = 0; k < 2; k++) { const o = order(++n, { store: "TCC Greenville", day, net: 260, paid: next, pieces: 2 }); orders.push(o); its.push(...items(o, [DC, LT], 130, next)); }
     orders.push(order(++n, { day, net: 500, deleted: true, paid: next }));
-    ctx.day = day; await ingestDay(db, ctx, orders, []);
+    ctx.day = day; await ingestDay(db, ctx, orders, its);
     csv.push(entry(`e${++e}`, "Sam Counter", "501", "Retail", "TCC SS Retail", day, 8, "$15.00"));
     csv.push(entry(`e${++e}`, "Jo Counter", "502", "Retail", "TCC SS Retail", day, 8, "15"));
     csv.push(entry(`e${++e}`, "Quinn Store", "503", "Retail", "TCC Quitman Retail", day, 8, ""));

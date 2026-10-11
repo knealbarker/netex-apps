@@ -9,7 +9,9 @@ export async function render(main, ctx) {
     return;
   }
   main.innerHTML = html`<div class="loading"><span class="spin"></span>Loading settings…</div>`;
-  const { settings: s, locations, departments, rates, rippling } = await api("/settings");
+  const { settings: s, locations, departments, posDepartments = [], rates, rippling } = await api("/settings");
+  const plants = [...new Set([...locations.filter(l => l.kind === "plant").map(l => l.name), ...Object.values(s.plantWork)])];
+  const sdeps = [...new Set([...posDepartments, ...Object.keys(s.plantWork)])].sort();
   const stores = locations.filter(l => l.kind === "store").map(l => l.name);
   const depts = [...new Set([...departments, ...Object.keys(s.avgRates)])];
   const owner = ctx.me.role === "owner";
@@ -21,7 +23,7 @@ export async function render(main, ctx) {
         <h2>Labor targets</h2>
         <div class="two">
           <label class="field"><span>Store labor target</span><div class="suffix"><input class="input" name="targetRetail" inputmode="decimal" value="${s.targetRetail}"><i>%</i></div><small>Store labor $ ÷ store revenue.</small></label>
-          <label class="field"><span>Production labor target</span><div class="suffix"><input class="input" name="targetPlant" inputmode="decimal" value="${s.targetPlant}"><i>%</i></div><small>Workshop + Laundry Hub labor $ ÷ company revenue.</small></label>
+          <label class="field"><span>Production labor target</span><div class="suffix"><input class="input" name="targetPlant" inputmode="decimal" value="${s.targetPlant}"><i>%</i></div><small>Workshop + Laundry Hub labor $ ÷ their production value.</small></label>
         </div>
         <label class="field"><span>Payroll burden</span><div class="suffix"><input class="input" name="burdenPct" inputmode="decimal" value="${s.burdenPct}"><i>%</i></div><small>Added on top of wages for payroll taxes and similar costs. 0 = wages only.</small></label>
         <label class="field"><span>Week starts on</span><select class="input" name="weekStart"><option value="1" ${raw(s.weekStart === 1 ? "selected" : "")}>Monday</option><option value="0" ${raw(s.weekStart === 0 ? "selected" : "")}>Sunday</option></select></label>
@@ -48,6 +50,16 @@ export async function render(main, ctx) {
             <label class="check"><input type="checkbox" name="hide:${n}" ${raw(s.hidden.includes(n) ? "checked" : "")}> Not a store</label>
           </div>`))}
           ${stores.length ? "" : raw(html`<p class="muted">Stores appear here once SMRT orders have been read.</p>`)}
+        </div>
+      </section>
+
+      <section class="card set-card">
+        <h2>Production work</h2>
+        <p class="dlg-lead">Which plant does the work for each SMRT department. The pre-tax value of the pieces a plant finishes is its production value, and its labor % is labor $ ÷ that value. Pieces count when assembled; wash &amp; fold counts when the order is ready.</p>
+        <div class="loc-list">
+          ${sdeps.map(dn => raw(html`<div class="loc-row dep-row"><b>${dn}</b>
+            <select class="input" name="work:${dn}"><option value="">Not production</option>${plants.map(pl => raw(html`<option ${raw(s.plantWork[dn] === pl ? "selected" : "")}>${pl}</option>`))}</select></div>`))}
+          ${sdeps.length ? "" : raw(html`<p class="muted">Departments appear here once SMRT pieces have been read.</p>`)}
         </div>
       </section>
 
@@ -97,6 +109,7 @@ export async function render(main, ctx) {
     for (const i of f.querySelectorAll("[name^='rate:']")) body.avgRates[i.name.slice(5)] = i.value;
     for (const i of f.querySelectorAll("[name^='roll:']")) if (i.value) body.rollup[i.name.slice(5)] = i.value;
     for (const i of f.querySelectorAll("[name^='hide:']")) if (i.checked) body.hidden.push(i.name.slice(5));
+    body.plantWork = {}; for (const i of f.querySelectorAll("[name^='work:']")) if (i.value) body.plantWork[i.name.slice(5)] = i.value;
     const btn = f.querySelector("[type=submit]"); btn.disabled = true;
     try { await api("/settings", { method: "PUT", body }); toast("Settings saved."); }
     catch (x) { toast(x.message, "bad", 7000); }
