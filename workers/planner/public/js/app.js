@@ -5,12 +5,13 @@ import * as users from "./views/users.js";
 import * as soon from "./views/soon.js";
 import * as team from "./views/team.js";
 import * as plan from "./views/plan.js";
+import * as floor from "./views/floor.js";
 import * as settings from "./views/settings.js";
 
 const $ = s => document.querySelector(s);
 const main = $("#main");
 const VIEWS = {
-  plan: m => plan.render(m, ctx), floor: m => soon.render(m, ctx, "floor"), review: m => soon.render(m, ctx, "review"),
+  plan: m => plan.render(m, ctx), floor: m => floor.render(m, ctx), review: m => soon.render(m, ctx, "review"),
   team: m => team.render(m, ctx), settings: m => settings.render(m, ctx),
   users: m => users.render(m, ctx),
 };

@@ -219,6 +219,29 @@ await t("light theme", async () => {
   await q.goto(url + "/#/plan"); await q.waitForSelector("#pl-gantt .gb");
   await q.screenshot({ path: join(SHOTS, "24-plan-light.png"), fullPage: true });
 });
+await t("Floor: shows the published plan, people and deadlines; switches to Spanish", async () => {
+  who = "vi@example.com";
+  const q = await page({ width: 1920, height: 1080 });
+  await q.goto(url + "/#/floor"); await q.waitForSelector("#fl-root .f-band");
+  ok(await q.locator(".f-now").count() >= 4, "people listed");
+  ok(await q.isVisible('.f-wave:has-text("Quitman run")'), "deadline listed");
+  await q.screenshot({ path: join(SHOTS, "25-floor.png") });
+  await q.click("#fl-lang"); await q.waitForSelector('#fl-root[lang="es"]');
+  ok(/Entregas|Ahora/.test(await q.textContent("#fl-root")));
+  await q.screenshot({ path: join(SHOTS, "26-floor-es.png") });
+  await q.reload(); await q.waitForSelector('#fl-root[lang="es"]'); // remembered on this screen
+  await q.goto(url + "/#/floor?tv"); await q.waitForSelector("#fl-root");
+  ok(!(await q.isVisible("header.top")), "tv mode hides the header");
+  await q.goto(url + "/#/team"); await q.waitForSelector(".team-list");
+  ok(await q.isVisible("header.top"), "header back after leaving");
+  who = NEAL;
+});
+await t("Floor on a phone: no sideways scroll", async () => {
+  const q = await page({ width: 390, height: 844 });
+  await q.goto(url + "/#/floor"); await q.waitForSelector("#fl-root .f-band");
+  ok(!(await q.evaluate(() => document.documentElement.scrollWidth > window.innerWidth)));
+  await q.screenshot({ path: join(SHOTS, "27-floor-phone.png"), fullPage: true });
+});
 await t("leaving the Plan stops its listeners (no errors on other screens)", async () => {
   await p.goto(url + "/#/plan"); await p.waitForSelector("#pl-crew .cr-row");
   await p.click('#nav a[data-view="team"]'); await p.waitForSelector(".team-list");

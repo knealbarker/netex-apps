@@ -157,5 +157,26 @@ await t("crew round-trips to the server shape", async () => {
   eq([back.slt1.emp, back.dct3.emp, back.dct3.start], ["a", "", s.defStart]);
 });
 
+await t("floor: replays the snapshot; live progress gives pace, projection and what's left", async () => {
+  const FM = await import("../public/js/plan/floor.js");
+  const P = staffed(); const X = M.evaluate(P), snap = M.snapshotOf(X);
+  const F = FM.replay(snap);
+  ok(Math.abs(F.R.end - X.R.end) < 1e-9);
+  const live = JSON.parse(JSON.stringify(V)); live.runs = SET.runs;
+  const st = live.days[DAY].stores[0]; st.done = { ...zero(), slt: 150, dct: 60, dcb: 20, slb: 70 }; // Quitman all done
+  live.days[DAY].done = st.done;
+  const L = FM.liveWaves(snap, F, live, 9);
+  const q = L.find(x => x.w.id === "r1"), c = L.find(x => x.w.id === "r2");
+  ok(q.ready && q.cls === "good", JSON.stringify(q));
+  ok(!c.ready && c.exp > 0 && c.exp < 1 && c.leftCats.length, JSON.stringify(c));
+  ok(c.proj > c.eta, "nothing done for the counter yet: behind the plan");
+  const ev = FM.events(F, FM.TXT.en);
+  ok(ev.some(e => e.kind === "wash") && ev.some(e => e.kind === "start" && e.nm === "Ana Uno"));
+  const RN = FM.rightNow(F, ev, 5.5);
+  eq(RN.find(p => p.nm === "Dani Cuatro").state, "before");
+  eq(RN.find(p => p.nm === "Ana Uno").state, "on");
+  ok(FM.comingUp(ev, L, 5).length > 0);
+  eq(FM.status(L, F, FM.TXT.en).cls, c.cls === "bad" ? "bad" : c.cls === "warn" ? "warn" : "ok");
+});
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
