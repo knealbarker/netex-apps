@@ -9,6 +9,7 @@ import { HttpError, nowIso, audit } from "./util.js";
 import { requireRole, rank } from "./auth.js";
 import { loadGroups, loadRuns } from "./settings.js";
 import { productionIds } from "./team.js";
+import { payRates, laborCost } from "./pay.js";
 import { CATS, categorizer, splitOrders, loadOpen, nextWorkDay, prevWorkDay, addDays, localNow, storeToRun, runDeadline } from "./pieces.js";
 
 const DAY = /^\d{4}-\d{2}-\d{2}$/;
@@ -117,9 +118,10 @@ export async function reviewDay(db, env, me, day) {
 
   const people = await hours(db, env, day, today, departmentId);
   const laborH = people.reduce((t, p) => t + p.hours, 0);
-  const cost = laborH * groups.money.payAvg;
+  const rates = money ? await payRates(db, env.ORG_ID) : null;
+  const lc = money ? laborCost(people, day, rates, groups.money.payAvg) : null;
   const labor = { hours: laborH, people: people.length, perHour: laborH > 0 ? done.pieces / laborH : null,
-    ...(money ? { cost, revenue: done.revenue, pct: done.revenue > 0 && laborH > 0 ? cost / done.revenue * 100 : null, target: groups.money.laborTarget, payAvg: groups.money.payAvg } : {}) };
+    ...(money ? { cost: lc.cost, avgHours: lc.avgHours, revenue: done.revenue, pct: done.revenue > 0 && laborH > 0 ? lc.cost / done.revenue * 100 : null, target: groups.money.laborTarget, payAvg: groups.money.payAvg } : {}) };
 
   // plan vs actual, person by person
   const vs = [];
@@ -138,7 +140,7 @@ export async function reviewDay(db, env, me, day) {
 
   return { day, today, isToday: day === today, isWorkDay: workDays.includes(weekday(day)), prev: prevWorkDay(day, workDays), next: day < today ? nextWorkDay(day, workDays) : null,
     done: money ? done : { ...done, revenue: undefined }, due, deadlines, labor, people: vs, planned: planned ? { source: planned.source, at: planned.at || null, by: planned.by || null, metrics: planned.metrics } : null,
-    followups: await followups(db, env, day), trend: await trend(db, env, day, workDays, departmentId, cat, prices, money ? groups.money.payAvg : null), money };
+    followups: await followups(db, env, day), trend: await trend(db, env, day, workDays, departmentId, cat, prices, money ? { payAvg: groups.money.payAvg, rates } : null), money };
 }
 
 async function followups(db, env, day) {
@@ -152,11 +154,12 @@ async function followups(db, env, day) {
 }
 
 /** The last 15 work days up to this one: hours, pieces assembled, pieces per labor hour, and labor % for Admins. */
-async function trend(db, env, day, workDays, departmentId, cat, prices, payAvg) {
-  const days = [day]; while (days.length < 15) days.unshift(prevWorkDay(days[0], workDays));
+export async function trend(db, env, day, workDays, departmentId, cat, prices, pay, n = 15) {
+  const days = [day]; while (days.length < n) days.unshift(prevWorkDay(days[0], workDays));
   const from = days[0];
-  const hrs = new Map((await db.prepare(`SELECT work_date AS d, SUM(hours) AS h FROM labor_daily_hours WHERE department_id=? AND work_date BETWEEN ? AND ? AND deleted_at IS NULL GROUP BY work_date`)
-    .bind(departmentId, from, day).all()).results.map(r => [r.d, +r.h]));
+  const byDay = new Map();
+  for (const r of (await db.prepare(`SELECT work_date AS d, person_id AS personId, SUM(hours) AS hours FROM labor_daily_hours WHERE department_id=? AND work_date BETWEEN ? AND ? AND deleted_at IS NULL GROUP BY work_date, person_id`)
+    .bind(departmentId, from, day).all()).results) (byDay.get(r.d) || byDay.set(r.d, []).get(r.d)).push(r);
   const items = (await db.prepare(`SELECT substr(i.assembled_at,1,10) AS d, t.name AS type, dep.name AS dep, i.base_cents AS base, i.upcharge_cents AS up, i.discount_cents AS disc
       FROM pos_items i JOIN pos_orders o ON o.id=i.order_id JOIN pos_order_statuses s ON s.id=o.status_id
       LEFT JOIN pos_item_types t ON t.id=i.item_type_id LEFT JOIN pos_departments dep ON dep.id=i.department_id
@@ -164,9 +167,9 @@ async function trend(db, env, day, workDays, departmentId, cat, prices, payAvg) 
   const per = new Map();
   for (const it of items) { const k = cat(it.type, it.dep); if (!k) continue; const x = per.get(it.d) || per.set(it.d, { pieces: 0, rev: 0 }).get(it.d); x.pieces++; x.rev += it.base != null ? cents(it) / 100 : (+prices[k] || 0); }
   return days.map(d => {
-    const h = hrs.get(d) || 0, p = per.get(d) || { pieces: 0, rev: 0 };
+    const rows = byDay.get(d) || [], h = rows.reduce((t, r) => t + (+r.hours || 0), 0), p = per.get(d) || { pieces: 0, rev: 0 };
     const out = { day: d, hours: h, pieces: p.pieces, perHour: h > 0 ? p.pieces / h : null };
-    if (payAvg != null) out.pct = p.rev > 0 && h > 0 ? h * payAvg / p.rev * 100 : null;
+    if (pay) out.pct = p.rev > 0 && h > 0 ? laborCost(rows, d, pay.rates, pay.payAvg).cost / p.rev * 100 : null;
     return out;
   });
 }
@@ -187,4 +190,15 @@ export async function noteFollowup(db, env, me, id, body) {
     .bind(reasonId, note, reasonId || note ? 1 : 0, me.id, reasonId || note ? 1 : 0, now, status, status, me.id, status, now, now, me.id, id).run();
   await audit(db, { orgId: env.ORG_ID, userId: me.id, appId: env.APP_ID, entity: "plan_followups", entityId: id, action: "update", changes: { reasonId, note, status } });
   return { id, status };
+}
+
+/** Work days in a row (before today) with labor at or under the target — for the Floor screen. Shows no money. */
+export async function laborStreak(db, env) {
+  const groups = await loadGroups(db, env.ORG_ID), workDays = groups.day.workDays || [1, 2, 3, 4, 5];
+  const today = localNow(env.TIMEZONE).day, last = prevWorkDay(today, workDays);
+  const { departmentId } = await productionIds(db, env.ORG_ID);
+  const T = await trend(db, env, last, workDays, departmentId, categorizer(groups.smrt), groups.money.prices, { payAvg: groups.money.payAvg, rates: await payRates(db, env.ORG_ID) }, 30);
+  let n = 0;
+  for (let i = T.length - 1; i >= 0; i--) { const p = T[i].pct; if (p == null || p > groups.money.laborTarget) break; n++; }
+  return { days: n, target: groups.money.laborTarget };
 }

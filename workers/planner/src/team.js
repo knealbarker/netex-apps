@@ -4,7 +4,8 @@
 // Everyone signed in can see the team. Managers and up can change trainings (they do it while planning);
 // Admins and the Owner add, edit and turn off people.
 import { HttpError, ulid, nowIso, cleanName, audit } from "./util.js";
-import { requireRole } from "./auth.js";
+import { requireRole, rank } from "./auth.js";
+import { payRates, rateOn } from "./pay.js";
 
 const TIME = /^([01]\d|2[0-3]):[0-5]\d$/;
 
@@ -19,7 +20,7 @@ export async function listTrainings(db) {
   return (await db.prepare("SELECT id, name, short FROM plan_trainings ORDER BY sort").all()).results;
 }
 
-export async function listTeam(db, env) {
+export async function listTeam(db, env, me = null) {
   const { departmentId, locationId } = await productionIds(db, env.ORG_ID);
   const trainings = await listTrainings(db);
   // which stations each training covers (only stations in use)
@@ -34,9 +35,14 @@ export async function listTeam(db, env) {
       JOIN core_people p ON p.id = pt.person_id WHERE p.org_id=? AND pt.deleted_at IS NULL ORDER BY pt.priority`).bind(env.ORG_ID).all()).results;
   const byPerson = new Map();
   for (const r of rows) (byPerson.get(r.personId) || byPerson.set(r.personId, []).get(r.personId)).push(r.t);
+  // pay rates (from Rippling) only go to Admins and the Owner
+  const rates = me && rank(me.role) >= rank("admin") ? await payRates(db, env.ORG_ID) : null;
+  const today = new Date().toISOString().slice(0, 10);
   return {
     trainings: trainings.filter(t => t.stations.length),
-    people: people.map(p => ({ ...p, name: p.displayName || `${p.firstName} ${p.lastName}`.trim(), trainings: byPerson.get(p.id) || [] })),
+    people: people.map(p => ({ ...p, name: p.displayName || `${p.firstName} ${p.lastName}`.trim(), trainings: byPerson.get(p.id) || [],
+      ...(rates ? { rate: rateOn(rates.get(p.id), today) } : {}) })),
+    ...(rates ? { ratesShown: true } : {}),
   };
 }
 

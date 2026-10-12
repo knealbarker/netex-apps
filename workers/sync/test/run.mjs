@@ -267,6 +267,12 @@ ok("custom work days: Saturday as a work day waits", !backfillAllowed({ day: "20
     await ingestRippling(sdb, { orgId: "tcc", integrationId: "rippling", today: "2026-10-12", csv: raise });
     const rr = S.prepare("SELECT hourly_cents c, effective_on e FROM labor_pay_rates r JOIN core_people p ON p.id=r.person_id WHERE p.payroll_id='80' ORDER BY e").all();
     ok("rippling: a raise starts today, the old rate stays for earlier days", rr.length === 2 && rr[0].c === 1450 && rr[1].c === 1525 && rr[1].e === "2026-10-12", rr);
+    {
+      const { sqlite: S2, db: d2 } = freshDb();
+      const odd = [hdr.replace("Pay Rate", "Employee Hourly Rate (USD)"), "d1,Odd Name,83,Presser,Production,TCC SS Workshop,10/09/2026,10/09/2026 06:00 AM CDT,10/09/2026 02:00 PM CDT,8,America/Chicago,PAID,Web,Web,17.25"].join("\n");
+      const r3 = await ingestRippling(d2, { orgId: "tcc", integrationId: "rippling", today: "2026-10-12", csv: odd });
+      ok("rippling: a rate column with another name is found by its values", r3.rateColumn === "Employee Hourly Rate (USD)" && one(S2, "SELECT hourly_cents c FROM labor_pay_rates").c === 1725, r3);
+    }
     const imp = await ingestRippling(sdb, { orgId: "tcc", integrationId: "rippling", today: "2026-10-12", csv: [hdr, "c1,Old Timer,82,Retail Advisor,Retail,TCC Quitman Retail,09/02/2026,09/02/2026 08:00 AM CDT,09/02/2026 01:00 PM CDT,5,America/Chicago,PAID,Web,Web,"].join("\n"), keepToday: true });
     ok("rippling: a hand import leaves today's punches alone", imp.used === 1 && one(S, "SELECT COUNT(*) n FROM labor_clock_today").n === 1);
   }

@@ -9,7 +9,10 @@ import { listTeam, addPerson, updatePerson, setTrainings } from "./team.js";
 import { importDesktop } from "./import.js";
 import { piecesView } from "./pieces.js";
 import { loadPlan, savePlan, publishPlan, addCallout, removeCallout, publishedPlan } from "./plan.js";
-import { reviewDay, noteFollowup } from "./review.js";
+import { reviewDay, noteFollowup, laborStreak } from "./review.js";
+import { listChanges, addEvent } from "./changes.js";
+import { buildSummary, sendNow, scheduledSummary } from "./summary.js";
+import { localNow } from "./pieces.js";
 
 const SECURITY_HEADERS = {
   "x-content-type-options": "nosniff",
@@ -36,16 +39,16 @@ const routes = [
     const r = await updateUser(env.DB, env, me, m[1], await readJson(req));
     return json({ ...r, access: r.changed ? await syncAccessGroup(env.DB, env) : { synced: false, reason: "unchanged" } });
   }],
-  ["GET", /^\/api\/settings$/, async (req, env) => json(await allSettings(env.DB, env))],
+  ["GET", /^\/api\/settings$/, async (req, env, me) => json(await allSettings(env.DB, env, me))],
   ["PUT", /^\/api\/settings\/production$/, async (req, env, me) => json(await saveProduction(env.DB, env, me, await readJson(req)))],
   ["PUT", /^\/api\/settings\/runs$/, async (req, env, me) => json({ runs: await saveRuns(env.DB, env, me, (await readJson(req)).runs) })],
   ["PUT", /^\/api\/settings\/(\w+)$/, async (req, env, me, m) => json({ [m[1]]: await saveGroup(env.DB, env, me, m[1], await readJson(req)) })],
-  ["GET", /^\/api\/team$/, async (req, env) => json(await listTeam(env.DB, env))],
+  ["GET", /^\/api\/team$/, async (req, env, me) => json(await listTeam(env.DB, env, me))],
   ["POST", /^\/api\/team$/, async (req, env, me) => json(await addPerson(env.DB, env, me, await readJson(req)), 201)],
   ["PATCH", /^\/api\/team\/([0-9A-Z]{26})$/, async (req, env, me, m) => json(await updatePerson(env.DB, env, me, m[1], await readJson(req)))],
   ["PUT", /^\/api\/team\/([0-9A-Z]{26})\/trainings$/, async (req, env, me, m) => json(await setTrainings(env.DB, env, me, m[1], (await readJson(req)).trainings))],
   ["POST", /^\/api\/import\/desktop$/, async (req, env, me) => json(await importDesktop(env.DB, env, me, await readJson(req)))],
-  ["GET", /^\/api\/pieces$/, async (req, env) => json(await piecesView(env.DB, env))],
+  ["GET", /^\/api\/pieces$/, async (req, env) => { const d = new URL(req.url).searchParams.get("day"); return json(await piecesView(env.DB, env, { day: /^\d{4}-\d{2}-\d{2}$/.test(d || "") ? d : null })); }],
   ["GET", /^\/api\/plan\/(\d{4}-\d{2}-\d{2})$/, async (req, env, me, m) => json(await loadPlan(env.DB, env, m[1]))],
   ["PUT", /^\/api\/plan\/(\d{4}-\d{2}-\d{2})$/, async (req, env, me, m) => json(await savePlan(env.DB, env, me, m[1], await readJson(req)))],
   ["POST", /^\/api\/plan\/(\d{4}-\d{2}-\d{2})\/publish$/, async (req, env, me, m) => json(await publishPlan(env.DB, env, me, m[1], await readJson(req)))],
@@ -53,7 +56,16 @@ const routes = [
   ["GET", /^\/api\/review\/(\d{4}-\d{2}-\d{2})$/, async (req, env, me, m) => json(await reviewDay(env.DB, env, me, m[1]))],
   ["PATCH", /^\/api\/followups\/([0-9A-Z]{26})$/, async (req, env, me, m) => json(await noteFollowup(env.DB, env, me, m[1], await readJson(req)))],
   ["DELETE", /^\/api\/plan\/(\d{4}-\d{2}-\d{2})\/callouts\/([0-9A-Z]{26})$/, async (req, env, me, m) => json(await removeCallout(env.DB, env, me, m[1], m[2]))],
-  ["GET", /^\/api\/floor\/(\d{4}-\d{2}-\d{2})$/, async (req, env, me, m) => json({ published: await publishedPlan(env.DB, env, m[1]) })],
+  ["GET", /^\/api\/summary\/preview$/, async (req, env, me) => {
+    requireRole(me, "admin");
+    const d = new URL(req.url).searchParams.get("day"), today = localNow(env.TIMEZONE).day;
+    const day = /^\d{4}-\d{2}-\d{2}$/.test(d || "") && d <= today ? d : today;
+    const m = await buildSummary(env.DB, env, day); return json({ subject: m.subject, html: m.html, day: m.day, next: m.next });
+  }],
+  ["POST", /^\/api\/summary\/send$/, async (req, env, me) => { requireRole(me, "admin"); const b = await readJson(req); return json(await sendNow(env.DB, env, me, { to: b.to || null, day: b.day || null })); }],
+  ["GET", /^\/api\/changes\/(\d{4}-\d{2}-\d{2})$/, async (req, env, me, m) => json(await listChanges(env.DB, env, m[1]))],
+  ["POST", /^\/api\/events$/, async (req, env, me) => json(await addEvent(env.DB, env, me, await readJson(req)))],
+  ["GET", /^\/api\/floor\/(\d{4}-\d{2}-\d{2})$/, async (req, env, me, m) => json({ published: await publishedPlan(env.DB, env, m[1]), ...(new URL(req.url).searchParams.has("streak") ? { streak: await laborStreak(env.DB, env).catch(() => null) } : {}) })],
   ["GET", /^\/api\/system$/, async (req, env) => {
     const db = env.DB;
     const s = await db.prepare("SELECT value_json FROM core_settings WHERE org_id=? AND app_id='core' AND key='smrt_backfill'").bind(env.ORG_ID).first();
@@ -94,4 +106,9 @@ export async function handle(req, env, opts = {}) {
 
 export default {
   async fetch(req, env) { return withHeaders(await handle(req, env)); },
+  // every 15 minutes: the daily summary email goes out once, after its time on work days
+  async scheduled(event, env, ctx) {
+    ctx.waitUntil(scheduledSummary(env).then(r => { if (r.status === "sent" || r.status === "failed") console.log(JSON.stringify({ job: "summary", ...r })); })
+      .catch(e => console.error(JSON.stringify({ job: "summary", error: String(e && e.stack || e) }))));
+  },
 };

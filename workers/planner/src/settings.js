@@ -5,7 +5,7 @@
 //    stations (max hours, on/off) and the shuttle runs with their stops.
 // Everyone can read settings; Admins and the Owner change them.
 import { HttpError, ulid, nowIso, audit } from "./util.js";
-import { requireRole } from "./auth.js";
+import { requireRole, rank } from "./auth.js";
 
 const CATS = ["dct", "dcb", "slt", "slb", "comf", "tc"];
 const TIME = /^([01]\d|2[0-3]):[0-5]\d$/;
@@ -18,6 +18,7 @@ const f = {
   bool: d => ({ kind: "bool", d }),
   text: (d, max = 80) => ({ kind: "text", d, max }),
   list: d => ({ kind: "list", d }),
+  emails: d => ({ kind: "emails", d }),
   days: d => ({ kind: "days", d }),
   perCat: (inner, d) => ({ kind: "perCat", inner, d }),
 };
@@ -34,6 +35,8 @@ export const SCHEMA = {
     departments: f.perCat(f.text("", 200), { dct: "Dry Cleaning Tops", dcb: "Dry Cleaning Bottoms", slt: "Laundry Tops", slb: "Laundry Bottoms", comf: "", tc: "" }),
     itemTypes: f.perCat(f.text("", 200), { dct: "", dcb: "", slt: "", slb: "", comf: "Comforter, Bedspread", tc: "Tablecloth, Table Cloth" }) },
   rippling: { departments: f.list(["Production"]), useTimes: f.bool(true) },
+  // the end-of-day email: today against the plan, and the next work day
+  summary: { on: f.bool(true), to: f.emails(["neal@towncountryclean.com"]), at: f.time("18:10") },
 };
 
 const defaults = group => Object.fromEntries(Object.entries(SCHEMA[group]).map(([k, s]) => [k, structuredClone(s.d)]));
@@ -58,6 +61,14 @@ function check(group, key, s, v) {
       return d;
     }
     case "list": if (!Array.isArray(v) || v.some(x => typeof x !== "string")) throw new HttpError(400, `${where}: must be a list.`); return v.map(x => x.trim()).filter(Boolean);
+    case "emails": {
+      if (!Array.isArray(v) || v.some(x => typeof x !== "string")) throw new HttpError(400, `${where}: must be a list of email addresses.`);
+      const list = [...new Set(v.map(x => x.trim().toLowerCase()).filter(Boolean))];
+      const bad = list.find(x => !/^[^\s@,;]+@[^\s@,;]+\.[^\s@,;]+$/.test(x));
+      if (bad) throw new HttpError(400, `"${bad}" isn't an email address.`);
+      if (list.length > 10) throw new HttpError(400, "Up to 10 addresses.");
+      return list;
+    }
     case "perCat": {
       if (!v || typeof v !== "object") throw new HttpError(400, `${where}: missing values.`);
       return Object.fromEntries(CATS.map(c => [c, check(group, `${key}.${c}`, s.inner, v[c] ?? s.d[c])]));
@@ -223,7 +234,18 @@ export async function saveRuns(db, env, me, runs) {
   return loadRuns(db, env.ORG_ID);
 }
 
-export async function allSettings(db, env) {
+export async function allSettings(db, env, me = null) {
   const [groups, production, runs] = await Promise.all([loadGroups(db, env.ORG_ID), loadProduction(db, env.ORG_ID), loadRuns(db, env.ORG_ID)]);
-  return { groups, ...production, runs };
+  return { groups, ...production, runs, ...(me && rank(me.role) >= rank("admin") ? { status: await adminStatus(db, env) } : {}) };
+}
+
+/** For the Settings screen (Admins): what Rippling last sent (and whether it carries pay rates), and the last summary email. */
+async function adminStatus(db, env) {
+  const get = async (app, key) => { const r = await db.prepare("SELECT value_json FROM core_settings WHERE org_id=? AND app_id=? AND key=?").bind(env.ORG_ID, app, key).first(); return r ? JSON.parse(r.value_json) : null; };
+  const last = await get("core", "rippling_last");
+  const dep = await db.prepare("SELECT id FROM core_departments WHERE org_id=? AND name='Production'").bind(env.ORG_ID).first();
+  const r = dep ? await db.prepare(`SELECT COUNT(*) AS people, SUM(CASE WHEN EXISTS (SELECT 1 FROM labor_pay_rates r WHERE r.person_id=p.id AND r.deleted_at IS NULL) THEN 1 ELSE 0 END) AS withRate
+      FROM core_people p WHERE p.org_id=? AND p.department_id=? AND p.status='active' AND p.deleted_at IS NULL`).bind(env.ORG_ID, dep.id).first() : null;
+  return { rippling: last ? { at: last.at, rows: last.rows, rateColumn: last.rateColumn || null } : null, payRates: { people: r?.people || 0, withRate: r?.withRate || 0 },
+    summary: await get("planner", "summary_last"), summaryTest: await get("planner", "summary_test"), emailReady: !!env.SEND_EMAIL };
 }

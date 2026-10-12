@@ -156,8 +156,12 @@ export async function forecastRatios(db, orgId, { today, next, hm, workDays, run
   return { all, byLoc, cutoffs: Object.fromEntries(locs.map(l => [l, cutoffOf(runs, l)])) };
 }
 
-/** Everything the Plan and Floor screens need about pieces for today and the next work day. */
-export async function piecesView(db, env, { at = new Date() } = {}) {
+/**
+ * Everything the Plan and Floor screens need about pieces for today and the next work day.
+ * `day` adds one more day (the Plan screen's date picker): a later day is planned from what's due so far (no forecast);
+ * a day that has passed shows everything that was due that day.
+ */
+export async function piecesView(db, env, { at = new Date(), day = null } = {}) {
   const groups = await loadGroups(db, env.ORG_ID);
   const runs = await loadRuns(db, env.ORG_ID);
   const workDays = groups.day.workDays || [1, 2, 3, 4, 5];
@@ -168,24 +172,31 @@ export async function piecesView(db, env, { at = new Date() } = {}) {
   const cat = categorizer(groups.smrt), runOf = storeToRun(runs);
   const data = await loadOpen(db, env.ORG_ID, { from: today, to: after, overdueFrom: addDays(today, -OVERDUE_DAYS) });
   // the work day an order belongs to: its due day, or the work day before for route deliveries
+  const workDayOf = o => (o.loc === "Route" && route.dayBefore ? prevWorkDay(o.dueDay, workDays) : o.dueDay);
   const orders = splitOrders(data, cat, today, groups.smrt.transitRack)
-    .map(o => ({ ...o, workDay: o.loc === "Route" && route.dayBefore ? prevWorkDay(o.dueDay, workDays) : o.dueDay }))
+    .map(o => ({ ...o, workDay: workDayOf(o) }))
     .filter(o => o.workDay <= next);
+  const extra = day && day !== today && day !== next ? day : null;
+  let extraOrders = [];
+  if (extra) {
+    const d2 = await loadOpen(db, env.ORG_ID, { from: extra, to: nextWorkDay(extra, workDays), overdueFrom: extra });
+    extraOrders = splitOrders(d2, cat, today, groups.smrt.transitRack).map(o => ({ ...o, workDay: workDayOf(o) })).filter(o => o.workDay === extra);
+  }
   const ROUTE_RUN = { id: "route", name: `Route deliveries · ready by ${route.readyBy} on the route day`, kind: "route", deadline: 24 * 60 };
   const runFor = loc => (loc === "Route" ? ROUTE_RUN : runOf(loc));
 
   const fc = await forecastRatios(db, env.ORG_ID, { today, next, hm, workDays, runs });
   const mk = () => ({ q: zero(), done: zero(), known: zero(), expected: zero(), pieces: 0, orders: 0, openOrders: 0 });
-  const dayView = (d, isToday) => {
-    const total = mk(), stores = new Map();
-    for (const o of orders) {
+  // mode: "today" = due today less what was finished before today; "future" = less anything finished; "past" = everything that was due
+  const dayView = (d, mode, list = orders) => {
+    const isToday = mode === "today", total = mk(), stores = new Map();
+    for (const o of list) {
       if (o.workDay !== d) continue;
       const r = runFor(o.loc);
       const st = stores.get(o.loc) || stores.set(o.loc, { loc: o.loc, run: r?.name || null, runId: r?.id || null, deadline: r?.deadline ?? runDeadline(r), ...mk() }).get(o.loc);
       for (const [k, p] of Object.entries(o.per)) {
-        // today: due today less finished before today (finished today is today's work); later day: less anything finished
-        const todo = isToday ? Math.max(0, p[0] - p[2]) : Math.max(0, p[0] - p[1]);
-        const done = isToday ? Math.max(0, Math.min(todo, p[1] - p[2])) : 0;
+        const todo = isToday ? Math.max(0, p[0] - p[2]) : mode === "past" ? p[0] : Math.max(0, p[0] - p[1]);
+        const done = isToday ? Math.max(0, Math.min(todo, p[1] - p[2])) : mode === "past" ? Math.min(p[0], p[1]) : 0;
         for (const T of [total, st]) { T.q[k] += todo; T.known[k] += todo; T.done[k] += done; }
       }
       for (const T of [total, st]) { T.pieces += o.pieces; T.orders++; if (!o.done) T.openOrders++; }
@@ -194,17 +205,19 @@ export async function piecesView(db, env, { at = new Date() } = {}) {
     const beforeDay = today < d;
     for (const st of stores.values()) {
       const cut = fc.cutoffs[st.loc], final = !isToday && beforeDay && cut && hm >= cut;
-      st.ratio = isToday || final || st.loc === "Route" ? 1 : (fc.byLoc[st.loc]?.ratio || fc.all.ratio);
-      st.final = isToday ? true : !!final;
+      st.ratio = isToday || final || st.loc === "Route" || d !== next ? 1 : (fc.byLoc[st.loc]?.ratio || fc.all.ratio);
+      st.final = isToday || d !== next ? true : !!final;
       for (const k of CATS) { st.expected[k] = Math.round(st.q[k] * st.ratio); total.expected[k] += st.expected[k]; }
     }
     const sum = o => CATS.reduce((t, k) => t + o[k], 0);
-    const ahead = isToday ? null : orders.filter(o => o.workDay === d).reduce((t, o) => t + Object.values(o.per).reduce((a, p) => a + p[3], 0), 0);
+    const ahead = isToday ? null : list.filter(o => o.workDay === d).reduce((t, o) => t + Object.values(o.per).reduce((a, p) => a + p[3], 0), 0);
     return {
-      day: d, isToday, ...total, todo: sum(total.q), doneTotal: sum(total.done), expectedTotal: sum(total.expected), aheadToday: ahead,
+      day: d, isToday, past: mode === "past", ...total, todo: sum(total.q), doneTotal: sum(total.done), expectedTotal: sum(total.expected), aheadToday: ahead,
       stores: [...stores.values()].sort((a, b) => (a.deadline ?? 9999) - (b.deadline ?? 9999) || a.loc.localeCompare(b.loc)),
     };
   };
+  const days = { [today]: isWorkDay ? dayView(today, "today") : null, [next]: dayView(next, "future") };
+  if (extra) days[extra] = dayView(extra, extra < today ? "past" : "future", extraOrders);
   const overdueOrders = groups.smrt.overdue ? orders.filter(o => o.workDay < today && !o.done && o.pieces > o.complete) : [];
   const overdue = { q: zero(), orders: overdueOrders.length };
   for (const o of overdueOrders) for (const [k, p] of Object.entries(o.per)) overdue.q[k] += Math.max(0, p[0] - p[1]);
@@ -233,8 +246,8 @@ export async function piecesView(db, env, { at = new Date() } = {}) {
   const live = await db.prepare("SELECT started_at AS at, finished_at AS done, status, message FROM int_sync_runs WHERE integration_id='smrt' AND message LIKE 'live%' ORDER BY started_at DESC LIMIT 1").first();
   const lastOk = await db.prepare("SELECT finished_at AS at FROM int_sync_runs WHERE integration_id='smrt' AND message LIKE 'live%' AND status='ok' ORDER BY started_at DESC LIMIT 1").first();
   return {
-    today, next, now: hm, isWorkDay,
-    days: { [today]: isWorkDay ? dayView(today, true) : null, [next]: dayView(next, false) },
+    today, next, now: hm, isWorkDay, workDays,
+    days,
     overdue, late, prices, unmapped, undetailed, notReady,
     forecast: { ratio: fc.all.ratio, basedOn: fc.all.n },
     smrt: { lastRun: live || null, lastOk: lastOk?.at || null },

@@ -42,7 +42,8 @@ export function positions(SET) {
   return { stations, ops, trainingOf };
 }
 
-export const peopleFrom = TEAM => TEAM.people.filter(p => p.status === "active").map(p => ({ id: p.id, name: p.name, trainings: p.trainings || [], start: p.usualStart || null }));
+/** Active people for the engine. `rate` (Rippling's hourly pay) is only there for Admins and the Owner; the engine uses the average without it. */
+export const peopleFrom = TEAM => TEAM.people.filter(p => p.status === "active").map(p => ({ id: p.id, name: p.name, trainings: p.trainings || [], start: p.usualStart || null, ...(p.rate > 0 ? { rate: p.rate } : {}) }));
 
 export function blankCrew(POS, s) { return Object.fromEntries(POS.map(p => [p.id, { emp: "", start: s.defStart, hrs: s.fullDay, stop: "", source: "" }])); }
 export function crewFromServer(serverCrew, POS, s) {
@@ -62,7 +63,7 @@ export function dayPieces(V, SET, day) {
   const D = V.days[day];
   if (!D) return null;
   const isToday = day === V.today && V.isWorkDay;
-  const withOverdue = isToday || !V.isWorkDay; // on a day off the next work day is the next "today"
+  const withOverdue = isToday || (!V.isWorkDay && day === V.next); // on a day off the next work day is the next "today"
   const expected = !isToday && D.expectedTotal > D.todo + 2;
   const base = Object.fromEntries(CATS.map(k => [k, (expected ? D.expected[k] : D.q[k]) + (withOverdue ? V.overdue.q[k] : 0)]));
   const waves = buildWaves({ ...D, isToday }, SET.runs, { overdue: withOverdue ? V.overdue : null });
@@ -331,4 +332,26 @@ export function snapshotOf(X) {
     waves: waves.map(w => ({ id: w.id, name: w.name, kind: w.kind, deadline: w.deadline, back: w.back ?? null, q: w.q, todo: w.todo, stores: w.stores || [], eta: etas[w.id] ?? null })),
     metrics: R.empty ? { empty: true } : { end: R.end, firstStart: R.firstStart, pieces: R.totalPieces, short: R.P.shortTotal, otH: R.otTotal, laborH: R.labor, people: R.rows.filter(r => r.staffed).length },
   };
+}
+
+// ---------------------------------------------------------------- a whole day from saved data (Review's next day, the summary email)
+/**
+ * Plans a day from what's stored: its saved crew, or a crew suggested from history when nothing is saved yet.
+ * V = pieces view that includes `day`; plan = GET /api/plan/:day. Returns null when there are no pieces for the day.
+ */
+export function projectDay({ SET, TEAM, V, plan, day, admin = false }) {
+  const s = engineSettings(SET, V.prices || {}), pos = positions(SET), POS = pos.stations.concat(pos.ops);
+  const dp = dayPieces(V, SET, day); if (!dp) return null;
+  const overrides = plan.overrides || {};
+  const P = { s, ...pos, people: peopleFrom(TEAM), crew: crewFromServer(plan.crew, POS, s), q: effectiveQ(dp.base, overrides), waves: dp.waves, day, today: V.today,
+    isToday: dp.isToday, now: null, callouts: plan.callouts || [], history: plan.history || { hours: [], planned: [] }, clock: [], published: plan.published || null, admin,
+    expected: dp.expected && !Object.keys(overrides).length, dp };
+  let basis = plan.published ? "the published plan" : "the plan saved for that day", suggested = false;
+  if (!Object.keys(plan.crew || {}).length) { const r = suggestCrew(P, evaluate(P).E); P.crew = r.crew; basis = `suggested from ${r.basis}`; suggested = true; }
+  const X = evaluate(P);
+  const crew = POS.filter(p => P.crew[p.id].emp).map(p => ({ code: p.id, station: p.label, name: nameOf(P, P.crew[p.id].emp), start: P.crew[p.id].start, hours: +P.crew[p.id].hrs || 0 }));
+  const pieces = CATS.reduce((t, k) => t + (P.q[k] || 0), 0);
+  return { X, P, basis, suggested, crew, pieces, q: P.q, expected: P.expected, known: dp.D.todo,
+    end: X.R.empty ? null : X.R.end, laborH: X.M ? X.M.regH + X.M.otH + X.M.opsH : 0, cost: X.M ? X.M.total : null, pct: X.M ? X.M.pct : null,
+    otH: X.R.empty ? 0 : X.R.otTotal, short: X.R.empty ? 0 : X.R.P.shortTotal, verdict: X.verdict };
 }

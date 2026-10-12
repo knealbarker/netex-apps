@@ -53,6 +53,7 @@ export async function render(main, ctx) {
         </div></div>
       <section class="verdict ${!bits.length ? "idle" : good ? "ok" : late.length || (pct != null && pct > L.target) ? "bad" : "warn"}"><div class="v-head"><span class="v-ico" aria-hidden="true">${!bits.length ? "…" : good ? "✓" : "!"}</span><b>${head[0].toUpperCase() + head.slice(1)}</b></div></section>
       <section class="tiles rv-tiles">${tiles.map(x => raw(html`<div class="tile"><b class="t-num ${x.c ? "c-" + x.c : ""}">${x.v}</b><span class="t-sub">${x.s}</span></div>`))}</section>
+      ${D.money && L.avgHours > 0.05 ? raw(html`<p class="muted small rv-note">Labor cost uses each person's pay rate from Rippling; ${fmtH(L.avgHours)} of ${fmtH(L.hours)} ${L.avgHours >= L.hours - 0.05 ? "are" : "is"} costed at the average ${fmt$(L.payAvg)}/h because Rippling hasn't sent a rate for ${L.avgHours >= L.hours - 0.05 ? "anyone yet" : "everyone"}.</p>`) : ""}
       <div class="rv-grid">
         <section class="card pl-card"><header class="pl-cardhead"><div><h2>Pieces through the day</h2><p>Assembled in SMRT, counted as they happened${D.planned?.metrics?.end != null ? ", against the published plan's pace" : ""}.</p></div></header>${raw(chart())}</section>
         <section class="card pl-card"><header class="pl-cardhead"><div><h2>Deadlines</h2><p>When the last piece for each was assembled.</p></div></header>${raw(deadlines())}</section>

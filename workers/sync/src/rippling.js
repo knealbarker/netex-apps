@@ -95,7 +95,10 @@ export async function ingestRippling(db, { orgId, integrationId, today, csv, kee
   const miss = RIPPLING_COLUMNS.filter(c => !(c in rows[0]));
   if (miss.length) throw new Error(`Rippling export is missing ${miss.join(", ")}`);
   const keyOf = h => h.trim().toLowerCase().replace(/[\s\-]+/g, "_");
-  const rateCol = Object.keys(rows[0]).find(h => RATE_COLUMNS.includes(keyOf(h)));
+  // the pay rate column: a known name first, else any "...rate..." / "...wage..." column whose values look like hourly pay
+  const looksLikePay = h => { const v = rows.map(r => r[h]).filter(x => x !== "").slice(0, 20); return v.length > 0 && v.filter(x => rateCents(x) != null).length >= v.length * 0.8; };
+  const rateCol = Object.keys(rows[0]).find(h => RATE_COLUMNS.includes(keyOf(h)))
+    || Object.keys(rows[0]).find(h => /rate|wage/.test(keyOf(h)) && !/date|period|type|overtime|^ot_|double|bonus|tax/.test(keyOf(h)) && looksLikePay(h));
 
   const { departments: prodDepts } = await plannerSettings(db, orgId);
   const isProduction = r => { const d = (r.department_path || "").toLowerCase(); return prodDepts.some(x => d === x || d.endsWith("/" + x) || d.split(/\s*[>/]\s*/).includes(x)); };

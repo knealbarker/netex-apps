@@ -485,7 +485,14 @@ export async function render(main, ctx) {
         ${Mo.idleH > 0.05 ? raw(html`<div><dt>Paid but idle · ${fmtH(Mo.idleH)}</dt><dd class="warn-txt">${fmt$(Mo.idleC)}</dd></div>`) : ""}
         <div><dt>Budget at ${P.s.laborTarget}%</dt><dd>${fmt$(Mo.budget)}</dd></div>
       </dl>
-      <p class="muted small">Pay uses the average rate in Settings (${fmt$(P.s.payAvg)}/h); overtime ×${P.s.otMult}. Prices are SMRT's averages where there are enough pieces.</p></div>`;
+      <p class="muted small">${payNote(P)}; overtime ×${P.s.otMult}. Prices are SMRT's averages where there are enough pieces.</p></div>`;
+  }
+  function payNote(P) {
+    const on = [...new Set(Object.values(P.crew).map(c => c.emp).filter(Boolean))], withRate = on.filter(id => people.find(e => e.id === id)?.rate > 0).length;
+    if (!on.length) return `Pay uses each person's rate from Rippling, or ${fmt$(P.s.payAvg)}/h when there's none`;
+    if (withRate === on.length) return "Pay uses each person's hourly rate from Rippling";
+    if (!withRate) return `Pay uses the average rate in Settings (${fmt$(P.s.payAvg)}/h) — Rippling hasn't sent pay rates yet`;
+    return `Pay uses each person's rate from Rippling; ${on.length - withRate} without one at the average ${fmt$(P.s.payAvg)}/h`;
   }
 
   // ---- publish

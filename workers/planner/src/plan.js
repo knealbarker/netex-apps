@@ -6,6 +6,7 @@
 import { HttpError, ulid, nowIso, audit } from "./util.js";
 import { requireRole } from "./auth.js";
 import { productionIds } from "./team.js";
+import { planDiff } from "./changes.js";
 
 const DAY = /^\d{4}-\d{2}-\d{2}$/;
 const TIME = /^([01]\d|2[0-3]):[0-5]\d$/;
@@ -72,7 +73,8 @@ function cleanCrew(crew, stations, people) {
 export async function savePlan(db, env, me, day, body) {
   requireRole(me, "manager"); checkDay(day);
   const { locationId } = await productionIds(db, env.ORG_ID);
-  const stations = new Map((await db.prepare("SELECT code, id FROM plan_stations WHERE location_id=? AND deleted_at IS NULL").bind(locationId).all()).results.map(s => [s.code, s.id]));
+  const stRows = (await db.prepare("SELECT code, id, label FROM plan_stations WHERE location_id=? AND deleted_at IS NULL").bind(locationId).all()).results;
+  const stations = new Map(stRows.map(s => [s.code, s.id]));
   const people = new Map((await db.prepare("SELECT id, first_name || ' ' || last_name AS n FROM core_people WHERE org_id=? AND deleted_at IS NULL").bind(env.ORG_ID).all()).results.map(p => [p.id, p.n]));
   const crew = cleanCrew(body.crew, stations, people);
   const overrides = Object.entries(body.overrides || {}).filter(([k, v]) => CATS.includes(k) && v !== null && v !== "").map(([k, v]) => {
@@ -80,6 +82,13 @@ export async function savePlan(db, env, me, day, body) {
 
   const cur = await dayRow(db, locationId, day);
   const rev = cur ? cur.rev : 0;
+  // what it was, for the "Changes today" list
+  const before = {}, ovBefore = {};
+  if (cur) {
+    for (const a of (await db.prepare(`SELECT s.code, a.person_id AS personId, a.starts_at AS start, a.hours, a.hard_stop AS stop FROM plan_assignments a JOIN plan_stations s ON s.id=a.station_id
+        WHERE a.day_id=? AND a.deleted_at IS NULL`).bind(cur.id).all()).results) before[a.code] = a;
+    for (const o of (await db.prepare("SELECT category_id AS k, pieces FROM plan_count_overrides WHERE day_id=? AND deleted_at IS NULL").bind(cur.id).all()).results) ovBefore[o.k] = o.pieces;
+  }
   if (body.rev !== undefined && +body.rev !== rev) {
     throw new HttpError(409, `${cur?.updatedBy ? "Someone else" : "Another PC"} changed this plan since you opened it. Your view has been refreshed with their version.`, { latest: await loadPlan(db, env, day) });
   }
@@ -99,7 +108,10 @@ export async function savePlan(db, env, me, day, body) {
   try { res = await db.batch(stmts); }
   catch (e) { if (/UNIQUE/i.test(String(e.message))) throw new HttpError(409, "Someone else started this plan at the same moment. Your view has been refreshed with their version.", { latest: await loadPlan(db, env, day) }); throw e; }
   if (cur && res?.[0]?.meta && res[0].meta.changes === 0) throw new HttpError(409, "Someone else saved this plan at the same moment. Your view has been refreshed with their version.", { latest: await loadPlan(db, env, day) });
-  await audit(db, { orgId: env.ORG_ID, userId: me.id, appId: env.APP_ID, entity: "plan_days", entityId: id, action: "update", changes: { day, rev: rev + 1, crew: crew.length, overrides: Object.fromEntries(overrides) } });
+  const codeOf = new Map(stRows.map(s => [s.id, s.code]));
+  const after = Object.fromEntries(crew.map(c => [codeOf.get(c.stationId), { personId: c.personId, start: c.start, hours: c.hours, stop: c.stop }]));
+  const lines = planDiff(before, after, ovBefore, Object.fromEntries(overrides), new Map(stRows.map(s => [s.code, s.label])), people);
+  await audit(db, { orgId: env.ORG_ID, userId: me.id, appId: env.APP_ID, entity: "plan_days", entityId: id, action: "update", changes: { day, rev: rev + 1, crew: crew.length, overrides: Object.fromEntries(overrides), lines: lines.slice(0, 40) } });
   return { rev: rev + 1, day };
 }
 
@@ -132,12 +144,15 @@ export async function addCallout(db, env, me, day, body) {
   const st = body.station ? await db.prepare("SELECT id FROM plan_stations WHERE location_id=? AND code=?").bind(locationId, body.station).first() : null;
   const id = ulid();
   await db.prepare("INSERT INTO plan_callouts(id, day_id, person_id, station_id, note, updated_by) VALUES(?,?,?,?,?,?)").bind(id, d.id, p.id, st?.id || null, String(body.note || "").slice(0, 300) || null, me.id).run();
+  await audit(db, { orgId: env.ORG_ID, userId: me.id, appId: env.APP_ID, entity: "plan_callouts", entityId: id, action: "create", changes: { day, personId: p.id, note: String(body.note || "").slice(0, 300) || null } });
   return { id };
 }
 
 export async function removeCallout(db, env, me, day, id) {
   requireRole(me, "manager"); checkDay(day);
+  const c = await db.prepare("SELECT person_id AS personId FROM plan_callouts WHERE id=?").bind(id).first();
   await db.prepare("UPDATE plan_callouts SET deleted_at=?, updated_by=? WHERE id=?").bind(nowIso(), me.id, id).run();
+  if (c) await audit(db, { orgId: env.ORG_ID, userId: me.id, appId: env.APP_ID, entity: "plan_callouts", entityId: id, action: "delete", changes: { day, personId: c.personId } });
   return { id };
 }
 
