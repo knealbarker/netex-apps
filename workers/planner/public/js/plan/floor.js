@@ -37,7 +37,7 @@ export function replay(snapshot) {
 export function events(F, t) {
   const { E, R, who, label } = F, ev = [];
   if (R.empty) return [];
-  const L = c => c === "comf" ? t.comf : label(c);
+  const L = c => c === "comf" ? t.comf : c === "tc" ? t.cats.tc : label(c);
   for (const row of R.rows) {
     if (!row.staffed) continue;
     const nm = who(row.st.id), st = stepsOf(row);
@@ -124,7 +124,7 @@ export function rightNow(F, ev, now) {
     out.push({ stn: x.o.id, type: "ops", label: label(x.o.id), nm, state: now < x.start ? "before" : inBrk ? "break" : now >= x.end ? "off" : "on", brkEnd: inBrk ? x.brkS + x.b : null, start: x.start,
       next: ev.find(e => e.nm === nm && e.t > now + 1 / 120) || null });
   }
-  const order = [...F.I.stations, ...F.I.ops].map(p => p.id).concat("comf");
+  const order = [...F.I.stations, ...F.I.ops].map(p => p.id).concat(F.I.stations.some(p => p.id === "comf") ? [] : ["comf"]);
   return out.sort((a, b) => order.indexOf(a.stn) - order.indexOf(b.stn));
 }
 

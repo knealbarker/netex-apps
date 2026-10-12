@@ -23,7 +23,7 @@ const TEAM = { people: [
   { id: "c", name: "Cora Tres", status: "active", usualStart: "06:00", trainings: ["dct", "dcb"] },
   { id: "d", name: "Dani Cuatro", status: "active", usualStart: "07:00", trainings: ["iab1", "iab2"] },
   { id: "e", name: "Eli Cinco", status: "active", usualStart: "05:00", trainings: ["slo"] },
-  { id: "f", name: "Fran Seis", status: "active", usualStart: "06:00", trainings: ["slb", "dct"] },
+  { id: "f", name: "Fran Seis", status: "active", usualStart: "06:00", trainings: ["slb", "dct", "comf"] },
   { id: "z", name: "Zed Former", status: "inactive", trainings: ["dct"] },
 ] };
 const people = M.peopleFrom(TEAM);
@@ -177,6 +177,32 @@ await t("floor: replays the snapshot; live progress gives pace, projection and w
   eq(RN.find(p => p.nm === "Ana Uno").state, "on");
   ok(FM.comingUp(ev, L, 5).length > 0);
   eq(FM.status(L, F, FM.TXT.en).cls, c.cls === "bad" ? "bad" : c.cls === "warn" ? "warn" : "ok");
+});
+await t("comforters and tablecloths are stations: only trained people do them", async () => {
+  ok(pos.stations.some(x => x.id === "comf" && x.type === "comf") && pos.stations.some(x => x.id === "tc" && x.type === "tc"), "both stations in use");
+  eq([pos.trainingOf.comf, pos.trainingOf.tc], ["comf", "tc"]);
+  const q = { ...zero(), dcb: 10, comf: 4, tc: 12 };
+  const crew = M.blankCrew(pos.stations.concat(pos.ops), s);
+  crew.dcb1 = { emp: "c", start: "06:00", hrs: 8, stop: "" };      // Cora: DCT, DCB — not tablecloths, not comforters
+  crew.slb1 = { emp: "f", start: "06:00", hrs: 8, stop: "" };      // Fran: SLB, DCT, Comforters
+  let X = M.evaluate(P0({ crew, q, waves: [] }));
+  const cora = X.R.rows.find(r => r.st.id === "dcb1"), fran = X.R.rows.find(r => r.st.id === "slb1");
+  ok(!cora.tasks.some(k => k.stn === "comf" || k.stn === "tc"), "Cora isn't trained on comforters or tablecloths");
+  ok(fran.tasks.some(k => k.stn === "comf"), "Fran moves to comforters once SLB has no work");
+  eq(Math.round(X.R.P.short.comf), 0); eq(Math.round(X.R.P.short.tc), 12, "nobody trained on tablecloths");
+  ok(X.checks.some(c => c.title === "No one is trained on Tablecloths"), "the check names the missing training");
+  const P1 = P0({ crew, q, waves: [], people: people.map(p => p.id === "c" ? { ...p, trainings: [...p.trainings, "tc"] } : p) });
+  X = M.evaluate(P1);
+  ok(X.R.rows.find(r => r.st.id === "dcb1").tasks.some(k => k.stn === "tc"), "trained on tablecloths: Cora does them after DCB");
+  eq(Math.round(X.R.P.short.tc), 0);
+});
+await t("with the Comforters and Tablecloths stations switched off, the old rules apply", async () => {
+  const SET2 = { ...SET, stations: SET.stations.map(x => ["comf", "tc"].includes(x.code) ? { ...x, active: false } : x) };
+  const pos2 = M.positions(SET2), q = { ...zero(), dcb: 10, comf: 4, tc: 12 };
+  const crew = M.blankCrew(pos2.stations.concat(pos2.ops), s);
+  crew.dcb1 = { emp: "c", start: "06:00", hrs: 8, stop: "" };
+  const X = M.evaluate(P0({ ...pos2, crew, q, waves: [] }));
+  eq(Math.round(X.R.P.shortTotal), 0, "DCB does tablecloths, anyone free does comforters");
 });
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

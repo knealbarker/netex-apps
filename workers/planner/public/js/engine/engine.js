@@ -4,7 +4,7 @@
 // createEngine(S) takes one plain object describing the day:
 //   q          {dct, dcb, slt, slb, comf, tc}      pieces to plan
 //   crew       {stationCode: {emp, start, hrs, stop}}   emp = person id or ""
-//   stations   [{id, type, label}]  production stations; type is slt | slt2 | slb | dct | dcb | asm
+//   stations   [{id, type, label}]  production stations; type is slt | slt2 | slb | dct | dcb | asm | comf | tc
 //   ops        [{id, label}]        operator positions (slo, dco)
 //   people     [{id, name, trainings: [trainingId, ...] (in priority order), start}]
 //   trainingOf {stationCode: trainingId}
@@ -51,6 +51,9 @@ export function createEngine(S) {
   const trained = (empId, stId) => rankOf(empById(empId), stId) > 0;
   const TYPE_OF = Object.fromEntries(STATIONS.map(x => [x.id, x.type]));
   const POOL_OF = t => (t === "slt2" ? "slt" : t);
+  // Comforters and Tablecloths as stations of their own (only trained people work them). Without those stations the
+  // desktop rules apply: comforters are done by anyone free, tablecloths on the DCB press.
+  const HAS_COMF = STATIONS.some(x => x.type === "comf"), HAS_TC = STATIONS.some(x => x.type === "tc");
   const s = S;
 
   // Washer schedule: starch laundry first (SLT and SLB loads interleaved so both lines stay fed),
@@ -148,8 +151,8 @@ export function createEngine(S) {
       if (t < x.schedEnd - EPS) return true;
       return x.ot > 0 && t < x.schedEnd + x.ot - EPS;
     };
-    const has = t => { const k = POOL_OF(t); return k === "dcb" ? (avl("dcb") > 1e-4 || avl("tc") > 1e-4) : avl(k) > 1e-4; };
-    const remH = t => { const k = POOL_OF(t); return k === "slt" ? pool.slt / r.sltSolo : k === "dcb" ? pool.dcb / r.dcb + pool.tc / r.tc : pool[k] / perHr[k]; };
+    const has = t => { const k = POOL_OF(t); return k === "dcb" && !HAS_TC ? (avl("dcb") > 1e-4 || avl("tc") > 1e-4) : avl(k) > 1e-4; };
+    const remH = t => { const k = POOL_OF(t); return k === "slt" ? pool.slt / r.sltSolo : k === "dcb" ? pool.dcb / r.dcb + (HAS_TC ? 0 : pool.tc / r.tc) : pool[k] / perHr[k]; };
     const tStart = Math.min(...emps.map(e => e.x.start)), tMax = Math.max(...emps.map(e => e.x.schedEnd + e.x.ot)) + dt;
     let t = tStart;
     const done = k => init[k] - pool[k];
@@ -181,7 +184,7 @@ export function createEngine(S) {
         if (occ[X]) { e.home = null; continue; }
         let swap = null;
         for (const [f, Y] of asg) {
-          if (f === e || Y === X || Y === "comf") continue;
+          if (f === e || Y === X || (Y === "comf" && !HAS_COMF)) continue;
           if (qual(f, X) && under(f, X) && qual(e, Y) && under(e, Y) && (TYPE_OF[X] !== "slt2" || occ.slt1)) { swap = [f, Y]; break; }
         }
         if (swap) { const [f, Y] = swap; occ[X] = f; asg.set(f, X); f.home = X; f.rotated = true; f.swapped = true; occ[Y] = e; asg.set(e, Y); e.home = Y; }
@@ -203,11 +206,11 @@ export function createEngine(S) {
       for (const e of free) { const p = pick(e, false); if (p) { occ[p] = e; asg.set(e, p); e.home = p; } }
       for (const e of free) { if (asg.has(e)) continue; const p = pick(e, true); if (p) { occ[p] = e; asg.set(e, p); e.home = p; } }
       // 4) comforters for anyone still free
-      for (const e of free) { if (!asg.has(e) && avl("comf") > 1e-4) asg.set(e, "comf"); }
+      if (!HAS_COMF) for (const e of free) { if (!asg.has(e) && avl("comf") > 1e-4) asg.set(e, "comf"); }
       // produce
       const byPool = {};
       for (const [e, stn] of asg) {
-        let ty = stn === "comf" ? "comf" : POOL_OF(TYPE_OF[stn]); if (ty === "dcb" && avl("dcb") <= 1e-4) ty = "tc";
+        let ty = stn === "comf" ? "comf" : POOL_OF(TYPE_OF[stn]); if (ty === "dcb" && !HAS_TC && avl("dcb") <= 1e-4) ty = "tc";
         const out = stn === "comf" ? r.comf * dt : (stn === "slt1" ? r.sltSolo * dt : stn === "slt2" ? (r.sltPair - r.sltSolo) * dt : perHr[ty] * dt);
         (byPool[ty] = byPool[ty] || []).push({ e, stn, out });
       }
@@ -237,7 +240,7 @@ export function createEngine(S) {
     const rows = STATIONS.map(st => {
       const x = I[st.id], e = byPos[st.id];
       if (!e) return { st, x, staffed: false, segs: [], tasks: [], work: 0, comf: 0, active: 0, finish: null, clockOut: null, ot: 0, idle: 0, regPaid: 0, early: 0, moved: false };
-      const work = Object.entries(e.work).filter(([k]) => k !== "comf").reduce((a, [, v]) => a + v, 0), comf = e.work.comf || 0;
+      const work = Object.entries(e.work).filter(([k]) => HAS_COMF || k !== "comf").reduce((a, [, v]) => a + v, 0), comf = HAS_COMF ? 0 : e.work.comf || 0;
       const last = e.last;
       let out;
       if (last == null) out = s.allowClockOut ? Math.min(x.schedEnd, x.start + s.minPaid) : x.schedEnd;
@@ -258,7 +261,7 @@ export function createEngine(S) {
         }
         cum[sg.stn] = (cum[sg.stn] || 0) + (sg.to - sg.from);
       }
-      const moved = tasks.some(tk => tk.stn !== st.id && tk.stn !== "comf");
+      const moved = tasks.some(tk => tk.stn !== st.id && (HAS_COMF || tk.stn !== "comf"));
       return { st, x, staffed: true, emp: e, segs: e.segs, brkS: e.brkS, brkE: e.brkE, brkTaken, tasks, work, comf, active: work + comf, finish: last, clockOut: out, ot, idle, regPaid, paid, early: Math.max(0, x.schedEnd - out), moved };
     });
     const st2 = rows.filter(r => r.staffed);
@@ -269,7 +272,7 @@ export function createEngine(S) {
     const labor = st2.reduce((a, r) => a + r.active, 0);
     const otTotal = st2.reduce((a, r) => a + r.ot, 0);
     const cover = {}; for (const st of STATIONS) cover[st.id] = [];
-    for (const rw of st2) for (const tk of rw.tasks) if (tk.stn !== "comf") cover[tk.stn].push({ row: rw, hours: tk.hours, pcs: tk.pcs, from: tk.from });
+    for (const rw of st2) for (const tk of rw.tasks) if (cover[tk.stn]) cover[tk.stn].push({ row: rw, hours: tk.hours, pcs: tk.pcs, from: tk.from });
     return { P: { short, shortTotal, A: sim.A }, I, rows, end, firstStart, spread, done, labor, otTotal, totalPieces, staffedN: staffed.length, cover, W: sim.WP, TL: sim.TL };
   }
 
@@ -303,7 +306,8 @@ export function createEngine(S) {
     for (const st of STATIONS) if (st.type === "slt") need[st.id] = Math.min(day, sltH);
     for (const st of STATIONS) if (st.type === "slt2") need[st.id] = q.slt > 0 ? Math.max(0.5, Math.min(day, (q.slt - r.sltSolo * day) / (r.sltPair - r.sltSolo))) : 0;
     spread("slb", q.slb / r.slb); spread("dct", q.dct / r.dct);
-    for (const st of STATIONS) if (st.type === "dcb") need[st.id] = Math.min(day, q.dcb / r.dcb + q.tc / r.tc);
+    for (const st of STATIONS) if (st.type === "dcb") need[st.id] = Math.min(day, q.dcb / r.dcb + (HAS_TC ? 0 : q.tc / r.tc));
+    spread("comf", (q.comf || 0) / r.comf); spread("tc", (q.tc || 0) / r.tc);
     const A = CATS.reduce((t, k) => t + (s.asmInclude[k] ? (q[k] || 0) : 0), 0); spread("asm", A / r.asm);
     for (const o of OPS) need[o.id] = 100; // operators always staffed when someone can run them
     return need;
@@ -335,7 +339,7 @@ export function createEngine(S) {
   }
 
   // ---------- deadlines: shuttles and the counter ----------
-  return { STATIONS, OPS, POS, TYPE_OF, POOL_OF, empById, rankOf, trained, crewTimes, breakPlan, stationInfo, washPlan, simulate, buildPlan, opsInfo, money, stationNeed, assign };
+  return { STATIONS, OPS, POS, TYPE_OF, HAS_COMF, HAS_TC, POOL_OF, empById, rankOf, trained, crewTimes, breakPlan, stationInfo, washPlan, simulate, buildPlan, opsInfo, money, stationNeed, assign };
 }
 
 // ---------- deadlines (independent of the crew) ----------

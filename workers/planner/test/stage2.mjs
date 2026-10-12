@@ -158,7 +158,7 @@ console.log("settings");
 await t("defaults come back before anything is saved", async () => {
   const { call } = app();
   const s = (await call("GET", "/api/settings")).body;
-  eq(s.groups.day.defStart, "07:00"); eq(s.stations.length, 12); eq(s.categories.length, 6);
+  eq(s.groups.day.defStart, "07:00"); eq(s.stations.length, 14); eq(s.categories.length, 6);
 });
 await t("saving a group validates every value", async () => {
   const { call } = app();

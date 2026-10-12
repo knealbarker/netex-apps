@@ -145,7 +145,7 @@ export async function render(main, ctx) {
   // ---------- stations & speeds ----------
   const rate = (type, cat) => S.rates.find(r => r.type === type && r.category === cat)?.perHour ?? "";
   const SPEEDS = [["slt", "slt", "Starch tops press, alone"], ["slt_helper", "slt", "Starch tops press with a helper (pair total)"], ["slb", "slb", "Starch bottoms press"],
-    ["dct", "dct", "Dry cleaning tops press"], ["dcb", "dcb", "Dry cleaning bottoms press — bottoms"], ["dcb", "tc", "Dry cleaning bottoms press — tablecloths"],
+    ["dct", "dct", "Dry cleaning tops press"], ["dcb", "dcb", "Dry cleaning bottoms press"], ["tc", "tc", "Tablecloths, per person"],
     ["asm", "*", "Assembly (IAB), items"], ["comf", "comf", "Comforters, per person"]];
   const stationsCard = () => html`<section class="card set-card" id="sec-stations">
       <header><h2>Stations & speeds</h2><p>Pieces per hour at a steady pace. Max hours limits how long a station may run in a day (blank = no limit).</p></header>

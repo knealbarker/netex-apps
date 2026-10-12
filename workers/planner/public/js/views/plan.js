@@ -6,9 +6,9 @@ import { CATS, CAT_FULL, CAT_LABEL, parseTime, hhmm, fmtClock, hm, fmtH, fmtN, f
 import * as M from "../plan/model.js";
 
 const TILE = { dct: "DC tops", dcb: "DC bottoms", slt: "Starch tops", slb: "Starch bottoms", comf: "Comforters", tc: "Tablecloths" };
-const TYPE_DESC = { slt: "Starch tops press", slt2: "Helps on SLT 1", slb: "Starch bottoms press", dct: "Dry cleaning tops", dcb: "Dry cleaning bottoms, tablecloths", asm: "Inspect, assemble, bag", ops: "Runs the machines" };
-const COLOR = { slt: "#4f8ff7", slt2: "#7aa9fa", slb: "#8b7cf6", dct: "#f59e4b", dcb: "#e2609b", asm: "#22c38e", ops: "#7c879c", comf: "#14b8a6", wash: "#5b6b84" };
-const CAT_COLOR = { dct: COLOR.dct, dcb: COLOR.dcb, slt: COLOR.slt, slb: COLOR.slb, comf: COLOR.comf, tc: "#c084fc" };
+const TYPE_DESC = { slt: "Starch tops press", slt2: "Helps on SLT 1", slb: "Starch bottoms press", dct: "Dry cleaning tops", dcb: "Dry cleaning bottoms", comf: "Comforters, trained people only", tc: "Tablecloths, trained people only", asm: "Inspect, assemble, bag", ops: "Runs the machines" };
+const COLOR = { slt: "#4f8ff7", slt2: "#7aa9fa", slb: "#8b7cf6", dct: "#f59e4b", dcb: "#e2609b", asm: "#22c38e", ops: "#7c879c", comf: "#14b8a6", tc: "#c084fc", wash: "#5b6b84" };
+const CAT_COLOR = { dct: COLOR.dct, dcb: COLOR.dcb, slt: COLOR.slt, slb: COLOR.slb, comf: COLOR.comf, tc: COLOR.tc };
 const SMRT_ORDER = (customer, no) => `https://towncountryclean.smrtapp.com/posx/dash/customer/clothestracker/${encodeURIComponent(customer)}/?saleId=${String(no).replace(/\D/g, "")}`;
 const ORD = n => ["", "1st", "2nd", "3rd"][n] || `${n}th`;
 const fmtDay = (d, today) => { const s = new Date(d + "T12:00:00").toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" }); return d === today ? `Today · ${s}` : s; };
@@ -363,11 +363,37 @@ export async function render(main, ctx) {
   function drawCallouts(P) {
     const el = document.getElementById("pl-callouts"); if (!el) return;
     const list = P.callouts || [];
-    el.innerHTML = list.length ? html`<div class="callouts"><span>Called out:</span>${list.map(c => raw(html`<span class="chip off">${M.nameOf(P, c.personId)}${c.station ? ` · ${POS.find(p => p.id === c.station)?.label || ""}` : ""}${can ? raw(html`<button class="x" data-unout="${c.id}" aria-label="Undo call-out for ${M.nameOf(P, c.personId)}" title="Undo (doesn't put them back on a station)">×</button>`) : ""}</span>`))}</div>` : "";
+    el.innerHTML = html`<div class="callouts">${can ? raw('<button class="btn small" id="pl-callout-any" title="Mark someone out for this day: sick, appointment, no call">Someone called out</button>') : ""}
+      ${list.length ? raw(html`<span>Called out:</span>${list.map(c => raw(html`<span class="chip off" title="${c.note || ""}">${M.nameOf(P, c.personId)}${c.station ? ` · ${POS.find(p => p.id === c.station)?.label || ""}` : ""}${can ? raw(html`<button class="x" data-unout="${c.id}" aria-label="Undo call-out for ${M.nameOf(P, c.personId)}" title="Undo (doesn't put them back on a station)">×</button>`) : ""}</span>`))}`) : ""}</div>`;
+    document.getElementById("pl-callout-any")?.addEventListener("click", () => calloutAnyDialog(P));
     el.querySelectorAll("[data-unout]").forEach(b => b.addEventListener("click", async () => {
       await api(`/plan/${pick}/callouts/${b.dataset.unout}`, { method: "DELETE" });
       st.plan.callouts = st.plan.callouts.filter(c => c.id !== b.dataset.unout); update({ table: true });
     }));
+  }
+  // Anyone on the team, on a station or not (a person not on today's crew stays off "Suggest from history" too).
+  function calloutAnyDialog(P) {
+    const out = new Set((P.callouts || []).map(c => c.personId));
+    const stOf = {}; for (const [code, c] of Object.entries(st.crew)) if (c.emp) stOf[c.emp] = code;
+    const label = code => POS.find(p => p.id === code)?.label || code;
+    const list = people.filter(e => !out.has(e.id)).sort((a, b) => (!stOf[a.id]) - (!stOf[b.id]) || a.name.localeCompare(b.name));
+    if (!list.length) return toast("Everyone on the team is already marked out.", "warn");
+    openDialog({
+      title: "Who called out?", submitLabel: "Mark out",
+      body: html`<p class="dlg-lead">They come off the plan for ${longDay(pick)}. If they were on a station, the checks show who's trained and free to cover.</p>
+        <label class="field"><span>Person</span><select class="input" name="who" required><option value="">— Pick someone —</option>
+          ${list.map(e => raw(html`<option value="${e.id}">${e.name}${stOf[e.id] ? ` · on ${label(stOf[e.id])}` : ""}</option>`))}</select></label>
+        <label class="field"><span>Note <em>(optional)</em></span><input class="input" name="note" maxlength="300" placeholder="Sick, appointment, no call…"></label>`,
+      onSubmit: async form => {
+        const id = form.who.value; if (!id) throw new Error("Pick who called out.");
+        const code = stOf[id] || null, name = M.nameOf(makeP(), id);
+        if (st.dirty) await save();
+        const r = await api(`/plan/${pick}/callouts`, { method: "POST", body: { personId: id, station: code, note: form.note.value } });
+        st.plan.callouts = [...(st.plan.callouts || []), { id: r.id, personId: id, station: code, note: form.note.value || null }];
+        if (code) edit(() => { st.crew[code] = { ...st.crew[code], emp: "", stop: "", source: "" }; }, { msg: `${name} is off the plan.` });
+        else { update({ table: true }); toast(`${name} is marked out.`); }
+      },
+    });
   }
   function calloutDialog(code) {
     const c = st.crew[code], name = M.nameOf(makeP(), c.emp), label = POS.find(p => p.id === code).label;

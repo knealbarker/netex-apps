@@ -9,7 +9,7 @@ import { createEngine, buildWaves, waveEtas, waveState, stepsOf, CATS, CAT_FULL,
 export const WD = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 export const weekday = day => new Date(day + "T12:00:00Z").getUTCDay();
 export const addDays = (day, n) => new Date(Date.parse(day + "T12:00:00Z") + n * 864e5).toISOString().slice(0, 10);
-const TYPE_LABEL = { slt: "SLT", slb: "SLB", dct: "DCT", dcb: "DCB", asm: "IAB" };
+const TYPE_LABEL = { slt: "SLT", slb: "SLB", dct: "DCT", dcb: "DCB", asm: "IAB", comf: "Comforters", tc: "Tablecloths" };
 const first = name => String(name || "").split(" ")[0];
 
 // ---------------------------------------------------------------- engine input
@@ -25,7 +25,7 @@ export function engineSettings(SET, smrtPrices = {}) {
     washSlt: wash("slt").perLoad || 65, washSlb: wash("slb").perLoad || 25, washComf: wash("comf").perLoad || 2, washTc: wash("tc").perLoad || 10,
     cycSlt: wash("slt").cycleMin || 45, cycSlb: wash("slb").cycleMin || 45, cycComf: wash("comf").cycleMin || 60, cycTc: wash("tc").cycleMin || 40,
     rates: { sltSolo: rate("slt", "slt") || 50, sltPair: rate("slt_helper", "slt") || 80, slb: rate("slb", "slb") || 38, dct: rate("dct", "dct") || 25,
-      dcb: rate("dcb", "dcb") || 25, tc: rate("dcb", "tc") || 6, asm: asmRate, comf: rate("comf", "comf") || 3 },
+      dcb: rate("dcb", "dcb") || 25, tc: rate("tc", "tc") || rate("dcb", "tc") || 6, asm: asmRate, comf: rate("comf", "comf") || 3 },
     asmInclude: Object.fromEntries(CATS.map(k => [k, !!(SET.categories.find(c => c.id === k) || {}).needsAssembly])),
     stationMax: Object.fromEntries(SET.stations.filter(s => s.maxHours > 0).map(s => [s.code, s.maxHours])),
     price: { ...g.money.prices, ...smrtPrices }, payAvg: g.money.payAvg, laborTarget: g.money.laborTarget,
@@ -36,7 +36,7 @@ export function engineSettings(SET, smrtPrices = {}) {
 /** Stations in use, in order. The engine's types: slt | slt2 (helper) | slb | dct | dcb | asm, plus operator positions. */
 export function positions(SET) {
   const on = SET.stations.filter(s => s.active).sort((a, b) => a.sort - b.sort);
-  const stations = on.filter(s => s.type !== "ops" && s.type !== "comf").map(s => ({ id: s.code, type: s.type === "slt_helper" ? "slt2" : s.type, label: s.label, training: s.training }));
+  const stations = on.filter(s => s.type !== "ops").map(s => ({ id: s.code, type: s.type === "slt_helper" ? "slt2" : s.type, label: s.label, training: s.training }));
   const ops = on.filter(s => s.type === "ops").map(s => ({ id: s.code, type: "ops", label: s.label, training: s.training }));
   const trainingOf = Object.fromEntries(stations.concat(ops).filter(s => s.training).map(s => [s.id, s.training]));
   return { stations, ops, trainingOf };
@@ -126,7 +126,7 @@ function bottleneckFix(X, w, eta) {
   const TL = R.TL, col = { slt: 1, slb: 2, dct: 3, dcb: 4, tc: 5, comf: 6 }, last = TL[TL.length - 1];
   let worst = null, wt = -1;
   for (const k of cats) { const t = (TL.find(s => s[col[k]] >= Math.min(w.q[k], last[col[k]]) - 0.5) || last)[0]; if (t > wt) { wt = t; worst = k; } }
-  const type = worst === "tc" ? "dcb" : worst;
+  const type = worst === "tc" && !E.HAS_TC ? "dcb" : worst;
   const rows = R.rows.filter(r => r.staffed && E.POOL_OF(r.st.type) === type).sort((a, b) => b.x.start - a.x.start);
   const late = Math.max(0.25, Math.min(1, (isFinite(eta) ? eta - w.deadline : 1) + 0.25)), now = P.isToday ? (P.now ?? -1) : -1;
   if (rows.length && rows[0].x.start - late > now + 0.1) {
@@ -168,6 +168,12 @@ export function buildChecks(X) {
   if (R.P.shortTotal > 0.5) {
     const items = Object.entries(R.P.short).filter(([k, v]) => v > 0.5 && k !== "asm");
     add("b", `${fmtN(R.P.shortTotal)} pieces won't get done`, `Even ${P.s.allowOT ? `with up to ${fmtH(P.s.otMax)} overtime each` : "in the scheduled hours (overtime is off)"}: ${items.map(([k, v]) => `${CAT_LABEL[k]} ${fmtN(v)}`).join(", ")}.`);
+  }
+  // Comforters / Tablecloths need someone trained on them
+  for (const [k, has] of [["comf", E.HAS_COMF], ["tc", E.HAS_TC]]) {
+    if (!has || !((P.q[k] || 0) > 0.5)) continue;
+    const st = E.STATIONS.find(x => x.type === k);
+    if (!P.people.some(e => !out.has(e.id) && E.rankOf(e, st.id))) add("b", `No one is trained on ${st.label}`, `${fmtN(P.q[k])} ${CAT_FULL[k].toLowerCase()} can't be planned. Add the ${st.label} training to the people who can do them (Team screen).`);
   }
   // called out, station left empty
   for (const c of P.callouts || []) {
@@ -216,7 +222,7 @@ export function buildChecks(X) {
     if (early.length) {
       // the stations that run late, and who finishes early without being trained on them
       const lateT = new Set();
-      for (const rw of R.rows) if (rw.staffed) for (const sg of rw.segs) if (sg.stn !== "comf" && sg.to >= R.end - 0.05) lateT.add(E.POOL_OF(E.TYPE_OF[sg.stn]));
+      for (const rw of R.rows) if (rw.staffed) for (const sg of rw.segs) if ((E.HAS_COMF || sg.stn !== "comf") && sg.to >= R.end - 0.05) lateT.add(E.POOL_OF(E.TYPE_OF[sg.stn]));
       const miss = [...lateT].filter(t => early.some(rw => !E.STATIONS.some(x => E.POOL_OF(x.type) === t && E.trained(P.crew[rw.st.id].emp, x.id)))).map(t => TYPE_LABEL[t]).filter(Boolean);
       add("w", `Not everyone finishes within ${P.s.spread} min`, `${early.map(x => `${whoAt(P, x.st.id)} (${fmtH(x.gap)} early)`).join(", ")} run out of work they're trained for.${miss.length ? ` Cross-training on ${miss.join(", ")} would let them help.` : ""}`);
     }
