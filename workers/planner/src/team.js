@@ -6,6 +6,8 @@
 import { HttpError, ulid, nowIso, cleanName, audit } from "./util.js";
 import { requireRole, rank } from "./auth.js";
 import { payRates, rateOn } from "./pay.js";
+import { localNow } from "./pieces.js";
+import { timeOffBetween } from "./timeoff.js";
 
 const TIME = /^([01]\d|2[0-3]):[0-5]\d$/;
 
@@ -37,11 +39,15 @@ export async function listTeam(db, env, me = null) {
   for (const r of rows) (byPerson.get(r.personId) || byPerson.set(r.personId, []).get(r.personId)).push(r.t);
   // pay rates (from Rippling) only go to Admins and the Owner
   const rates = me && rank(me.role) >= rank("admin") ? await payRates(db, env.ORG_ID) : null;
-  const today = new Date().toISOString().slice(0, 10);
+  const today = localNow(env.TIMEZONE).day;
+  // time off from today on (and anything still running), soonest first
+  const away = await timeOffBetween(db, env.ORG_ID, today, "9999-12-31");
+  const awayOf = new Map(); for (const t of away) (awayOf.get(t.personId) || awayOf.set(t.personId, []).get(t.personId)).push(t);
   return {
     trainings: trainings.filter(t => t.stations.length),
-    people: people.map(p => ({ ...p, name: p.displayName || `${p.firstName} ${p.lastName}`.trim(), trainings: byPerson.get(p.id) || [],
+    people: people.map(p => ({ ...p, name: p.displayName || `${p.firstName} ${p.lastName}`.trim(), trainings: byPerson.get(p.id) || [], away: awayOf.get(p.id) || [],
       ...(rates ? { rate: rateOn(rates.get(p.id), today) } : {}) })),
+    today,
     ...(rates ? { ratesShown: true } : {}),
   };
 }

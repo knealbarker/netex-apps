@@ -94,6 +94,10 @@ export const nameOf = (P, id) => (P.people.find(p => p.id === id) || {}).name ||
 const whoAt = (P, code) => nameOf(P, (P.crew[code] || {}).emp);
 const onCrew = P => new Set(Object.values(P.crew).map(c => c.emp).filter(Boolean));
 const calledOut = P => new Set((P.callouts || []).map(c => c.personId));
+/** People coming in late on this day: {personId: "HH:MM"} (Team screen › Time off). */
+export const lateOf = P => Object.fromEntries((P.late || []).map(l => [l.personId, l.at]));
+/** A start time no earlier than the person's late arrival. */
+export const notBeforeLate = (P, id, start) => { const l = lateOf(P)[id]; return l && (!start || start < l) ? l : start; };
 const live = (X, w) => !(X.P.isToday && X.P.now != null && w.kind !== "overdue" && w.deadline != null && X.P.now > w.deadline);
 
 /** Hours this workweek (finished days, from Rippling) plus today's plan, for people who'd pass 40. */
@@ -174,6 +178,17 @@ export function buildChecks(X) {
     if (!has || !((P.q[k] || 0) > 0.5)) continue;
     const st = E.STATIONS.find(x => x.type === k);
     if (!P.people.some(e => !out.has(e.id) && E.rankOf(e, st.id))) add("b", `No one is trained on ${st.label}`, `${fmtN(P.q[k])} ${CAT_FULL[k].toLowerCase()} can't be planned. Add the ${st.label} training to the people who can do them (Team screen).`);
+  }
+  // on the crew but out (Team › Time off, or a call-out), or planned before their late arrival
+  const clock = clockInOf(P), late = lateOf(P);
+  for (const pos of E.POS) {
+    const c = P.crew[pos.id], id = c.emp; if (!id) continue;
+    if (out.has(id)) {
+      const co = (P.callouts || []).find(x => x.personId === id);
+      add("b", `${nameOf(P, id)} is out`, `Still on ${pos.label}${co && co.note ? ` (${co.note})` : ""}.`, [{ label: `Take ${first(nameOf(P, id))} off ${pos.label}`, apply: Q => { Q.crew[pos.id] = { ...Q.crew[pos.id], emp: "", stop: "" }; } }]);
+    } else if (late[id] && !clock[id] && c.start < late[id]) {
+      add("w", `${nameOf(P, id)} comes in at ${hm(parseTime(late[id]))}`, `Planned on ${pos.label} from ${hm(parseTime(c.start))}.`, [{ label: `Start ${first(nameOf(P, id))} at ${hm(parseTime(late[id]))}`, apply: Q => { Q.crew[pos.id].start = late[id]; } }]);
+    }
   }
   // called out, station left empty
   for (const c of P.callouts || []) {
@@ -297,7 +312,7 @@ export function suggestCrew(P, E) {
   const cnt = {};
   for (const p of H.planned) { const w = weekday(p.day) === wd ? 2 : 1; const m = cnt[p.personId] = cnt[p.personId] || { _t: 0 }; m[p.station] = (m[p.station] || 0) + w; m._t += w; }
   const share = (e, st) => { const m = cnt[e.id]; return m && m._t ? (m[st] || 0) / m._t : 0; };
-  const r = E.assign(people, { q: P.q, share, startOf: e => startOf.get(e.id) });
+  const r = E.assign(people, { q: P.q, share, startOf: e => notBeforeLate(P, e.id, startOf.get(e.id)) });
   for (const c of Object.values(r.crew)) { c.source = c.emp ? "suggested" : ""; }
   return { crew: r.crew, left: r.left, basis, days: days.length };
 }
@@ -307,7 +322,7 @@ export function autoAssign(P, E, ids) {
   const people = P.people.filter(e => ids.includes(e.id));
   const prev = {}; for (const c of Object.values(P.crew)) if (c.emp) prev[c.emp] = c;
   const clock = clockInOf(P);
-  const r = E.assign(people, { q: P.q, startOf: e => clock[e.id] || (prev[e.id] && prev[e.id].start) || e.start || P.s.defStart });
+  const r = E.assign(people, { q: P.q, startOf: e => clock[e.id] || notBeforeLate(P, e.id, (prev[e.id] && prev[e.id].start) || e.start || P.s.defStart) });
   for (const c of Object.values(r.crew)) if (c.emp) { const p = prev[c.emp]; if (p) { c.hrs = p.hrs; c.stop = p.stop; } c.source = clock[c.emp] ? "clock" : "user"; }
   return r;
 }
@@ -350,7 +365,7 @@ export function projectDay({ SET, TEAM, V, plan, day, admin = false }) {
   const dp = dayPieces(V, SET, day); if (!dp) return null;
   const overrides = plan.overrides || {};
   const P = { s, ...pos, people: peopleFrom(TEAM), crew: crewFromServer(plan.crew, POS, s), q: effectiveQ(dp.base, overrides), waves: dp.waves, day, today: V.today,
-    isToday: dp.isToday, now: null, callouts: plan.callouts || [], history: plan.history || { hours: [], planned: [] }, clock: [], published: plan.published || null, admin,
+    isToday: dp.isToday, now: null, callouts: plan.callouts || [], late: plan.late || [], history: plan.history || { hours: [], planned: [] }, clock: [], published: plan.published || null, admin,
     expected: dp.expected && !Object.keys(overrides).length, dp };
   let basis = plan.published ? "the published plan" : "the plan saved for that day", suggested = false;
   if (!Object.keys(plan.crew || {}).length) { const r = suggestCrew(P, evaluate(P).E); P.crew = r.crew; basis = `suggested from ${r.basis}`; suggested = true; }

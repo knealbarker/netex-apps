@@ -189,6 +189,33 @@ await t("Team: add a person through the dialog", async () => {
   await p.click('dialog button[type="submit"]');
   await p.waitForSelector('.trow:has-text("Dee Cuatro")');
 });
+await t("Team: time off — out for a range, in late for a day, shown on the row and today's banner, removable", async () => {
+  const today = await p.evaluate(() => new Date().toLocaleDateString("en-CA"));
+  const plus = n => { const d = new Date(today + "T12:00:00Z"); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); };
+  await p.click('.trow:has-text("Beto Dos") [data-away]');
+  await p.fill('dialog input[name="from"]', today); await p.fill('dialog input[name="to"]', plus(2));
+  await p.fill('dialog input[name="note"]', "Sick");
+  await p.click('dialog button[type="submit"]');
+  await p.waitForSelector('.trow:has-text("Beto Dos") .chip.off');
+  ok(/Beto Dos · out/.test(await p.textContent(".away-today")), await p.textContent(".away-today"));
+  await p.click("#awayAny");
+  await p.selectOption('dialog select[name="who"]', { label: "Cora Tres" });
+  await p.check('dialog input[value="late"]');
+  ok(await p.isHidden('dialog input[name="to"]'), "late has no end date");
+  await p.fill('dialog input[name="from"]', plus(1)); await p.fill('dialog input[name="at"]', "09:30");
+  await p.locator("dialog").screenshot({ path: join(SHOTS, "9c-timeoff.png") });
+  await p.click('dialog button[type="submit"]');
+  await p.waitForSelector('.trow:has-text("Cora Tres") .chip.late');
+  ok(/In 9:30 AM/.test(await p.textContent('.trow:has-text("Cora Tres") .chip.late')));
+  await p.screenshot({ path: join(SHOTS, "9d-team-timeoff.png") });
+  const plan = await (await p.request.get(url + `/api/plan/${plus(1)}`)).json();
+  ok(plan.callouts.some(c => c.timeOff) && plan.late.some(l => l.at === "09:30"), JSON.stringify([plan.callouts, plan.late]));
+  await p.click('.trow:has-text("Beto Dos") [data-away]');
+  await p.click('dialog [data-rm]');
+  await p.waitForSelector("dialog .away-list li", { state: "detached" });
+  await p.click("dialog [data-close]");
+  await p.waitForSelector('.trow:has-text("Beto Dos") .chip.off', { state: "detached" });
+});
 await t("Settings: change a value, Save lights up, value persists", async () => {
   await p.goto(url + "/#/settings");
   await p.waitForSelector("#sec-day");

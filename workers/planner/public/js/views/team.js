@@ -6,6 +6,16 @@ import { html, raw, toast, initials, RANK, openDialog } from "../ui.js";
 import { rankingSuggestions } from "../plan/model.js";
 
 const PLUS = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>';
+const CAL = '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="5" width="16" height="15" rx="2"/><path d="M4 10h16M9 3v4m6-4v4"/></svg>';
+const shortDay = d => new Date(d + "T12:00:00").toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" });
+const clock12 = t => { const [h, m] = t.split(":").map(Number); return `${h % 12 || 12}:${String(m).padStart(2, "0")} ${h >= 12 ? "PM" : "AM"}`; };
+/** "Out today", "Out Tue Oct 14 – Thu Oct 16", "In 9:30 AM Wed Oct 15" */
+export function awayText(t, today) {
+  const when = d => d === today ? "today" : shortDay(d);
+  if (t.kind === "late") return `In ${clock12(t.at)} ${when(t.fromDay)}`;
+  if (t.fromDay === t.toDay) return `Out ${when(t.fromDay)}`;
+  return `Out ${t.fromDay <= today ? "until" : `${shortDay(t.fromDay)} –`} ${shortDay(t.toDay)}`;
+}
 const PEN = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20h4L19 9l-4-4L4 16z"/><path d="M14 6l4 4"/></svg>';
 
 export async function render(main, ctx) {
@@ -26,6 +36,7 @@ export async function render(main, ctx) {
     }
     const thin = cov.filter(c => c.trained < 2);
     const former = data.people.length - active.length;
+    const T = data.today, todayAway = active.flatMap(p => (p.away || []).filter(t => t.fromDay <= T && t.toDay >= T).map(t => ({ p, t })));
     main.innerHTML = html`
       <div class="page-head">
         <div><h1>Team</h1><p>${active.length} people on the production team. Each person's trainings are listed in order: 1 is where they belong first.</p></div>
@@ -40,19 +51,22 @@ export async function render(main, ctx) {
             title="${c.t.name}${c.t.stations.length > 1 ? ` — covers ${c.t.stations.join(", ")}` : ""}">
           <b>${c.t.short}</b><span>${c.trained} trained</span><small>${c.first} first choice</small></button>`))}
       </div>
+      <div class="banner ${todayAway.length ? "warn" : "info"} away-today"><b>Today:</b>${todayAway.length
+        ? raw(todayAway.map(({ p, t }) => html`<span class="chip ${t.kind === "late" ? "late" : "off"}" title="${t.note || ""}">${p.name} · ${t.kind === "late" ? `in ${clock12(t.at)}` : "out"}</span>`).join(""))
+        : "everyone is expected in."}${canTrain ? raw(html` <button class="btn small" id="awayAny">${raw(CAL)}Out or late…</button>`) : ""}</div>
       ${thin.length ? raw(html`<div class="banner warn"><b>Thin coverage:</b> ${thin.map(c => `${c.t.short} (${c.trained})`).join(" · ")} — one sick day leaves these without a trained person.</div>`) : ""}
       ${focus ? raw(html`<p class="focus-note">Sorted by who runs <b>${tName(focus).name}</b> best. <button class="linkish" id="clearFocus">Show everyone A–Z</button></p>`) : ""}
       <div class="card list team-list" role="list">
         ${people.map(p => raw(html`<div class="trow ${p.status === "active" ? "" : "former"}" role="listitem">
           ${canEdit ? raw(html`<button class="who-btn" data-edit="${p.id}" aria-label="Edit ${p.name}">`) : raw('<div class="who-btn">')}
             <span class="avatar" aria-hidden="true">${initials(p.name)}</span>
-            <span class="who-txt"><b>${p.name}</b><small>${[p.usualStart ? `In ${p.usualStart}` : "", p.payrollId ? `Rippling #${p.payrollId}` : "", "rate" in p ? (p.rate ? `$${p.rate.toFixed(2)}/h` : "no pay rate yet") : "", p.status === "active" ? "" : "Former"].filter(Boolean).join(" · ")}</small></span>
+            <span class="who-txt"><b>${p.name}</b>${(p.away || []).length && p.status === "active" ? raw(html`<span class="away-chips">${p.away.slice(0, 3).map(t => raw(html`<span class="chip ${t.kind === "late" ? "late" : "off"}" title="${t.note || ""}">${awayText(t, T)}</span>`))}${p.away.length > 3 ? raw(html`<span class="chip">+${p.away.length - 3} more</span>`) : ""}</span>`) : ""}<small>${[p.usualStart ? `In ${p.usualStart}` : "", p.payrollId ? `Rippling #${p.payrollId}` : "", "rate" in p ? (p.rate ? `$${p.rate.toFixed(2)}/h` : "no pay rate yet") : "", p.status === "active" ? "" : "Former"].filter(Boolean).join(" · ")}</small></span>
           ${raw(canEdit ? "</button>" : "</div>")}
           <ol class="tchips" aria-label="Trainings in order">
             ${p.trainings.length ? p.trainings.map((t, i) => raw(html`<li class="tchip ${focus === t ? "hit" : ""} ${i === 0 ? "first" : ""}" title="${tName(t)?.name || t}"><i>${i + 1}</i>${tName(t)?.short || t}</li>`))
               : raw('<li class="tnone">No trainings yet</li>')}
           </ol>
-          ${canTrain && p.status === "active" ? raw(html`<button class="btn ghost small" data-train="${p.id}">${raw(PEN)}Trainings</button>`) : raw("<span></span>")}
+          ${canTrain && p.status === "active" ? raw(html`<span class="trow-act"><button class="btn ghost small" data-away="${p.id}">${raw(CAL)}Time off</button><button class="btn ghost small" data-train="${p.id}">${raw(PEN)}Trainings</button></span>`) : raw("<span></span>")}
         </div>`))}
         ${people.length ? "" : raw('<div class="empty-row">No one on the team yet.</div>')}
       </div>`;
@@ -63,6 +77,8 @@ export async function render(main, ctx) {
     main.querySelector("#clearFocus")?.addEventListener("click", () => { focus = null; draw(); });
     main.querySelectorAll("[data-focus]").forEach(b => b.addEventListener("click", () => { focus = focus === b.dataset.focus ? null : b.dataset.focus; draw(); main.querySelector(`[data-focus="${b.dataset.focus}"]`)?.focus(); }));
     main.querySelectorAll("[data-edit]").forEach(b => b.addEventListener("click", () => personDialog(data.people.find(p => p.id === b.dataset.edit), reload)));
+    main.querySelectorAll("[data-away]").forEach(b => b.addEventListener("click", () => awayDialog(data.people.find(p => p.id === b.dataset.away), data, reload)));
+    main.querySelector("#awayAny")?.addEventListener("click", () => awayDialog(null, data, reload));
     main.querySelectorAll("[data-train]").forEach(b => b.addEventListener("click", () => trainingsDialog(data.people.find(p => p.id === b.dataset.train), data.trainings, reload)));
   }
   async function reload() { Object.assign(data, await api("/team")); draw(); }
@@ -155,6 +171,48 @@ function personDialog(p, done) {
       if (isNew) { await api("/team", { method: "POST", body }); toast(`${body.firstName} added. Add their trainings next.`); }
       else { body.status = e.active.checked ? "active" : "inactive"; await api(`/team/${p.id}`, { method: "PATCH", body }); toast("Saved."); }
       done();
+    },
+  });
+}
+
+// Time off: out for one or more days, or in late at a time on one day. Shows what's already set, each with Remove.
+function awayDialog(p, data, done) {
+  const T = data.today, active = data.people.filter(x => x.status === "active");
+  const existing = () => (p ? p.away || [] : []);
+  openDialog({
+    title: p ? `Time off · ${p.name}` : "Out or late", submitLabel: "Add",
+    body: html`${p ? "" : raw(html`<label class="field"><span>Person</span><select class="input" name="who" required><option value="">— Pick someone —</option>
+        ${active.map(x => raw(html`<option value="${x.id}">${x.name}</option>`))}</select></label>`)}
+      ${existing().length ? raw(html`<div class="field"><span>Already set</span><ul class="away-list">${existing().map(t => raw(html`<li><span><b>${awayText(t, T)}</b>${t.note ? raw(html` <small>— ${t.note}</small>`) : ""}${t.by ? raw(html`<br><small>by ${t.by}</small>`) : ""}</span>
+          <button type="button" class="btn ghost small" data-rm="${t.id}">Remove</button></li>`))}</ul></div>`) : ""}
+      <div class="field"><span>What</span><div class="kindrow"><label><input type="radio" name="kind" value="out" checked> Out</label><label><input type="radio" name="kind" value="late"> In late</label></div></div>
+      <div class="kindrow">
+        <label class="field"><span data-l="from">From</span><input class="input" type="date" name="from" value="${T}" min="${T}" required></label>
+        <label class="field" data-only="out"><span>Through</span><input class="input" type="date" name="to" value="${T}" min="${T}"></label>
+        <label class="field" data-only="late" hidden><span>Comes in at</span><input class="input" type="time" step="300" name="at"></label>
+      </div>
+      <label class="field"><span>Note <em>(optional)</em></span><input class="input" name="note" maxlength="300" placeholder="Sick, vacation, appointment…"></label>`,
+    onOpen: dlg => {
+      const f = dlg.querySelector("form") || dlg;
+      const sync = () => { const late = f.querySelector('[name="kind"]:checked').value === "late";
+        f.querySelector('[data-only="out"]').hidden = late; f.querySelector('[data-only="late"]').hidden = !late; f.querySelector('[data-l="from"]').textContent = late ? "Day" : "From"; };
+      f.querySelectorAll('[name="kind"]').forEach(r => r.addEventListener("change", sync));
+      f.querySelector('[name="from"]').addEventListener("change", e => { const to = f.querySelector('[name="to"]'); to.min = e.target.value; if (to.value < e.target.value) to.value = e.target.value; });
+      f.querySelectorAll("[data-rm]").forEach(b => b.addEventListener("click", async () => {
+        b.disabled = true;
+        try { await api(`/timeoff/${b.dataset.rm}`, { method: "DELETE" }); p.away = p.away.filter(t => t.id !== b.dataset.rm); b.closest("li").remove(); toast("Removed."); done(); }
+        catch (e) { b.disabled = false; toast(e.message, "warn"); }
+      }));
+    },
+    onSubmit: async form => {
+      const personId = p ? p.id : form.who.value; if (!personId) throw new Error("Pick who it is.");
+      const kind = form.kind.value, fromDay = form.from.value, toDay = kind === "late" ? fromDay : form.to.value || fromDay, at = form.at.value;
+      if (!fromDay) throw new Error("Pick a date.");
+      if (kind === "late" && !at) throw new Error("Pick the time they'll come in.");
+      await api("/timeoff", { method: "POST", body: { personId, kind, fromDay, toDay, at, note: form.note.value } });
+      const who = p || active.find(x => x.id === personId);
+      toast(`${who.name}: ${awayText({ kind, fromDay, toDay, at }, T)}. The plan for those days picks it up.`);
+      await done();
     },
   });
 }

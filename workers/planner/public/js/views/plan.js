@@ -66,7 +66,7 @@ export async function render(main, ctx) {
     const dp = M.dayPieces(st.V, st.SET, pick);
     const q = M.effectiveQ(dp.base, st.overrides);
     return { s, ...pos, people, crew: st.crew, q, waves: dp.waves, day: pick, today: st.V.today, isToday: dp.isToday, now: dp.isToday ? nowH() : null,
-      callouts: st.plan.callouts, history: st.plan.history, clock: st.plan.clock, published: st.plan.published, admin, expected: dp.expected && !Object.keys(st.overrides).length, dp };
+      callouts: st.plan.callouts, late: st.plan.late || [], history: st.plan.history, clock: st.plan.clock, published: st.plan.published, admin, expected: dp.expected && !Object.keys(st.overrides).length, dp };
   }
   function suggest(why) {
     const P = makeP(), E = M.evaluate(P).E;
@@ -131,7 +131,7 @@ export async function render(main, ctx) {
       try {
         const p = await api(`/plan/${pick}`);
         if (p.rev !== st.rev) { adopt(p); toast(`${p.updatedBy || "Someone"} changed this plan. Showing their version.`, "warn", 6000); drawPage(); return; }
-        st.plan.callouts = p.callouts; st.plan.clock = p.clock; st.plan.published = p.published;
+        st.plan.callouts = p.callouts; st.plan.late = p.late || []; st.plan.clock = p.clock; st.plan.published = p.published;
       } catch { /* try again next minute */ }
     }
     update({ table: false });
@@ -287,11 +287,11 @@ export async function render(main, ctx) {
   // ---- crew table
   function personOptions(P, E, code) {
     const used = {}; for (const [c, x] of Object.entries(st.crew)) if (x.emp) used[x.emp] = c;
-    const out = new Set((P.callouts || []).map(c => c.personId));
+    const out = new Set((P.callouts || []).map(c => c.personId)), late = M.lateOf(P);
     const cur = st.crew[code].emp, label = c => POS.find(p => p.id === c)?.label || c;
     const trained = people.filter(e => E.rankOf(e, code)).sort((a, b) => E.rankOf(a, code) - E.rankOf(b, code) || a.name.localeCompare(b.name));
     const other = people.filter(e => !E.rankOf(e, code)).sort((a, b) => a.name.localeCompare(b.name));
-    const opt = (e, rk) => html`<option value="${e.id}" ${e.id === cur ? "selected" : ""}>${e.name}${rk ? ` · ${ORD(rk)}` : ""}${used[e.id] && used[e.id] !== code ? ` · on ${label(used[e.id])}` : ""}${out.has(e.id) ? " · called out" : ""}</option>`;
+    const opt = (e, rk) => html`<option value="${e.id}" ${e.id === cur ? "selected" : ""}>${e.name}${rk ? ` · ${ORD(rk)}` : ""}${used[e.id] && used[e.id] !== code ? ` · on ${label(used[e.id])}` : ""}${out.has(e.id) ? " · OUT" : late[e.id] ? ` · in at ${fmtClock(parseTime(late[e.id]))}` : ""}</option>`;
     const curGone = cur && !people.some(e => e.id === cur);
     return html`<option value="">— Nobody —</option>${curGone ? raw(html`<option value="${cur}" selected>${M.nameOf({ people: [] }, cur)} (not on the team list)</option>`) : ""}
       ${trained.length ? raw(html`<optgroup label="Trained · best first">${trained.map(e => raw(opt(e, E.rankOf(e, code))))}</optgroup>`) : ""}
@@ -312,7 +312,7 @@ export async function render(main, ctx) {
         <label class="cr-f"><span>Hours</span><input class="input" type="number" min="0" max="16" step="0.25" id="hrs-${p.id}" data-f="hrs" value="${c.hrs}" ${c.emp ? "" : "disabled"} ${dis}></label>
         <label class="cr-f"><span>Hard stop</span><input class="input" type="time" step="300" id="stop-${p.id}" data-f="stop" value="${c.stop || ""}" ${c.emp ? "" : "disabled"} ${dis}></label>
         <div class="cr-out" id="out-${p.id}"></div>
-        <div class="cr-act">${can && c.emp ? raw(html`<button class="icon-btn" data-out="${p.id}" title="${first(M.nameOf(P, c.emp))} called out" aria-label="${M.nameOf(P, c.emp)} called out"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="10" cy="8" r="3.2"/><path d="M4 19c.6-3.2 2.9-5 6-5 1.4 0 2.6.4 3.6 1"/><path d="m16 15 5 5m0-5-5 5"/></svg></button>`) : ""}</div>
+        <div class="cr-act">${can && c.emp ? raw(html`<button class="icon-btn" data-out="${p.id}" title="${first(M.nameOf(P, c.emp))} out or late" aria-label="${M.nameOf(P, c.emp)} out or late"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="10" cy="8" r="3.2"/><path d="M4 19c.6-3.2 2.9-5 6-5 1.4 0 2.6.4 3.6 1"/><path d="m16 15 5 5m0-5-5 5"/></svg></button>`) : ""}</div>
       </div>`;
     };
     el.innerHTML = html`<div class="cr-head" aria-hidden="true"><span>Station</span><span>Person</span><span>Clock-in</span><span>Hours</span><span>Hard stop</span><span>Clock-out</span><span></span></div>
@@ -347,7 +347,7 @@ export async function render(main, ctx) {
       if (!id) { st.crew[code] = { ...c, emp: "", stop: "", source: "" }; return; }
       const from = Object.keys(st.crew).find(k => k !== code && st.crew[k].emp === id);
       const e = people.find(x => x.id === id), clock = M.clockInOf(makeP());
-      let start = c.emp ? c.start : clock[id] || e?.start || s.defStart, hrs = c.emp ? c.hrs : s.fullDay, stop = c.emp ? c.stop : "";
+      let start = c.emp ? c.start : clock[id] || M.notBeforeLate(makeP(), id, e?.start || s.defStart), hrs = c.emp ? c.hrs : s.fullDay, stop = c.emp ? c.stop : "";
       if (from) { const f = st.crew[from]; start = f.start; hrs = f.hrs; stop = f.stop; st.crew[from] = { ...f, emp: "", stop: "", source: "" }; }
       st.crew[code] = { emp: id, start, hrs, stop, source: clock[id] && !from && !c.emp ? "clock" : "user" };
     });
@@ -363,52 +363,60 @@ export async function render(main, ctx) {
   function drawCallouts(P) {
     const el = document.getElementById("pl-callouts"); if (!el) return;
     const list = P.callouts || [];
-    el.innerHTML = html`<div class="callouts">${can ? raw('<button class="btn small" id="pl-callout-any" title="Mark someone out for this day: sick, appointment, no call">Someone called out</button>') : ""}
-      ${list.length ? raw(html`<span>Called out:</span>${list.map(c => raw(html`<span class="chip off" title="${c.note || ""}">${M.nameOf(P, c.personId)}${c.station ? ` · ${POS.find(p => p.id === c.station)?.label || ""}` : ""}${can ? raw(html`<button class="x" data-unout="${c.id}" aria-label="Undo call-out for ${M.nameOf(P, c.personId)}" title="Undo (doesn't put them back on a station)">×</button>`) : ""}</span>`))}`) : ""}</div>`;
+    el.innerHTML = html`<div class="callouts">${can ? raw('<button class="btn small" id="pl-callout-any" title="Mark someone out or coming in late for this day">Out or late</button>') : ""}
+      ${list.length ? raw(html`<span>Out:</span>${list.map(c => raw(html`<span class="chip off" title="${c.note || ""}">${M.nameOf(P, c.personId)}${c.station ? ` · ${POS.find(p => p.id === c.station)?.label || ""}` : ""}${can ? raw(html`<button class="x" data-unout="${c.id}" data-kind="${c.timeOff ? "t" : "c"}" aria-label="Undo: ${M.nameOf(P, c.personId)} is not out" title="Not out after all (doesn't put them back on a station)">×</button>`) : ""}</span>`))}`) : ""}
+      ${(P.late || []).length ? raw(html`<span>In late:</span>${P.late.map(l => raw(html`<span class="chip late" title="${l.note || ""}">${M.nameOf(P, l.personId)} · ${fmtClock(parseTime(l.at))}${can ? raw(html`<button class="x" data-unlate="${l.id}" aria-label="Undo late arrival for ${M.nameOf(P, l.personId)}">×</button>`) : ""}</span>`))}`) : ""}
+      <a class="linkish small" href="#/team">Time off on Team</a></div>`;
     document.getElementById("pl-callout-any")?.addEventListener("click", () => calloutAnyDialog(P));
     el.querySelectorAll("[data-unout]").forEach(b => b.addEventListener("click", async () => {
-      await api(`/plan/${pick}/callouts/${b.dataset.unout}`, { method: "DELETE" });
+      const c = st.plan.callouts.find(x => x.id === b.dataset.unout);
+      if (c?.timeOff && c.fromDay !== c.toDay && !confirm(`${M.nameOf(P, c.personId)} is out ${c.fromDay} to ${c.toDay}. Remove the whole time off? (To change only some days, use the Team screen.)`)) return;
+      await api(b.dataset.kind === "t" ? `/timeoff/${b.dataset.unout}` : `/plan/${pick}/callouts/${b.dataset.unout}`, { method: "DELETE" });
       st.plan.callouts = st.plan.callouts.filter(c => c.id !== b.dataset.unout); update({ table: true });
     }));
+    el.querySelectorAll("[data-unlate]").forEach(b => b.addEventListener("click", async () => {
+      await api(`/timeoff/${b.dataset.unlate}`, { method: "DELETE" });
+      st.plan.late = (st.plan.late || []).filter(l => l.id !== b.dataset.unlate); update({ table: true });
+    }));
   }
-  // Anyone on the team, on a station or not (a person not on today's crew stays off "Suggest from history" too).
-  function calloutAnyDialog(P) {
+  // Out or in late for this day: saved as time off (the same list the Team screen shows), for anyone on the team.
+  function awayDialog(P, fixedId = null) {
     const out = new Set((P.callouts || []).map(c => c.personId));
     const stOf = {}; for (const [code, c] of Object.entries(st.crew)) if (c.emp) stOf[c.emp] = code;
     const label = code => POS.find(p => p.id === code)?.label || code;
-    const list = people.filter(e => !out.has(e.id)).sort((a, b) => (!stOf[a.id]) - (!stOf[b.id]) || a.name.localeCompare(b.name));
+    const list = people.filter(e => !out.has(e.id) || e.id === fixedId).sort((a, b) => (!stOf[a.id]) - (!stOf[b.id]) || a.name.localeCompare(b.name));
     if (!list.length) return toast("Everyone on the team is already marked out.", "warn");
     openDialog({
-      title: "Who called out?", submitLabel: "Mark out",
-      body: html`<p class="dlg-lead">They come off the plan for ${longDay(pick)}. If they were on a station, the checks show who's trained and free to cover.</p>
-        <label class="field"><span>Person</span><select class="input" name="who" required><option value="">— Pick someone —</option>
-          ${list.map(e => raw(html`<option value="${e.id}">${e.name}${stOf[e.id] ? ` · on ${label(stOf[e.id])}` : ""}</option>`))}</select></label>
+      title: fixedId ? `${M.nameOf(P, fixedId)}: out or late?` : "Who's out or late?", submitLabel: "Save",
+      body: html`<p class="dlg-lead">For ${longDay(pick)}. Out takes them off the plan; late keeps them on but they don't start before their time. For other days or several days, use Team › Time off.</p>
+        <label class="field"><span>Person</span><select class="input" name="who" required ${fixedId ? "disabled" : ""}><option value="">— Pick someone —</option>
+          ${list.map(e => raw(html`<option value="${e.id}" ${e.id === fixedId ? "selected" : ""}>${e.name}${stOf[e.id] ? ` · on ${label(stOf[e.id])}` : ""}</option>`))}</select></label>
+        <div class="field"><span>What</span><div class="kindrow"><label><input type="radio" name="kind" value="out" checked> Out today</label><label><input type="radio" name="kind" value="late"> In late at</label>
+          <input class="input" type="time" step="300" name="at" aria-label="Arrival time"></div></div>
         <label class="field"><span>Note <em>(optional)</em></span><input class="input" name="note" maxlength="300" placeholder="Sick, appointment, no call…"></label>`,
       onSubmit: async form => {
-        const id = form.who.value; if (!id) throw new Error("Pick who called out.");
-        const code = stOf[id] || null, name = M.nameOf(makeP(), id);
+        const id = fixedId || form.who.value; if (!id) throw new Error("Pick who it is.");
+        const kind = form.kind.value, at = form.at.value;
+        if (kind === "late" && !at) throw new Error("Pick the time they'll come in.");
+        const code = stOf[id] || null, name = M.nameOf(makeP(), id), note = form.note.value || null;
         if (st.dirty) await save();
-        const r = await api(`/plan/${pick}/callouts`, { method: "POST", body: { personId: id, station: code, note: form.note.value } });
-        st.plan.callouts = [...(st.plan.callouts || []), { id: r.id, personId: id, station: code, note: form.note.value || null }];
-        if (code) edit(() => { st.crew[code] = { ...st.crew[code], emp: "", stop: "", source: "" }; }, { msg: `${name} is off the plan.` });
-        else { update({ table: true }); toast(`${name} is marked out.`); }
+        const r = await api("/timeoff", { method: "POST", body: { personId: id, kind, fromDay: pick, toDay: pick, at, note } });
+        const gone = new Set(r.replaced || []);
+        st.plan.late = (st.plan.late || []).filter(l => !gone.has(l.id) && l.personId !== id);
+        if (kind === "out") {
+          st.plan.callouts = [...(st.plan.callouts || []), { id: r.id, timeOff: true, personId: id, station: code, note, fromDay: pick, toDay: pick }];
+          if (code) edit(() => { st.crew[code] = { ...st.crew[code], emp: "", stop: "", source: "" }; }, { msg: `${name} is out — off ${label(code)}.` });
+          else { update({ table: true }); toast(`${name} is marked out.`); }
+        } else {
+          st.plan.late = [...st.plan.late, { id: r.id, personId: id, at, note }];
+          if (code && st.crew[code].start < at) edit(() => { st.crew[code] = { ...st.crew[code], start: at, source: "user" }; }, { msg: `${name} starts at ${fmtClock(parseTime(at))}.` });
+          else { update({ table: true }); toast(`${name} comes in at ${fmtClock(parseTime(at))}.`); }
+        }
       },
     });
   }
-  function calloutDialog(code) {
-    const c = st.crew[code], name = M.nameOf(makeP(), c.emp), label = POS.find(p => p.id === code).label;
-    openDialog({
-      title: `${name} called out?`, submitLabel: "Take off today's plan",
-      body: html`<p class="dlg-lead">${first(name)} comes off ${label} for ${longDay(pick)}. The checks will show who's trained and free to cover.</p>
-        <label class="field"><span>Note <em>(optional)</em></span><input class="input" name="note" maxlength="300" placeholder="Sick, appointment, no call…"></label>`,
-      onSubmit: async form => {
-        if (st.dirty) await save();
-        const r = await api(`/plan/${pick}/callouts`, { method: "POST", body: { personId: c.emp, station: code, note: form.note.value } });
-        st.plan.callouts = [...(st.plan.callouts || []), { id: r.id, personId: c.emp, station: code, note: form.note.value || null }];
-        edit(() => { st.crew[code] = { ...st.crew[code], emp: "", stop: "", source: "" }; }, { msg: `${name} is off today's plan.` });
-      },
-    });
-  }
+  const calloutAnyDialog = P => awayDialog(P);
+  const calloutDialog = code => awayDialog(makeP(), st.crew[code].emp);
 
   // ---- checks
   function drawChecks(X) {

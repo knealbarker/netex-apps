@@ -69,6 +69,11 @@ export async function listChanges(db, env, day) {
     if (r.entity === "plan_days" && r.action === "update") { if (c.lines?.length) for (const l of c.lines) push(r, l + forDay, "plan"); }
     else if (r.entity === "plan_days" && r.action === "publish") push(r, `Published the plan${c.day ? ` for ${short(c.day)}` : ""}`, "publish");
     else if (r.entity === "plan_callouts") push(r, `${people.get(c.personId) || "Someone"} ${r.action === "delete" ? "back on the list (call-out undone)" : "called out"}${c.note ? ` — ${c.note}` : ""}${forDay}`, "callout");
+    else if (r.entity === "plan_time_off") {
+      const when = c.fromDay ? (c.toDay && c.toDay !== c.fromDay ? `${short(c.fromDay)} – ${short(c.toDay)}` : short(c.fromDay)) : "";
+      const what = c.kind === "late" ? `in late at ${c.at || "?"}` : "out";
+      push(r, r.action === "delete" ? `${people.get(c.personId) || "Someone"}: removed "${what}" for ${when}` : `${people.get(c.personId) || "Someone"} ${what} ${when}${c.note ? ` — ${c.note}` : ""}`, "callout");
+    }
     else if (r.entity === "plan_person_trainings") push(r, `Trainings for ${people.get(r.eid) || "someone"} changed`, "team");
     else if (r.entity === "core_people") push(r, `${r.action === "create" ? "Added" : "Updated"} ${people.get(r.eid) || "someone"} on the team`, "team");
     else if (r.entity === "core_settings") push(r, `Settings: ${SETTINGS_NAMES[String(r.eid).replace(/^planner\./, "")] || r.eid} changed`, "settings");

@@ -100,5 +100,31 @@ await t("history: recent hours and planned stations come with the plan", async (
   eq(h.planned.map(x => [x.day, x.station]), [["2026-10-09", "slb1"]]);
 });
 
+await t("time off: out for a range and late for a day reach the plan; viewers can't add; overlap replaces", async () => {
+  const { call, p1, p2 } = await setup();
+  const v = await call("POST", "/api/timeoff", { as: "vi@example.com", body: { personId: p1, kind: "out", fromDay: DAY, toDay: DAY } });
+  eq(v.status, 403);
+  const o = await call("POST", "/api/timeoff", { as: "mo@example.com", body: { personId: p1, kind: "out", fromDay: "2026-10-12", toDay: "2026-10-14", note: "Sick" } });
+  eq(o.status, 201);
+  const l = await call("POST", "/api/timeoff", { as: "mo@example.com", body: { personId: p2, kind: "late", fromDay: "2026-10-13", at: "09:30" } });
+  eq(l.status, 201);
+  eq((await call("POST", "/api/timeoff", { as: "mo@example.com", body: { personId: p2, kind: "late", fromDay: DAY } })).status, 400, "late needs a time");
+  eq((await call("POST", "/api/timeoff", { as: "mo@example.com", body: { personId: p2, kind: "out", fromDay: "2026-10-14", toDay: "2026-10-13" } })).status, 400, "backwards range");
+  let r = (await call("GET", "/api/plan/2026-10-13")).body;
+  eq(r.callouts.map(c => [c.personId, c.timeOff, c.note]), [[p1, true, "Sick"]]);
+  eq(r.late.map(x => [x.personId, x.at]), [[p2, "09:30"]]);
+  eq((await call("GET", "/api/plan/2026-10-15")).body.callouts, [], "range ends on the 14th");
+  // out on the 13th replaces the late arrival
+  const o2 = await call("POST", "/api/timeoff", { as: "mo@example.com", body: { personId: p2, kind: "out", fromDay: "2026-10-13" } });
+  eq(o2.body.replaced, [l.body.id]);
+  r = (await call("GET", "/api/plan/2026-10-13")).body;
+  eq([r.callouts.length, r.late.length], [2, 0]);
+  eq((await call("DELETE", `/api/timeoff/${o.body.id}`, { as: "mo@example.com" })).status, 200);
+  eq((await call("GET", "/api/plan/2026-10-13")).body.callouts.map(c => c.personId), [p2]);
+  const ch = (await call("GET", `/api/changes/${new Date().toLocaleDateString("en-CA", { timeZone: "America/Chicago" })}`)).body.list.map(x => x.text);
+  ok(ch.some(x => /Ana Uno out Mon, Oct 12 – Wed, Oct 14 — Sick/.test(x)), "change log: " + ch.join(" | "));
+  const tm = (await call("GET", "/api/team")).body;
+  ok(tm.today && tm.people.find(x => x.id === p2).away.length === 1, "team carries upcoming time off");
+});
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

@@ -13,6 +13,7 @@ import { reviewDay, noteFollowup, laborStreak } from "./review.js";
 import { listChanges, addEvent } from "./changes.js";
 import { buildSummary, sendNow, scheduledSummary } from "./summary.js";
 import { localNow } from "./pieces.js";
+import { listTimeOff, addTimeOff, removeTimeOff } from "./timeoff.js";
 
 const SECURITY_HEADERS = {
   "x-content-type-options": "nosniff",
@@ -44,6 +45,9 @@ const routes = [
   ["PUT", /^\/api\/settings\/runs$/, async (req, env, me) => json({ runs: await saveRuns(env.DB, env, me, (await readJson(req)).runs) })],
   ["PUT", /^\/api\/settings\/(\w+)$/, async (req, env, me, m) => json({ [m[1]]: await saveGroup(env.DB, env, me, m[1], await readJson(req)) })],
   ["GET", /^\/api\/team$/, async (req, env, me) => json(await listTeam(env.DB, env, me))],
+  ["GET", /^\/api\/timeoff$/, async (req, env) => { const u = new URL(req.url).searchParams; return json(await listTimeOff(env.DB, env, { from: u.get("from"), to: u.get("to") })); }],
+  ["POST", /^\/api\/timeoff$/, async (req, env, me) => json(await addTimeOff(env.DB, env, me, await readJson(req)), 201)],
+  ["DELETE", /^\/api\/timeoff\/([0-9A-Z]{26})$/, async (req, env, me, m) => json(await removeTimeOff(env.DB, env, me, m[1]))],
   ["GET", /^\/api\/team\/history$/, async (req, env, me) => json(await teamHistory(env.DB, env, me))],
   ["POST", /^\/api\/team$/, async (req, env, me) => json(await addPerson(env.DB, env, me, await readJson(req)), 201)],
   ["PATCH", /^\/api\/team\/([0-9A-Z]{26})$/, async (req, env, me, m) => json(await updatePerson(env.DB, env, me, m[1], await readJson(req)))],

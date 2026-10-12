@@ -7,6 +7,7 @@ import { HttpError, ulid, nowIso, audit } from "./util.js";
 import { requireRole } from "./auth.js";
 import { productionIds } from "./team.js";
 import { planDiff } from "./changes.js";
+import { timeOffBetween } from "./timeoff.js";
 
 const DAY = /^\d{4}-\d{2}-\d{2}$/;
 const TIME = /^([01]\d|2[0-3]):[0-5]\d$/;
@@ -34,7 +35,12 @@ export async function loadPlan(db, env, day) {
     if (p) { const snap = JSON.parse(p.snap); published = { at: p.at, by: p.by, sig: snap.sig || null, source: snap.source || null }; }
     if (d.updatedBy) updatedByName = (await db.prepare("SELECT display_name AS n FROM core_users WHERE id=?").bind(d.updatedBy).first())?.n || null;
   }
-  return { day, rev: d ? d.rev : 0, status: d ? d.status : "new", updatedAt: d?.updatedAt || null, updatedBy: updatedByName, crew, overrides, callouts, published,
+  // Time off from the Team screen: "out" joins the call-outs (same effect on the plan), "late" sets the earliest start.
+  const away = await timeOffBetween(db, env.ORG_ID, day, day);
+  const outIds = new Set(callouts.map(c => c.personId));
+  for (const t of away) if (t.kind === "out" && !outIds.has(t.personId)) { callouts.push({ id: t.id, timeOff: true, personId: t.personId, station: null, note: t.note, at: t.createdAt, fromDay: t.fromDay, toDay: t.toDay }); outIds.add(t.personId); }
+  const late = away.filter(t => t.kind === "late" && !outIds.has(t.personId)).map(t => ({ id: t.id, personId: t.personId, at: t.at, note: t.note }));
+  return { day, rev: d ? d.rev : 0, status: d ? d.status : "new", updatedAt: d?.updatedAt || null, updatedBy: updatedByName, crew, overrides, callouts, late, published,
     history: await history(db, env, day, departmentId, locationId), clock: await clockToday(db, env, day) };
 }
 

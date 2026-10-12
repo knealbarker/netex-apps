@@ -204,5 +204,18 @@ await t("with the Comforters and Tablecloths stations switched off, the old rule
   const X = M.evaluate(P0({ ...pos2, crew, q, waves: [] }));
   eq(Math.round(X.R.P.shortTotal), 0, "DCB does tablecloths, anyone free does comforters");
 });
+await t("time off: someone out but still planned, and someone planned before their late arrival", async () => {
+  const crew = M.blankCrew(pos.stations.concat(pos.ops), s);
+  crew.slt1 = { emp: "a", start: "05:00", hrs: 8, stop: "" }; crew.dct1 = { emp: "c", start: "06:00", hrs: 8, stop: "" };
+  const P = P0({ crew, callouts: [{ id: "x", timeOff: true, personId: "a", station: null }], late: [{ id: "y", personId: "c", at: "09:30" }] });
+  const X = M.evaluate(P);
+  const outC = X.checks.find(c => c.title === "Ana Uno is out"), lateC = X.checks.find(c => /Cora Tres comes in at 9:30/.test(c.title));
+  ok(outC && lateC, X.checks.map(c => c.title).join(" | "));
+  const Q = structuredClone({ crew }); outC.fixes[0].apply(Q); lateC.fixes[0].apply(Q);
+  eq([Q.crew.slt1.emp, Q.crew.dct1.start], ["", "09:30"]);
+  eq(M.notBeforeLate(P, "c", "06:00"), "09:30"); eq(M.notBeforeLate(P, "c", "10:00"), "10:00"); eq(M.notBeforeLate(P, "a", "05:00"), "05:00");
+  const sug = M.autoAssign(P, X.E, ["a", "c"]);
+  ok(Object.values(sug.crew).every(c => c.emp !== "c" || c.start === "09:30"), "auto-assign starts Cora at 9:30");
+});
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
