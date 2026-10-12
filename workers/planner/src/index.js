@@ -2,6 +2,7 @@
 // Every request comes through here first (static files too), so nothing is served without a valid sign-in.
 import { currentUser, verifyAccessJwt } from "./auth.js";
 import { listUsers, createUser, updateUser, syncAccessGroup } from "./users.js";
+import { requireRole } from "./auth.js";
 import { HttpError, json, readJson } from "./util.js";
 import { allSettings, saveGroup, saveProduction, saveRuns } from "./settings.js";
 import { listTeam, addPerson, updatePerson, setTrainings } from "./team.js";
@@ -30,6 +31,7 @@ const routes = [
     const r = await createUser(env.DB, env, me, await readJson(req));
     return json({ ...r, access: await syncAccessGroup(env.DB, env) }, 201);
   }],
+  ["POST", /^\/api\/users\/sync-access$/, async (req, env, me) => { requireRole(me, "admin"); return json({ access: await syncAccessGroup(env.DB, env) }); }],
   ["PATCH", /^\/api\/users\/([0-9A-Z]{26})$/, async (req, env, me, m) => {
     const r = await updateUser(env.DB, env, me, m[1], await readJson(req));
     return json({ ...r, access: r.changed ? await syncAccessGroup(env.DB, env) : { synced: false, reason: "unchanged" } });

@@ -64,9 +64,15 @@ export async function render(main, ctx) {
           ${raw(u.canEdit ? CHEV : "<span></span>")}
         </button>`))}
     </div>
-    ${groupSync ? "" : raw(html`<p class="list-note">${raw(INFO)}<span>Cloudflare isn't linked yet, so after adding someone here also add their sign-in address to the “Netex users” group in Cloudflare (Access controls › Policies › Rule groups). Once linked, this list does it for you.</span></p>`)}`;
+    ${groupSync ? raw(html`<p class="list-note">${raw(INFO)}<span>Changes here update the “Netex users” sign-in group in Cloudflare automatically. <button class="linkish" id="syncAccess" type="button">Update it now</button></span></p>`) : raw(html`<p class="list-note">${raw(INFO)}<span>Cloudflare isn't linked yet, so after adding someone here also add their sign-in address to the “Netex users” group in Cloudflare (Access controls › Policies › Rule groups). Once linked, this list does it for you.</span></p>`)}`;
 
   main.querySelector("#addUser").addEventListener("click", () => addDialog(ctx, () => render(main, ctx)));
+  main.querySelector("#syncAccess")?.addEventListener("click", async e => {
+    const btn = e.currentTarget; btn.disabled = true;
+    try { const r = await api("/users/sync-access", { method: "POST" }); accessNote(r.access); }
+    catch (err) { toast(err.message || "Couldn't reach Cloudflare.", "bad"); }
+    finally { btn.disabled = false; }
+  });
   main.querySelectorAll(".urow:not([disabled])").forEach(b => b.addEventListener("click", () => {
     const u = users.find(x => x.id === b.dataset.id);
     editDialog(ctx, u, () => render(main, ctx));
