@@ -50,6 +50,8 @@ order(ts("2026-10-08"), { due: ts("2026-10-09", "12:00"), store: "TCC Greenville
 order(ts("2026-10-09"), { due: ts(NEXT, "13:00"), store: "TCC Emory", pieces: [{ dep: DCB, status: "assembled", asm: ts(TODAY, "09:00") }, { dep: DCB }, { dep: DCB }, { dep: DCB }] });
 // due today, picked up today: all done today
 order(ts("2026-10-09"), { due: ts(TODAY, "12:00"), status: "pickedUp", pieces: [{ dep: DCT, picked: ts(TODAY, "09:30") }, { dep: DCT, picked: ts(TODAY, "09:30") }] });
+// overdue, SMRT says assembled but one piece was never scanned (Neal's route order 26282-3517): complete for production
+order(ts("2026-10-08"), { due: ts("2026-10-09", "12:00"), store: "TCC Greenville", status: "assembled", pieces: [], count: 1, deps: DCT });
 // deleted order: ignored
 order(ts("2026-10-09"), { due: ts(TODAY, "12:00"), status: "deleted", pieces: [{ dep: DCT }] });
 // wash & fold isn't mapped

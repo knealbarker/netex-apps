@@ -89,13 +89,15 @@ export function splitOrders({ orders, items, deps }, cat, today, transitRack = "
   return orders.map(o => {
     const finishedAt = [o.ready_at, o.returned_at, o.picked_up_at, o.delivered_at].filter(Boolean).sort()[0] || null;
     const done = !!o.is_done || !!finishedAt;
+    // "assembled = complete for production" (Neal): an order SMRT marks assembled/racked has nothing left to press
+    const prodDone = done || /^(assembled|racked)$/i.test(String(o.status || "").replace(/[\s_-]/g, ""));
     const when = d => (d ? (d < today ? "b" : d === today ? "t" : "") : "");
     const per = {}, open = {}, other = {};
     let pieces = 0, complete = 0, washing = 0, undetailed = 0, onVan = 0, noteCount = o.notes ? 1 : 0;
     const add = (k, p, c, b, t, cents, pp) => { const a = per[k] = per[k] || [0, 0, 0, 0, 0, 0]; a[0] += p; a[1] += c; a[2] += b; a[3] += t; a[4] += cents; a[5] += pp; };
     const its = byOrder.get(o.id) || [];
     for (const it of its) {
-      const isC = done || !!it.isAsm || !!it.asm;
+      const isC = prodDone || !!it.isAsm || !!it.asm;
       if (isC && it.rack && transit.test(it.rack)) onVan++;
       const w = isC ? when((it.asm || "").slice(0, 10) || (done ? (finishedAt || "").slice(0, 10) : "")) : "";
       const priced = it.base != null;
@@ -115,10 +117,10 @@ export function splitOrders({ orders, items, deps }, cat, today, transitRack = "
       const ds = depsOf.get(o.id) || [];
       const k = ds.length === 1 ? cat("", ds[0]) : null;
       const w = done ? when((finishedAt || "").slice(0, 10)) : "";
-      pieces = o.pieces; complete = done ? pieces : 0;
+      pieces = o.pieces; complete = prodDone ? pieces : 0;
       // several departments and no pieces yet: can't split it until it's detailed
-      if (k) add(k, pieces, complete, w === "b" ? pieces : 0, w === "t" ? pieces : 0, 0, 0); else if (!done) undetailed += pieces; else other[ds[0] || "Other"] = pieces;
-      if (!done) open["not detailed"] = pieces;
+      if (k) add(k, pieces, complete, w === "b" ? pieces : 0, w === "t" ? pieces : 0, 0, 0); else if (!prodDone) undetailed += pieces; else other[ds[0] || "Other"] = pieces;
+      if (!prodDone) open["not detailed"] = pieces;
     }
     const no = String(o.no);
     return { id: o.id, no: no.length > 5 ? `${no.slice(0, 5)}-${no.slice(5)}` : no, due: o.due, dueDay: String(o.due || "").slice(0, 10), status: o.status,
