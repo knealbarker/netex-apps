@@ -217,5 +217,34 @@ await t("time off: someone out but still planned, and someone planned before the
   const sug = M.autoAssign(P, X.E, ["a", "c"]);
   ok(Object.values(sug.crew).every(c => c.emp !== "c" || c.start === "09:30"), "auto-assign starts Cora at 9:30");
 });
+await t("during the day: no-show, clocked in but not planned, then send-home when there's little left; dismissed ones stay hidden", async () => {
+  const crew = M.blankCrew(pos.stations.concat(pos.ops), s);
+  crew.slt1 = { emp: "a", start: "05:00", hrs: 8, stop: "" }; crew.dct1 = { emp: "c", start: "06:00", hrs: 8, stop: "" }; crew.asm1 = { emp: "d", start: "07:00", hrs: 8, stop: "" };
+  const clock = [{ personId: "a", clockIn: `${DAY}T05:02:00` }, { personId: "c", clockIn: `${DAY}T06:01:00` }, { personId: "f", clockIn: `${DAY}T06:30:00` }];
+  const P = P0({ crew, isToday: true, now: 9, clock });
+  ok(P.dp.wavesLeft, "today has what's left per deadline");
+  let L = M.liveSuggestions(M.evaluate(P));
+  ok(L.on, L.why);
+  const ns = L.list.find(x => x.key === "noshow:d"), un = L.list.find(x => x.key === "unplanned:f");
+  ok(ns && un, L.list.map(x => x.key).join(", "));
+  eq(ns.act, { out: "d" });
+  const Q = structuredClone({ crew }); ns.apply(Q); un.apply(Q);
+  eq(Q.crew.asm1.emp, ""); ok(Object.values(Q.crew).some(c => c.emp === "f" && c.start === "06:30"), "Fran goes on an open station she's trained on, from her clock-in");
+  L = M.liveSuggestions(M.evaluate(P), new Set(["noshow:d"]));
+  ok(!L.list.some(x => x.key === "noshow:d"), "dismissed stays hidden");
+  // before anyone starts: nothing yet
+  eq(M.liveSuggestions(M.evaluate(P0({ crew, isToday: true, now: 4, clock: [] }))).on, false);
+  // almost everything done: people can go home
+  const V2 = structuredClone(V); V2.days[DAY].done = { ...V2.days[DAY].q, slt: 290 }; V2.overdue = { q: zero(), orders: 0, todo: 0 };
+  for (const st of V2.days[DAY].stores) st.done = { ...st.q, slt: st.q.slt - 5 };
+  const dp2 = M.dayPieces(V2, SET, DAY);
+  const crew2 = M.blankCrew(pos.stations.concat(pos.ops), s); crew2.slt1 = { emp: "a", start: "05:00", hrs: 10, stop: "" }; crew2.slb1 = { emp: "f", start: "06:00", hrs: 10, stop: "" }; crew2.asm1 = { emp: "d", start: "07:00", hrs: 10, stop: "" };
+  const L2 = M.liveSuggestions(M.evaluate(P0({ crew: crew2, isToday: true, now: 13, dp: dp2, q: M.effectiveQ(dp2.base, {}), waves: dp2.waves,
+    clock: [{ personId: "a", clockIn: `${DAY}T05:00:00` }, { personId: "f", clockIn: `${DAY}T06:00:00` }, { personId: "d", clockIn: `${DAY}T07:00:00` }] })));
+  ok(L2.fromNow.left === 10, "10 pieces left: " + L2.fromNow.left);
+  const home = L2.list.find(x => x.key.startsWith("home:f"));
+  ok(home, L2.list.map(x => x.title).join(" | "));
+  const Q2 = structuredClone({ crew: crew2 }); home.apply(Q2); ok(/^\d\d:\d\d$/.test(Q2.crew.slb1.stop), "send home sets a hard stop");
+});
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

@@ -39,8 +39,11 @@ export async function loadPlan(db, env, day) {
   const away = await timeOffBetween(db, env.ORG_ID, day, day);
   const outIds = new Set(callouts.map(c => c.personId));
   for (const t of away) if (t.kind === "out" && !outIds.has(t.personId)) { callouts.push({ id: t.id, timeOff: true, personId: t.personId, station: null, note: t.note, at: t.createdAt, fromDay: t.fromDay, toDay: t.toDay }); outIds.add(t.personId); }
+  // suggestions already accepted or dismissed today (Plan › Suggestions right now)
+  const hidden = (await db.prepare("SELECT key FROM plan_events WHERE org_id=? AND day=? AND (key LIKE 'dismiss:%' OR key LIKE 'accept:%')").bind(env.ORG_ID, day).all()).results
+    .map(r => r.key.replace(/^(dismiss|accept):/, ""));
   const late = away.filter(t => t.kind === "late" && !outIds.has(t.personId)).map(t => ({ id: t.id, personId: t.personId, at: t.at, note: t.note }));
-  return { day, rev: d ? d.rev : 0, status: d ? d.status : "new", updatedAt: d?.updatedAt || null, updatedBy: updatedByName, crew, overrides, callouts, late, published,
+  return { day, rev: d ? d.rev : 0, status: d ? d.status : "new", updatedAt: d?.updatedAt || null, updatedBy: updatedByName, crew, overrides, callouts, late, hidden, published,
     history: await history(db, env, day, departmentId, locationId), clock: await clockToday(db, env, day) };
 }
 

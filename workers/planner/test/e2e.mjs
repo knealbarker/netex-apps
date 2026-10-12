@@ -147,6 +147,18 @@ await t("Plan: suggested crew, keep it, All full day, washers and Changes today"
   ok(await p.isVisible('#pl-chg >> text=Neal Barker'), "who");
   await shot(p, "e3-plan.png");
 });
+await t("Plan: each top button has a ? that explains it; today shows Suggestions right now", async () => {
+  for (const id of ["suggest", "auto", "full", "print", "publish"]) {
+    await p.click(`.plan-head [data-help="${id}"]`);
+    await p.waitForSelector("dialog.help-dlg");
+    if (id === "suggest") await p.locator("dialog").screenshot({ path: join(SHOTS, "e3b-help.png") });
+    ok(await p.locator("dialog.help-dlg li, dialog.help-dlg p").count() >= 1, id);
+    await p.click('dialog.help-dlg button[type="submit"]');
+    await p.waitForSelector("dialog", { state: "detached" });
+  }
+  if (isWorkDay) { ok(await p.isVisible("#pl-live"), "suggestions card on today's plan"); ok(/Suggestions right now/.test(await p.textContent("#pl-live")));
+    await p.locator("#pl-live").screenshot({ path: join(SHOTS, "e3c-live.png") }); }
+});
 await t("Plan: Print builds a one-page timeline", async () => {
   await p.evaluate(() => { window.print = () => { window.__printed = true; }; });
   await p.click("#pl-print");

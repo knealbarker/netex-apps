@@ -67,7 +67,11 @@ export function dayPieces(V, SET, day) {
   const expected = !isToday && D.expectedTotal > D.todo + 2;
   const base = Object.fromEntries(CATS.map(k => [k, (expected ? D.expected[k] : D.q[k]) + (withOverdue ? V.overdue.q[k] : 0)]));
   const waves = buildWaves({ ...D, isToday }, SET.runs, { overdue: withOverdue ? V.overdue : null });
-  return { D, isToday, withOverdue, expected, base, waves };
+  // today, what's still left at each deadline right now (for the suggestions during the day)
+  const zero = () => Object.fromEntries(CATS.map(k => [k, 0]));
+  const wavesLeft = isToday ? buildWaves({ ...D, isToday, stores: (D.stores || []).map(x => ({ ...x, q: Object.fromEntries(CATS.map(k => [k, Math.max(0, (x.q[k] || 0) - (x.done?.[k] || 0))])), done: zero() })) },
+    SET.runs, { overdue: withOverdue ? V.overdue : null }) : null;
+  return { D, isToday, withOverdue, expected, base, waves, wavesLeft };
 }
 export const effectiveQ = (base, overrides) => Object.fromEntries(CATS.map(k => [k, overrides && overrides[k] != null ? +overrides[k] : base[k]]));
 
@@ -404,3 +408,103 @@ export function rankingSuggestions(TEAM, trainingOf, H, minDays = 3) {
   }
   return out.sort((a, b) => a.name.localeCompare(b.name));
 }
+
+// ---------------------------------------------------------------- during the day: suggestions from where things stand now
+/**
+ * Re-plans the rest of today from now: pieces still left (SMRT), each person's remaining hours from now, Rippling clock-ins.
+ * Returns { on, fromNow: {end, left, short}, list: [{ key, cls, title, text, accept, apply?(Q), act? }] }.
+ * `apply` changes the plan (Q = { crew }); `act` = { out: personId } marks someone out first. `hidden` = keys already
+ * accepted or dismissed today.
+ */
+export function liveSuggestions(X, hidden = new Set()) {
+  const { P, E } = X, now = P.now;
+  if (!P.isToday || now == null || !P.dp || !P.dp.wavesLeft) return { on: false, why: "Suggestions show on today's plan during the work day." };
+  const crewStarts = Object.values(P.crew).filter(c => c.emp).map(c => parseTime(c.start)).filter(v => v != null);
+  if (!crewStarts.length) return { on: false, why: "Pick the crew first." };
+  if (now < Math.min(...crewStarts) - 0.25) return { on: false, why: `Suggestions start once the first person clocks in (${hm(Math.min(...crewStarts))}).` };
+  const D = P.dp.D, clock = clockInOf(P), out = calledOut(P), late = lateOf(P), haveClock = (P.clock || []).length > 0;
+  const q2 = Object.fromEntries(CATS.map(k => [k, Math.max(0, (P.q[k] || 0) - (D.done?.[k] || 0))]));
+  const leftTotal = CATS.reduce((t, k) => t + q2[k], 0);
+  const list = [], add = x => { if (!hidden.has(x.key)) list.push(x); };
+  const at5 = h => hhmm(Math.ceil(h * 12) / 12);
+
+  // the crew from now on: remaining hours; people who should be in by now but haven't clocked in are left out
+  const crew2 = {}, noShow = [];
+  for (const [code, c] of Object.entries(P.crew)) {
+    crew2[code] = { ...c };
+    if (!c.emp) continue;
+    const start = parseTime(c.start) ?? 7, due = Math.max(start, parseTime(late[c.emp]) ?? 0);
+    if (out.has(c.emp)) { crew2[code] = { ...c, emp: "" }; continue; }
+    if (haveClock && !clock[c.emp] && now > due + 20 / 60) { noShow.push({ code, c, due }); crew2[code] = { ...c, emp: "" }; continue; }
+    const worked = Math.max(0, now - start), rem = Math.max(0, (+c.hrs || 0) - worked);
+    if (rem <= 0.05) { crew2[code] = { ...c, emp: "" }; continue; }
+    crew2[code] = { ...c, start: hhmm(Math.max(start, now)), hrs: Math.round(rem * 12) / 12 };
+  }
+  // nobody already on today's crew (finished, not in yet, out) is offered again as "free"
+  const notFree = Object.values(P.crew).map(c => c.emp).filter(id => id && !Object.values(crew2).some(c => c.emp === id));
+  const P2 = { ...P, crew: crew2, q: q2, waves: P.dp.wavesLeft, callouts: [...(P.callouts || []), ...notFree.map(id => ({ personId: id }))] };
+  // what's left has been through the washers once the morning's loads are done (else the re-plan would wash it again)
+  const W = X.R && !X.R.empty ? X.R.W : null, washedAll = W && [W.laundryDone, W.tcDone, W.comfDone].every(t => t == null || t <= now);
+  const E2 = createEngine({ ...P.s, washOn: P.s.washOn && !washedAll, q: q2, crew: crew2, stations: P.stations, ops: P.ops, people: P.people, trainingOf: P.trainingOf });
+  const R2 = leftTotal > 0 ? E2.buildPlan(q2) : { empty: true };
+  const waves2 = (P.dp.wavesLeft || []).filter(w => w.todo > 0 && (w.kind === "overdue" || w.deadline == null || w.deadline > now));
+  const etas = R2.empty ? {} : waveEtas(R2, waves2, q2, P.s.asmInclude);
+  const X2 = { P: P2, E: E2, R: R2 };
+  const onCrewNow = new Set(Object.values(crew2).map(c => c.emp).filter(Boolean));
+
+  // 1) planned but not clocked in
+  for (const n of noShow) {
+    const nm = nameOf(P, n.c.emp);
+    add({ key: `noshow:${n.c.emp}`, cls: "b", title: `${nm} hasn't clocked in`, text: `Planned on ${posLabel(E, n.code)} from ${hm(n.due)}. Until they're in, the rest of the day is planned without them.`,
+      accept: `Mark ${first(nm)} out today`, act: { out: n.c.emp }, apply: Q => { Q.crew[n.code] = { ...Q.crew[n.code], emp: "", stop: "" }; } });
+  }
+  // 2) clocked in but not on the plan
+  const need = E2.stationNeed(q2);
+  for (const [id, t] of Object.entries(clock)) {
+    if (onCrewNow.has(id) || out.has(id) || Object.values(P.crew).some(c => c.emp === id)) continue;
+    const e = P.people.find(x => x.id === id); if (!e) continue;
+    const st = E.POS.filter(p => !P.crew[p.id].emp && E.rankOf(e, p.id)).sort((a, b) => (need[b.id] || 0) - (need[a.id] || 0) || E.rankOf(e, a.id) - E.rankOf(e, b.id))[0];
+    add({ key: `unplanned:${id}`, cls: "w", title: `${e.name} clocked in at ${hm(parseTime(t))} but isn't on the plan`,
+      text: st ? `${posLabel(E, st.id)} is open and they're trained on it.` : "No open station they're trained on — put them somewhere by hand or send them home.",
+      ...(st ? { accept: `Put ${first(e.name)} on ${posLabel(E, st.id)}`, apply: Q => { Q.crew[st.id] = { emp: id, start: t, hrs: P.s.fullDay, stop: "", source: "clock" }; } } : {}) });
+  }
+  // 3) a deadline that won't make it at the pace planned from here
+  let risk = false;
+  for (const w of waves2) {
+    if (w.kind === "overdue" || w.kind === "route" || w.deadline == null) continue;
+    const eta = etas[w.id]; if (eta === undefined) continue;
+    const stt = waveState(w, eta); if (!stt.late && !stt.tight) continue;
+    risk = risk || !!stt.late;
+    const fix = bottleneckFix(X2, w, eta), what = w.kind === "shuttle" ? `${hm(w.deadline)} shuttle` : "counter";
+    add({ key: `risk:${w.id}:${shortHash(fix && fix.label || "none")}`, cls: stt.late ? "b" : "w", title: `${w.name}: ${stt.late ? "won't be ready" : "tight"} for the ${what}`,
+      text: `${fmtN(w.leftTodo ?? w.todo)} pieces left · ${isFinite(eta) ? `ready about ${hm(eta)}` : "not enough hours left"}${fix && fix.why ? ` — ${fix.why}` : ""}.`,
+      ...(fix && fix.apply ? { accept: fix.label, apply: fix.apply } : {}) });
+  }
+  // 4) pieces that won't get done by the end of the shifts: keep the person on the slowest station longer (when overtime is off)
+  const short = R2.empty ? 0 : R2.P.shortTotal;
+  if (short > 0.5 && !P.s.allowOT) {
+    const worst = Object.entries(R2.P.short).filter(([k]) => k !== "asm").sort((a, b) => b[1] - a[1])[0];
+    const type = worst && (worst[0] === "tc" && !E.HAS_TC ? "dcb" : worst[0]);
+    const row = type && R2.rows.filter(r => r.staffed && E.POOL_OF(r.st.type) === type).sort((a, b) => (a.x.stop ?? 99) - (b.x.stop ?? 99))[0];
+    if (row) {
+      const extra = Math.min(2, Math.ceil(worst[1] / Math.max(1, (P.s.rates[type === "slt" ? "sltSolo" : type] || 20)) * 4) / 4), id = P.crew[row.st.id].emp;
+      add({ key: `longer:${id}`, cls: "w", title: `${fmtN(short)} pieces won't get done by the end of the shifts`, text: `Mostly ${CAT_FULL[worst[0]].toLowerCase()}. Overtime is off in Settings.`,
+        accept: `Keep ${first(nameOf(P, id))} ${fmtH(extra)} longer`, apply: Q => { Q.crew[row.st.id] = { ...Q.crew[row.st.id], hrs: Math.min(16, (+Q.crew[row.st.id].hrs || 0) + extra), stop: "", source: "user" }; } });
+    }
+  }
+  // 5) nothing at risk: people who run out of work well before their shift ends can go home
+  if (!risk && short <= 0.5 && !R2.empty) {
+    // when they run out of work (with "send people home" off in Settings the engine keeps them to the end of the shift)
+    const leave = r => Math.max(r.finish ?? now, now + 0.25);
+    for (const r of R2.rows.filter(r => r.staffed && r.x.schedEnd - leave(r) >= 0.5).sort((a, b) => leave(a) - leave(b)).slice(0, 3)) {
+      const id = P.crew[r.st.id].emp, t = at5(leave(r));
+      add({ key: `home:${id}:${t}`, cls: "i", title: `${nameOf(P, id)} runs out of work about ${hm(parseTime(t))}`, text: `${fmtH(r.x.schedEnd - leave(r))} before the end of their shift, with every deadline still on time.`,
+        accept: `Send ${first(nameOf(P, id))} home at ${hm(parseTime(t))}`, apply: Q => { Q.crew[r.st.id] = { ...Q.crew[r.st.id], stop: t, source: "user" }; } });
+    }
+  }
+  const order = { b: 0, w: 1, i: 2 };
+  list.sort((a, b) => order[a.cls] - order[b.cls]);
+  return { on: true, list, fromNow: { left: leftTotal, end: R2.empty ? null : R2.end, short, people: onCrewNow.size, noShow: noShow.length } };
+}
+const shortHash = t => { let h = 2166136261; for (let i = 0; i < t.length; i++) { h ^= t.charCodeAt(i); h = Math.imul(h, 16777619); } return (h >>> 0).toString(36); };
+const posLabel = (E, code) => (E.POS.find(p => p.id === code) || {}).label || code;

@@ -19,6 +19,39 @@ const store = { get: k => { try { return localStorage.getItem(k); } catch { retu
 
 let pick = null; // the day being looked at, kept while moving between sections
 
+// What each button at the top of the Plan does (the "?" next to it opens this).
+const HELP = {
+  suggest: { title: "Suggest from history", body: `<p>Builds a whole crew for this day from what usually happens on this weekday:</p>
+    <ul><li><b>Who:</b> people who worked at least half of the last 8 same weekdays (from Rippling; falls back to the last two weeks).</li>
+    <li><b>When:</b> each person's usual clock-in for that weekday. Anyone marked late on Team starts at their late time.</li>
+    <li><b>Where:</b> the stations they're usually on, balanced against where today's pieces are.</li>
+    <li>People marked <b>out</b> on Team are left off.</li></ul>
+    <p><b>It replaces the crew</b> for this day, including changes you made by hand. Undo (Ctrl+Z) brings the old crew back. Nothing reaches the floor until you Publish.</p>
+    <p>Best for starting a day. To change one or two things, edit the crew directly.</p>` },
+  auto: { title: "Auto-assign", body: `<p>You check who's working; the planner decides <b>which station</b> each one goes on.</p>
+    <ul><li>Each person goes where they rank highest in their trainings, with the busiest stations filled first.</li>
+    <li>Today, everyone who has clocked in is checked already, and their real clock-in times are used.</li>
+    <li>People already on the crew keep their hours and hard stop.</li></ul>
+    <p>It replaces the current station assignments. Undo brings them back.</p>
+    <p><b>vs. Suggest from history:</b> history decides <i>who</i> and <i>where</i> from past days; Auto-assign only decides <i>where</i>, for the people you pick.</p>` },
+  full: { title: "All full day", body: `<p>Sets <b>everyone already on the crew</b> to a full day (${"${FULL}"} in Settings › Working day):</p>
+    <ul><li>Clock-in goes back to their real clock-in today, or their usual one (not before a late arrival on Team).</li>
+    <li>Hard stops are cleared.</li><li>Nobody is added or moved.</li></ul>
+    <p>Useful after trimming hours when the work turns out bigger than expected. Undo brings the old hours back.</p>` },
+  undo: { title: "Undo", body: `<p>Takes back the last change to the crew or the piece counts on this screen (also Ctrl+Z). It goes back up to 60 steps, until you leave the Plan.</p>
+    <p>It doesn't undo time off, call-outs or publishing.</p>` },
+  print: { title: "Print", body: `<p>Prints the plan on one page: crew with times, each person's moves and breaks, and when each shuttle's pieces should be ready. Choose "Save as PDF" in the print window to keep a copy.</p>` },
+  publish: { title: "Publish", body: `<p>Sends this plan to the <b>Floor</b> screens. Until you publish, the floor keeps showing the last published plan.</p>
+    <p>You can keep changing the plan; a check reminds you when it has changed since it was published, so you can publish again.</p>` },
+  live: { title: "Suggestions right now", body: `<p>On today's plan, the planner re-plans <b>the rest of the day from now</b> every minute, using:</p>
+    <ul><li><b>Pieces still left</b> (SMRT, as pieces are assembled), including overdue work.</li>
+    <li><b>Who's actually here</b> (Rippling clock-ins) and the hours each person has left.</li>
+    <li>Time off and late arrivals from Team.</li></ul>
+    <p>When something should change, it shows a suggestion: someone hasn't clocked in, someone clocked in who isn't planned, a shuttle that won't be ready at this pace, pieces that won't get done, or people who can go home early.</p>
+    <p><b>Accept</b> makes the change to the plan (Undo works). <b>Dismiss</b> hides it for the rest of the day on every PC. Both are listed under Changes today. Publish afterwards so the floor sees it.</p>` },
+};
+
+const helpBtn = id => `<button type="button" class="help-i" data-help="${id}" aria-label="What does this do?" title="What does this do?">?</button>`;
 export async function render(main, ctx) {
   main.innerHTML = html`<div class="loading"><span class="spin"></span>Reading pieces and the crew…</div>`;
   const asked = (location.hash.match(/[?&]day=(\d{4}-\d{2}-\d{2})/) || [])[1];
@@ -131,7 +164,7 @@ export async function render(main, ctx) {
       try {
         const p = await api(`/plan/${pick}`);
         if (p.rev !== st.rev) { adopt(p); toast(`${p.updatedBy || "Someone"} changed this plan. Showing their version.`, "warn", 6000); drawPage(); return; }
-        st.plan.callouts = p.callouts; st.plan.late = p.late || []; st.plan.clock = p.clock; st.plan.published = p.published;
+        st.plan.callouts = p.callouts; st.plan.late = p.late || []; st.plan.hidden = p.hidden || []; st.plan.clock = p.clock; st.plan.published = p.published;
       } catch { /* try again next minute */ }
     }
     update({ table: false });
@@ -155,11 +188,11 @@ export async function render(main, ctx) {
         <div class="head-actions">
           <span class="saved-note" id="pl-save" aria-live="polite"></span>
           ${can ? raw(html`<button class="btn ghost small" id="pl-undo" title="Undo (Ctrl+Z)" disabled><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 14 4 9l5-5"/><path d="M4 9h10a6 6 0 0 1 0 12h-3"/></svg>Undo</button>
-            <button class="btn small" id="pl-suggest" title="Who usually works this weekday, on their usual stations">Suggest from history</button>
-            <button class="btn small" id="pl-auto" title="Pick who's working; the planner places them">Auto-assign</button>
-            <button class="btn small" id="pl-full" title="Everyone on the crew: a full day from their usual clock-in, no hard stops">All full day</button>`) : ""}
-          <button class="btn small" id="pl-print" title="Print the plan, or save it as a PDF"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 9V3h10v6"/><rect x="3" y="9" width="18" height="8" rx="2"/><path d="M7 14h10v7H7z"/></svg>Print</button>
-          ${can ? raw('<button class="btn primary small" id="pl-pub"></button>') : ""}
+            <span class="hbtn"><button class="btn small" id="pl-suggest" title="Who usually works this weekday, on their usual stations">Suggest from history</button>${raw(helpBtn("suggest"))}</span>
+            <span class="hbtn"><button class="btn small" id="pl-auto" title="Pick who's working; the planner places them">Auto-assign</button>${raw(helpBtn("auto"))}</span>
+            <span class="hbtn"><button class="btn small" id="pl-full" title="Everyone on the crew: a full day from their usual clock-in, no hard stops">All full day</button>${raw(helpBtn("full"))}</span>`) : ""}
+          <span class="hbtn"><button class="btn small" id="pl-print" title="Print the plan, or save it as a PDF"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 9V3h10v6"/><rect x="3" y="9" width="18" height="8" rx="2"/><path d="M7 14h10v7H7z"/></svg>Print</button>${raw(helpBtn("print"))}</span>
+          ${can ? raw(html`<span class="hbtn"><button class="btn primary small" id="pl-pub"></button>${raw(helpBtn("publish"))}</span>`) : ""}
         </div>
       </div>
       <div class="plan-bar">
@@ -171,6 +204,7 @@ export async function render(main, ctx) {
       ${isPast() ? raw(html`<div class="banner info"><b>This day is over.</b> The plan is shown as it was saved (read-only). <a href="#/review?day=${pick}">See how it went in Review</a>.</div>`) : ""}
       <div id="pl-note"></div>
       <section class="verdict" id="pl-verdict" aria-live="polite"></section>
+      <section class="card pl-card live-card" id="pl-live" hidden></section>
       <section class="tiles plan-tiles" id="pl-tiles" aria-label="Pieces by kind of work"></section>
       <div class="plan-grid">
         <div class="pg-main">
@@ -207,6 +241,7 @@ export async function render(main, ctx) {
       try { await openDay(d); } catch (x) { toast(x.message, "bad"); main.querySelector("#pl-root")?.classList.remove("busy"); }
     });
     main.querySelector("#pl-print").addEventListener("click", printPlan);
+    main.querySelectorAll("[data-help]").forEach(b => b.addEventListener("click", () => showHelp(b.dataset.help)));
     const chg = main.querySelector("#pl-chg-box");
     chg.open = store.get("pl-chg-open") === "1";
     chg.addEventListener("toggle", () => { store.set("pl-chg-open", chg.open ? "1" : "0"); if (chg.open) loadChanges(); });
@@ -243,9 +278,46 @@ export async function render(main, ctx) {
   function update({ table }) {
     if (!alive()) return;
     const X = st.X = M.evaluate(makeP());
-    drawNote(); drawVerdict(X); drawTiles(X); drawChecks(X); drawWaves(X); drawGantt(X); drawWash(X); if (admin) drawMoney(X);
+    drawNote(); drawVerdict(X); drawLive(X); drawTiles(X); drawChecks(X); drawWaves(X); drawGantt(X); drawWash(X); if (admin) drawMoney(X);
     if (table) drawCrew(X); else crewOutcomes(X);
     drawPub(X); saveStatus();
+  }
+
+  // ---- suggestions during the day (re-planned from now, every minute)
+  function drawLive(X) {
+    const el = document.getElementById("pl-live"); if (!el) return;
+    if (!X.P.isToday) { el.hidden = true; return; }
+    const L = M.liveSuggestions(X, new Set(st.plan.hidden || []));
+    el.hidden = false;
+    const f = L.fromNow, nowTxt = fmtClock(X.P.now);
+    el.innerHTML = html`<header class="pl-cardhead"><div><h2>Suggestions right now ${raw(helpBtn("live"))}</h2>
+        <p>${L.on ? raw(html`From ${nowTxt}: <b>${fmtN(f.left)}</b> pieces left, ${f.people} ${f.people === 1 ? "person" : "people"} working${f.end != null && f.left ? raw(html`, done about <b>${hm(f.end)}</b>`) : ""}${f.short > 0.5 ? raw(html` · <span class="bad-txt">${fmtN(f.short)} won't get done</span>`) : ""}.`) : L.why}</p></div></header>
+      ${L.on ? raw(L.list.length ? html`<ul class="sugg">${L.list.map((x, i) => raw(html`<li class="chk ${x.cls}"><i aria-hidden="true"></i><div><b>${x.title}</b><p>${x.text}</p>
+          ${can ? raw(html`<div class="fx">${x.accept && (x.apply || x.act) ? raw(html`<button class="btn small primary" data-acc="${i}">${x.accept}</button>`) : ""}<button class="btn small ghost" data-dis="${i}">Dismiss</button></div>`) : ""}</div></li>`))}</ul>`
+        : html`<p class="muted pad">Nothing to change right now — the plan still works from here.</p>`) : ""}`;
+    el.querySelector("[data-help]")?.addEventListener("click", () => showHelp("live"));
+    el.querySelectorAll("[data-acc]").forEach(b => b.addEventListener("click", async () => {
+      const x = L.list[+b.dataset.acc]; b.disabled = true;
+      try {
+        if (x.act?.out) {
+          if (st.dirty) await save();
+          const r = await api("/timeoff", { method: "POST", body: { personId: x.act.out, kind: "out", fromDay: pick, toDay: pick, note: "No clock-in" } });
+          st.plan.callouts = [...(st.plan.callouts || []), { id: r.id, timeOff: true, personId: x.act.out, station: null, note: "No clock-in", fromDay: pick, toDay: pick }];
+        }
+        hideSugg(x, "accept");
+        if (x.apply) edit(() => x.apply(st), { msg: `${x.accept}. Publish when you're ready.` }); else update({ table: true });
+      } catch (e) { b.disabled = false; toast(e.message, "bad"); }
+    }));
+    el.querySelectorAll("[data-dis]").forEach(b => b.addEventListener("click", () => { hideSugg(L.list[+b.dataset.dis], "dismiss"); update({ table: false }); }));
+  }
+  function hideSugg(x, how) {
+    st.plan.hidden = [...(st.plan.hidden || []), x.key];
+    api("/events", { method: "POST", body: { day: pick, key: `${how}:${x.key}`, kind: "note", text: how === "accept" ? `Suggestion accepted: ${x.accept}` : `Suggestion dismissed: ${x.title}` } })
+      .then(() => loadChanges()).catch(() => { /* still hidden on this PC */ });
+  }
+  function showHelp(id) {
+    const h = HELP[id]; if (!h) return;
+    openDialog({ title: h.title, body: h.body.replace("${FULL}", fmtH(s.fullDay)), submitLabel: "Got it", onOpen: (form, dlg) => { dlg.querySelector("[data-close]").hidden = true; dlg.classList.add("help-dlg"); }, onSubmit: () => {} });
   }
 
   function drawVerdict(X) {
@@ -596,7 +668,7 @@ export async function render(main, ctx) {
     const clock = M.clockInOf(makeP());
     edit(() => {
       for (const p of POS) { const c = st.crew[p.id]; if (!c.emp) continue; const e = people.find(x => x.id === c.emp);
-        st.crew[p.id] = { ...c, hrs: s.fullDay, stop: "", start: clock[c.emp] || e?.start || s.defStart, source: "user" }; }
+        st.crew[p.id] = { ...c, hrs: s.fullDay, stop: "", start: clock[c.emp] || M.notBeforeLate(makeP(), c.emp, e?.start || s.defStart), source: "user" }; }
     }, { msg: `Everyone on a full day (${fmtH(s.fullDay)})` });
   }
 
