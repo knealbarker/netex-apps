@@ -367,14 +367,14 @@ export function buildWaves(dayView, runs, { overdue = null } = {}) {
   });
   for (const d of defs) byRun.set(d.id, d);
   const out = new Map();
-  const mk = d => ({ ...d, q: Object.fromEntries(CATS.map(k => [k, 0])), known: 0, done: 0, todo: 0, orders: 0, stores: [] });
+  const mk = d => ({ ...d, q: Object.fromEntries(CATS.map(k => [k, 0])), doneQ: Object.fromEntries(CATS.map(k => [k, 0])), known: 0, done: 0, todo: 0, orders: 0, stores: [], recent: 0, lastAsm: null });
   for (const st of dayView?.stores || []) {
     let d = st.runId && byRun.get(st.runId);
     if (!d) d = st.runId === "route" ? { id: "route", name: st.run, kind: "route", deadline: 24, back: null } : { id: "other", name: "No run set", kind: "counter", deadline: 24, back: null };
     const w = out.get(d.id) || out.set(d.id, mk(d)).get(d.id);
     const q = dayView.isToday ? st.q : st.expected;
-    for (const k of CATS) { w.q[k] += q[k] || 0; w.known += st.known?.[k] || 0; w.done += st.done?.[k] || 0; }
-    w.orders += st.orders; w.stores.push(st.loc);
+    for (const k of CATS) { w.q[k] += q[k] || 0; w.known += st.known?.[k] || 0; w.done += st.done?.[k] || 0; w.doneQ[k] += st.done?.[k] || 0; }
+    w.orders += st.orders; w.stores.push(st.loc); w.recent += st.recent || 0; if (st.lastAsm && (!w.lastAsm || st.lastAsm > w.lastAsm)) w.lastAsm = st.lastAsm;
   }
   const list = [...out.values()];
   for (const w of list) { w.todo = CATS.reduce((t, k) => t + w.q[k], 0); w.leftTodo = Math.max(0, w.todo - w.done); w.expected = !dayView.isToday && w.todo > w.known + 2; }

@@ -52,6 +52,8 @@ order(ts("2026-10-09"), { due: ts(NEXT, "13:00"), store: "TCC Emory", pieces: [{
 order(ts("2026-10-09"), { due: ts(TODAY, "12:00"), status: "pickedUp", pieces: [{ dep: DCT, picked: ts(TODAY, "09:30") }, { dep: DCT, picked: ts(TODAY, "09:30") }] });
 // overdue, SMRT says assembled but one piece was never scanned (Neal's route order 26282-3517): complete for production
 order(ts("2026-10-08"), { due: ts("2026-10-09", "12:00"), store: "TCC Greenville", status: "assembled", pieces: [], count: 1, deps: DCT });
+// overdue ticket made at drop-off, never detailed (no pieces): not overdue work
+order(ts("2026-10-08"), { due: ts("2026-10-09", "16:00"), store: "TCC Sulphur Springs", status: "undetailed", pieces: [], count: 7 });
 // deleted order: ignored
 order(ts("2026-10-09"), { due: ts(TODAY, "12:00"), status: "deleted", pieces: [{ dep: DCT }] });
 // wash & fold isn't mapped
@@ -150,5 +152,12 @@ await t("categorizer: comma lists, case-insensitive", () => {
   eq([c("Shirt", "dc tops"), c("Round TABLE CLOTH", "Dry Cleaning Bottoms"), c("Shirt", "Alterations")], ["dct", "tc", null]);
 });
 
+await t("overdue orders with no pieces detailed are left out of overdue and the late list", async () => {
+  ok(!V.late.some(o => o.overdue && o.open["not detailed"]), JSON.stringify(V.late.filter(o => o.overdue)));
+});
+await t("assembly pace: pieces assembled in the last hour and the latest one, per store", () => {
+  const st = T.stores.find(x => x.loc === "Quitman");
+  ok(st.lastAsm && st.recent >= 0, JSON.stringify(st));
+});
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

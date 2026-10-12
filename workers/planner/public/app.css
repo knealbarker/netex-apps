@@ -745,3 +745,12 @@ dialog.help-dlg .dlg-body p { margin: 0 0 10px; line-height: 1.5; }
 .live-card { margin-bottom: 16px; }
 .sugg { list-style: none; margin: 0; padding: 0 16px 16px; display: grid; gap: 8px; }
 .bad-txt { color: var(--bad); font-weight: 600; }
+
+/* deadlines: assembled so far and what's left by kind of work */
+.wv-prog { margin-top: 8px; display: grid; gap: 5px; }
+.wv-bar { height: 6px; border-radius: 4px; background: var(--bg2); overflow: hidden; }
+.wv-bar i { display: block; height: 100%; background: var(--good); }
+.wv-line { font-size: 13px; } .wv-line small { color: var(--muted); }
+.wv-left { display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: 13px; }
+.wl-cat { display: inline-flex; align-items: center; gap: 5px; }
+.wl-cat i { width: 8px; height: 8px; border-radius: 2px; }

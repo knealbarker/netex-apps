@@ -156,7 +156,8 @@ await t("Plan: each top button has a ? that explains it; today shows Suggestions
     await p.click('dialog.help-dlg button[type="submit"]');
     await p.waitForSelector("dialog", { state: "detached" });
   }
-  if (isWorkDay) { ok(await p.isVisible("#pl-live"), "suggestions card on today's plan"); ok(/Suggestions right now/.test(await p.textContent("#pl-live")));
+  if (isWorkDay) { await p.locator("#pl-waves").screenshot({ path: join(SHOTS, "e3d-waves.png") }); ok(await p.locator("#pl-waves .wv-prog").count() > 0, "assembled / left on each deadline");
+    ok(await p.isVisible("#pl-live"), "suggestions card on today's plan"); ok(/Suggestions right now/.test(await p.textContent("#pl-live")));
     await p.locator("#pl-live").screenshot({ path: join(SHOTS, "e3c-live.png") }); }
 });
 await t("Plan: Print builds a one-page timeline", async () => {

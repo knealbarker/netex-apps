@@ -82,7 +82,8 @@ export async function loadOpen(db, orgId, { from, to, overdueFrom }) {
 }
 
 /** Each order with its pieces split by kind of work: per category [pieces, complete, finished before today, finished today, priced cents, priced pieces]. */
-export function splitOrders({ orders, items, deps }, cat, today, transitRack = "Van") {
+export function splitOrders({ orders, items, deps }, cat, today, transitRack = "Van", at = null) {
+  const hourAgo = at ? at.getTime() - 3600e3 : null;
   const transit = new RegExp(`\\b${String(transitRack || "Van").replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`, "i");
   const byOrder = new Map(); for (const it of items) (byOrder.get(it.orderId) || byOrder.set(it.orderId, []).get(it.orderId)).push(it);
   const depsOf = new Map(); for (const d of deps) (depsOf.get(d.orderId) || depsOf.set(d.orderId, []).get(d.orderId)).push(d.name);
@@ -93,12 +94,14 @@ export function splitOrders({ orders, items, deps }, cat, today, transitRack = "
     const prodDone = done || /^(assembled|racked)$/i.test(String(o.status || "").replace(/[\s_-]/g, ""));
     const when = d => (d ? (d < today ? "b" : d === today ? "t" : "") : "");
     const per = {}, open = {}, other = {};
-    let pieces = 0, complete = 0, washing = 0, undetailed = 0, onVan = 0, noteCount = o.notes ? 1 : 0;
+    let pieces = 0, complete = 0, washing = 0, undetailed = 0, onVan = 0, noteCount = o.notes ? 1 : 0, recent = 0, lastAsm = 0;
     const add = (k, p, c, b, t, cents, pp) => { const a = per[k] = per[k] || [0, 0, 0, 0, 0, 0]; a[0] += p; a[1] += c; a[2] += b; a[3] += t; a[4] += cents; a[5] += pp; };
     const its = byOrder.get(o.id) || [];
     for (const it of its) {
       const isC = prodDone || !!it.isAsm || !!it.asm;
       if (isC && it.rack && transit.test(it.rack)) onVan++;
+      const ta = it.asm ? Date.parse(it.asm) : NaN;
+      if (ta > 0) { if (ta > lastAsm) lastAsm = ta; if (hourAgo != null && ta >= hourAgo && ta <= at.getTime()) recent++; }
       const w = isC ? when((it.asm || "").slice(0, 10) || (done ? (finishedAt || "").slice(0, 10) : "")) : "";
       const priced = it.base != null;
       const cents = priced ? Math.max(0, (+it.base || 0) + (+it.up || 0) - (+it.disc || 0)) : 0;
@@ -124,7 +127,7 @@ export function splitOrders({ orders, items, deps }, cat, today, transitRack = "
     }
     const no = String(o.no);
     return { id: o.id, no: no.length > 5 ? `${no.slice(0, 5)}-${no.slice(5)}` : no, due: o.due, dueDay: String(o.due || "").slice(0, 10), status: o.status,
-      loc: o.route ? "Route" : o.loc || "Route", customer: o.customer, done, pieces, complete, washing, undetailed, onVan, per, open, other, notes: noteCount };
+      loc: o.route ? "Route" : o.loc || "Route", customer: o.customer, done, detailed: its.length > 0, recent, lastAsm, pieces, complete, washing, undetailed, onVan, per, open, other, notes: noteCount };
   });
 }
 
@@ -175,7 +178,7 @@ export async function piecesView(db, env, { at = new Date(), day = null } = {}) 
   const data = await loadOpen(db, env.ORG_ID, { from: today, to: after, overdueFrom: addDays(today, -OVERDUE_DAYS) });
   // the work day an order belongs to: its due day, or the work day before for route deliveries
   const workDayOf = o => (o.loc === "Route" && route.dayBefore ? prevWorkDay(o.dueDay, workDays) : o.dueDay);
-  const orders = splitOrders(data, cat, today, groups.smrt.transitRack)
+  const orders = splitOrders(data, cat, today, groups.smrt.transitRack, at)
     .map(o => ({ ...o, workDay: workDayOf(o) }))
     .filter(o => o.workDay <= next);
   const extra = day && day !== today && day !== next ? day : null;
@@ -188,7 +191,7 @@ export async function piecesView(db, env, { at = new Date(), day = null } = {}) 
   const runFor = loc => (loc === "Route" ? ROUTE_RUN : runOf(loc));
 
   const fc = await forecastRatios(db, env.ORG_ID, { today, next, hm, workDays, runs });
-  const mk = () => ({ q: zero(), done: zero(), known: zero(), expected: zero(), pieces: 0, orders: 0, openOrders: 0 });
+  const mk = () => ({ q: zero(), done: zero(), known: zero(), expected: zero(), pieces: 0, orders: 0, openOrders: 0, recent: 0, lastAsm: null });
   // mode: "today" = due today less what was finished before today; "future" = less anything finished; "past" = everything that was due
   const dayView = (d, mode, list = orders) => {
     const isToday = mode === "today", total = mk(), stores = new Map();
@@ -201,7 +204,9 @@ export async function piecesView(db, env, { at = new Date(), day = null } = {}) 
         const done = isToday ? Math.max(0, Math.min(todo, p[1] - p[2])) : mode === "past" ? Math.min(p[0], p[1]) : 0;
         for (const T of [total, st]) { T.q[k] += todo; T.known[k] += todo; T.done[k] += done; }
       }
-      for (const T of [total, st]) { T.pieces += o.pieces; T.orders++; if (!o.done) T.openOrders++; }
+      for (const T of [total, st]) { T.pieces += o.pieces; T.orders++; if (!o.done) T.openOrders++;
+        // assembly pace today: pieces assembled in the last hour, and the latest assembly
+        if (isToday) { T.recent += o.recent; if (o.lastAsm && localNow(env.TIMEZONE, new Date(o.lastAsm)).day === today) { const t = new Date(o.lastAsm).toISOString(); if (!T.lastAsm || t > T.lastAsm) T.lastAsm = t; } } }
     }
     // forecast: only for the next work day, and only before that day starts
     const beforeDay = today < d;
@@ -220,7 +225,8 @@ export async function piecesView(db, env, { at = new Date(), day = null } = {}) 
   };
   const days = { [today]: isWorkDay ? dayView(today, "today") : null, [next]: dayView(next, "future") };
   if (extra) days[extra] = dayView(extra, extra < today ? "past" : "future", extraOrders);
-  const overdueOrders = groups.smrt.overdue ? orders.filter(o => o.workDay < today && !o.done && o.pieces > o.complete) : [];
+  // overdue: orders with no pieces detailed yet are left out (Neal, Oct 12: tickets made at drop-off and never detailed)
+  const overdueOrders = groups.smrt.overdue ? orders.filter(o => o.workDay < today && !o.done && o.detailed && o.pieces > o.complete) : [];
   const overdue = { q: zero(), orders: overdueOrders.length };
   for (const o of overdueOrders) for (const [k, p] of Object.entries(o.per)) overdue.q[k] += Math.max(0, p[0] - p[1]);
   overdue.todo = CATS.reduce((t, k) => t + overdue.q[k], 0);
@@ -230,7 +236,7 @@ export async function piecesView(db, env, { at = new Date(), day = null } = {}) 
   const prices = Object.fromEntries(Object.entries(pr).filter(([, a]) => a[1] >= 15).map(([k, a]) => [k, Math.round(a[0] / a[1]) / 100]));
 
   // late = not finished and still has pieces to do (an order whose pieces are all assembled is done for production)
-  const late = orders.filter(o => !o.done && o.pieces > o.complete && (o.workDay < today || (o.workDay === today && isWorkDay)))
+  const late = orders.filter(o => !o.done && o.pieces > o.complete && ((o.workDay < today && o.detailed) || (o.workDay === today && isWorkDay)))
     .map(o => ({ no: o.no, due: o.due, status: o.status, loc: o.loc, pieces: o.pieces, left: o.pieces - o.complete, washing: o.washing, open: o.open,
       cats: Object.entries(o.per).filter(([, p]) => p[0] > p[1]).map(([k]) => k), notes: o.notes, customer: o.customer, overdue: o.workDay < today, route: o.loc === "Route" }))
     .sort((a, b) => (a.due || "").localeCompare(b.due || ""));

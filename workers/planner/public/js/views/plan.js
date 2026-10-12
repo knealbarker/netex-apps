@@ -526,9 +526,24 @@ export async function render(main, ctx) {
         <div class="wv-top"><span class="wv-time">${time}</span><b class="wv-name">${w.name}</b><span class="wv-n">${w.expected ? "~" : ""}${fmtN(w.todo)}</span></div>
         <div class="mix" aria-hidden="true">${CATS.filter(k => w.q[k]).map(k => raw(html`<i style="width:${(w.q[k] / tot * 100).toFixed(1)}%;background:${CAT_COLOR[k]}"></i>`))}</div>
         <div class="wv-sub">${gone ? raw('<span class="muted">Shuttle time passed</span>') : raw(html`<span class="${s.cls || ""}">${s.txt || `${w.orders} orders`}</span>`)}${w.stores?.length ? raw(html`<small> · ${w.stores.join(", ")}</small>`) : ""}</div>
+        ${P.isToday ? raw(waveProgress(w)) : ""}
       </div>`;
     }).join("") + html`<div class="mix-key">${CATS.map(k => raw(html`<span><i style="background:${CAT_COLOR[k]}"></i>${CAT_LABEL[k]}</span>`))}</div>`;
   }
+
+  // today: what's assembled so far (SMRT), the pace in the last hour, and what's left by kind of work
+  function waveProgress(w) {
+    const over = w.kind === "overdue";
+    const left = Object.fromEntries(CATS.map(k => [k, over ? (w.q[k] || 0) : Math.max(0, (w.q[k] || 0) - (w.doneQ?.[k] || 0))]));
+    const nLeft = CATS.reduce((t, k) => t + left[k], 0), done = over ? 0 : Math.min(w.todo, w.done || 0);
+    const leftTxt = CATS.filter(k => left[k] > 0).sort((a, b) => left[b] - left[a]).map(k => raw(html`<span class="wl-cat"><i style="background:${CAT_COLOR[k]}"></i><b>${fmtN(left[k])}</b> ${TILE[k]}</span>`));
+    const pace = !over && (w.recent || w.lastAsm) ? html`${w.recent ? `${fmtN(w.recent)} assembled in the last hour` : "none assembled in the last hour"}${w.lastAsm ? ` · last at ${fmtClock(clockOf(w.lastAsm))}` : ""}` : "";
+    return html`<div class="wv-prog">
+      ${over ? "" : raw(html`<div class="wv-bar" role="img" aria-label="${fmtN(done)} of ${fmtN(w.todo)} assembled"><i style="width:${w.todo ? Math.round(done / w.todo * 100) : 100}%"></i></div>
+        <div class="wv-line"><b>${fmtN(done)}</b> of ${fmtN(w.todo)} assembled${pace ? raw(html` <small>· ${pace}</small>`) : ""}</div>`)}
+      <div class="wv-left">${nLeft ? raw(html`<span class="muted">Left:</span>${leftTxt}`) : raw('<span class="good-txt">All assembled</span>')}</div></div>`;
+  }
+  function clockOf(iso) { const d = new Date(iso); return d.getHours() + d.getMinutes() / 60; }
 
   // ---- timeline
   function drawGantt(X) {
