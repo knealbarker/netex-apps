@@ -9,7 +9,7 @@ export async function render(main, ctx) {
     return;
   }
   main.innerHTML = html`<div class="loading"><span class="spin"></span>Loading settings…</div>`;
-  const { settings: s, locations, departments, posDepartments = [], rates, rippling } = await api("/settings");
+  const { settings: s, locations, departments, posDepartments = [], assemblers = [], rates, rippling } = await api("/settings");
   const plants = [...new Set([...locations.filter(l => l.kind === "plant").map(l => l.name), ...Object.values(s.plantWork)])];
   const sdeps = [...new Set([...posDepartments, ...Object.keys(s.plantWork)])].sort();
   const stores = locations.filter(l => l.kind === "store").map(l => l.name);
@@ -55,7 +55,14 @@ export async function render(main, ctx) {
 
       <section class="card set-card">
         <h2>Production work</h2>
-        <p class="dlg-lead">Which plant does the work for each SMRT department. The pre-tax value of the pieces a plant finishes is its production value, and its labor % is labor $ ÷ that value. Pieces count when assembled; wash &amp; fold counts when the order is ready.</p>
+        <p class="dlg-lead"><b>Who assembled a piece decides first.</b> An assembler counts for the plant where they clock in (Rippling, last 60 days, matched by name), unless you set them here.</p>
+        <div class="loc-list asm-list">
+          ${assemblers.map(a => raw(html`<div class="loc-row dep-row"><span class="asm-nm"><b>${a.name}</b><small>${a.pieces.toLocaleString()} pcs in 60 days · ${a.auto?.plant ? `auto: ${a.auto.plant}${a.auto.person ? ` (${a.auto.person})` : ""}` : a.auto?.ambiguous ? "auto: more than one person matches" : a.auto?.person ? `auto: ${a.auto.person} doesn't clock in at a plant` : "auto: no match in Rippling"}</small></span>
+            <select class="input" name="asm:${a.name}"><option value="">Automatic${a.auto?.plant ? ` (${a.auto.plant})` : " (by department)"}</option>${plants.map(pl => raw(html`<option ${raw(a.set === pl ? "selected" : "")}>${pl}</option>`))}<option value="department" ${raw(a.set === "department" ? "selected" : "")}>By department</option></select></div>`))}
+          ${assemblers.length ? "" : raw(html`<p class="muted">Assemblers appear here once SMRT has assembled pieces.</p>`)}
+        </div>
+        <p class="dlg-lead">Pieces with no known assembler (wash &amp; fold that's never assembled, for example) use the department below.</p>
+        <p class="dlg-lead sr">Which plant does the work for each SMRT department. The pre-tax value of the pieces a plant finishes is its production value, and its labor % is labor $ ÷ that value. Pieces count when assembled; wash &amp; fold counts when the order is ready.</p>
         <div class="loc-list">
           ${sdeps.map(dn => raw(html`<div class="loc-row dep-row"><b>${dn}</b>
             <select class="input" name="work:${dn}"><option value="">Not production</option>${plants.map(pl => raw(html`<option ${raw(s.plantWork[dn] === pl ? "selected" : "")}>${pl}</option>`))}</select></div>`))}
@@ -110,6 +117,7 @@ export async function render(main, ctx) {
     for (const i of f.querySelectorAll("[name^='roll:']")) if (i.value) body.rollup[i.name.slice(5)] = i.value;
     for (const i of f.querySelectorAll("[name^='hide:']")) if (i.checked) body.hidden.push(i.name.slice(5));
     body.plantWork = {}; for (const i of f.querySelectorAll("[name^='work:']")) if (i.value) body.plantWork[i.name.slice(5)] = i.value;
+    body.assemblers = { ...s.assemblers }; for (const i of f.querySelectorAll("[name^='asm:']")) { const n = i.name.slice(4); if (i.value) body.assemblers[n] = i.value; else delete body.assemblers[n]; }
     const btn = f.querySelector("[type=submit]"); btn.disabled = true;
     try { await api("/settings", { method: "PUT", body }); toast("Settings saved."); }
     catch (x) { toast(x.message, "bad", 7000); }

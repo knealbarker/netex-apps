@@ -222,6 +222,30 @@ await t("overtime can be turned off", async () => {
   await call("PUT", "/api/settings", { body: cur });
 });
 
+console.log("production value by assembler");
+await t("pieces assembled by a Laundry Hub person count for the Hub, whatever their department", async () => {
+  const { db: adb, sqlite: A2 } = freshDb(); const aenv = makeEnv(adb, { NOW });
+  await seed(adb, { last: LAST, days: 7, today: TODAY });
+  const asm = (name, where) => { const id = "ST" + name.replace(/\W/g, ""); A2.prepare("INSERT OR IGNORE INTO pos_staff(id, org_id, smrt_name) VALUES(?,?,?)").run(id, "tcc", name);
+    A2.prepare(`UPDATE pos_items SET assembled_by_staff_id=? WHERE ${where}`).run(id); };
+  // Hub Tech (Rippling: Laundry Hub) assembles every Greenville piece; the conveyor does Emory's
+  asm("Hub T", "order_id IN (SELECT o.id FROM pos_orders o JOIN core_locations l ON l.id=o.drop_location_id WHERE l.name='Greenville') AND assembled_at IS NOT NULL");
+  asm("Conveyor", "order_id IN (SELECT o.id FROM pos_orders o JOIN core_locations l ON l.id=o.drop_location_id WHERE l.name='Emory') AND assembled_at IS NOT NULL");
+  const get = async q => (await handle(new Request(`https://retailview.netexcleaners.com/api/${q}`, { headers: { "cf-access-jwt-assertion": await A.token({ email: NEAL }) } }), aenv, { fetchImpl: A.fetchImpl })).json();
+  const d = await get(`snapshot?from=${FROM}&to=${LAST}`);
+  const hub = d.plants.find(p => p.name === "Laundry Hub"), ws = d.plants.find(p => p.name === "Workshop");
+  near(hub.work, 600 + 6 * 520); eq(hub.workPieces, 6 + 24);                      // Greenville: 2 orders x 2 pcs x $130 a day
+  near(ws.work, 13140 - 6 * 520 + 6 * 140);                                        // Emory's shoe repair piece now counted (conveyor -> Workshop)
+  eq(d.unmappedWork, []);
+  const st = await get("settings");
+  const hubAsm = st.assemblers.find(a => a.name === "Hub T");
+  eq(hubAsm.auto.plant, "Laundry Hub"); eq(hubAsm.auto.person, "Hub Tech"); eq(st.settings.assemblers.Conveyor, "Workshop");
+  // an override sends Hub T's pieces back to the department map
+  await handle(new Request("https://retailview.netexcleaners.com/api/settings", { method: "PUT", headers: { "content-type": "application/json", "cf-access-jwt-assertion": await A.token({ email: NEAL }) },
+    body: JSON.stringify({ ...st.settings, assemblers: { ...st.settings.assemblers, "Hub T": "department" } }) }), aenv, { fetchImpl: A.fetchImpl }).then(async r => { if (r.status !== 200) throw new Error(await r.text()); });
+  near((await get(`snapshot?from=${FROM}&to=${LAST}`)).plants.find(p => p.name === "Laundry Hub").work, 600);
+});
+
 console.log("daily summary email");
 await t("summary: yesterday by store, week and month to date, labor flagged", async () => {
   const m = await buildSummary(db, env, LAST, { now: Date.parse(NOW) });

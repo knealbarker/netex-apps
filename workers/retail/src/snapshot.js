@@ -14,6 +14,10 @@
 //              department says which plant does the work (Settings › Production work). A piece counts on the day it was
 //              assembled; work that's never assembled (wash & fold) counts on the day its order was ready. Value =
 //              base + upcharge - discount. A plant's labor % = its labor $ / its production value (Neal, Oct 11).
+//              Who assembled the piece decides first (Neal, Oct 11: Laundry Hub work is what Etalya assembles there):
+//              an assembler goes to the plant where they clock in (Rippling, last 60 days, matched by name), or to the plant
+//              set for them in Settings › Assemblers ("Conveyor" -> Workshop). Pieces with no known assembler fall back to
+//              the department -> plant map.
 // Locations listed under Settings > Rolled into (Winnsboro -> Sulphur Springs) are shown on their own line but counted
 // in the store they roll into. Deleted orders are left out everywhere.
 import { HttpError } from "../../planner/src/util.js";
@@ -93,10 +97,11 @@ async function gather(db, env, from, to, { s = {}, now = Date.now() } = {}) {
   // production value: finished pieces by department (assembled pieces, plus never-assembled pieces of orders ready that day)
   const valueSql = "SUM(COALESCE(i.base_cents,0) + COALESCE(i.upcharge_cents,0) - COALESCE(i.discount_cents,0))";
   const work = [
-    ...(await db.prepare(`SELECT substr(i.assembled_at,1,10) AS day, d.name AS dept, COUNT(*) AS pieces, ${valueSql} AS value
+    ...(await db.prepare(`SELECT substr(i.assembled_at,1,10) AS day, d.name AS dept, st.smrt_name AS asm, COUNT(*) AS pieces, ${valueSql} AS value
         FROM pos_items i JOIN pos_orders o ON o.id=i.order_id JOIN pos_order_statuses s ON s.id=o.status_id LEFT JOIN pos_departments d ON d.id=i.department_id
+        LEFT JOIN pos_staff st ON st.id=i.assembled_by_staff_id
        WHERE o.org_id=? AND s.is_void=0 AND o.smrt_deleted_at IS NULL AND i.removed_at IS NULL AND i.assembled_at >= ? AND i.assembled_at < ?
-       GROUP BY 1, 2`).bind(org, from, end).all()).results,
+       GROUP BY 1, 2, 3`).bind(org, from, end).all()).results,
     ...(await db.prepare(`SELECT substr(o.ready_at,1,10) AS day, d.name AS dept, COUNT(*) AS pieces, ${valueSql} AS value
         FROM pos_orders o JOIN pos_order_statuses s ON s.id=o.status_id JOIN pos_items i ON i.order_id=o.id LEFT JOIN pos_departments d ON d.id=i.department_id
        WHERE o.org_id=? AND s.is_void=0 AND o.smrt_deleted_at IS NULL AND i.removed_at IS NULL AND i.assembled_at IS NULL AND o.ready_at >= ? AND o.ready_at < ?
@@ -109,7 +114,47 @@ async function gather(db, env, from, to, { s = {}, now = Date.now() } = {}) {
     const rs = (await db.prepare(`SELECT person_id AS pid, effective_on AS on_, hourly_cents AS c FROM labor_pay_rates WHERE deleted_at IS NULL AND person_id IN (${c.map(() => "?").join(",")}) ORDER BY effective_on`).bind(...c).all()).results;
     for (const r of rs) (rates.get(r.pid) || rates.set(r.pid, []).get(r.pid)).push(r);
   }
-  return { sales, revenue, hours, rates, today, work };
+  const asmPlant = await assemblerPlants(db, env, [...new Set(work.map(w => w.asm).filter(Boolean))], s, today);
+  return { sales, revenue, hours, rates, today, work, asmPlant };
+}
+
+const norm = v => String(v || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z ]/g, " ").replace(/\s+/g, " ").trim();
+/** Does SMRT's staff name ("Karla V", "Karla Velasquez", "Karla") name this Rippling person? */
+export function nameMatches(smrt, first, last) {
+  const a = norm(smrt).split(" "), f = norm(first), l = norm(last);
+  if (!a[0] || a[0] !== f.split(" ")[0]) return false;
+  if (a.length === 1) return true;
+  const rest = a.slice(1).join(" ");
+  return l.startsWith(rest) || (rest.length >= 1 && l[0] === rest[0] && rest.length <= 2);
+}
+
+/**
+ * Assembler -> plant. Settings › Assemblers wins ("" = automatic, "department" = use the department map);
+ * otherwise the plant where the matching Rippling person worked most of their hours in the last 60 days.
+ * Returns Map(name -> { plant|null, source: 'setting'|'rippling'|null, person?: string }).
+ */
+export async function assemblerPlants(db, env, names, s, today) {
+  const out = new Map();
+  if (!names.length) return out;
+  const since = addDays(today, -60);
+  const rows = (await db.prepare(`SELECT p.id, p.first_name AS f, p.last_name AS l, COALESCE(p.display_name, p.first_name || ' ' || p.last_name) AS name,
+        loc.name AS loc, loc.kind, SUM(h.hours) AS hrs
+      FROM core_people p JOIN labor_daily_hours h ON h.person_id=p.id JOIN core_locations loc ON loc.id=h.location_id
+     WHERE p.org_id=? AND h.work_date >= ? AND h.deleted_at IS NULL GROUP BY p.id, loc.id`).bind(env.ORG_ID, since).all()).results;
+  const people = new Map();
+  for (const r of rows) { const x = people.get(r.id) || people.set(r.id, { f: r.f, l: r.l, name: r.name, total: 0, best: null }).get(r.id);
+    x.total += r.hrs; if (r.kind === "plant" && (!x.best || r.hrs > x.best.hrs)) x.best = { loc: r.loc, hrs: r.hrs }; }
+  const set = s.assemblers || {};
+  for (const n of names) {
+    const o = set[n];
+    if (o === "department") { out.set(n, { plant: null, source: "setting" }); continue; }
+    if (o) { out.set(n, { plant: o, source: "setting" }); continue; }
+    const hits = [...people.values()].filter(p => nameMatches(n, p.f, p.l));
+    const p = hits.length === 1 ? hits[0] : null;
+    if (p && p.best && p.best.hrs >= p.total / 2) out.set(n, { plant: p.best.loc, source: "rippling", person: p.name });
+    else out.set(n, { plant: null, source: null, person: p ? p.name : undefined, ambiguous: hits.length > 1 });
+  }
+  return out;
 }
 
 /** Wage cost of one person-day row, and whether it used an average rate. */
@@ -158,7 +203,7 @@ export async function snapshot(db, env, me, from, to, { now = Date.now() } = {})
       for (const t of line(w)) add(t, v); if (detail) add(dayRow(r.day, w), v); }
     const unmapped = new Map();
     for (const r of g.work) {
-      const plantName = s.plantWork[r.dept || ""];
+      const plantName = (r.asm && g.asmPlant.get(r.asm)?.plant) || s.plantWork[r.dept || ""];
       if (!plantName) { unmapped.set(r.dept || "(none)", (unmapped.get(r.dept || "(none)") || 0) + r.pieces); continue; }
       const w = { line: plantName, part: plantName, plant: true };
       const v = { work: (r.value || 0) / 100, workPieces: r.pieces };

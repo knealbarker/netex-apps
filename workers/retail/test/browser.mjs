@@ -16,6 +16,9 @@ mkdirSync(SHOTS, { recursive: true });
 const A = await fakeAccess();
 const { db, sqlite } = freshDb();
 await seed(db, { last: "2026-10-09", days: 30, today: "2026-10-10" });
+sqlite.prepare("INSERT INTO pos_staff(id, org_id, smrt_name) VALUES('STHUB','tcc','Hub T'),('STCONV','tcc','Conveyor')").run();
+sqlite.prepare("UPDATE pos_items SET assembled_by_staff_id='STHUB' WHERE assembled_at IS NOT NULL AND department_id=(SELECT id FROM pos_departments WHERE name='Laundry Tops')").run();
+sqlite.prepare("UPDATE pos_items SET assembled_by_staff_id='STCONV' WHERE assembled_at IS NOT NULL AND assembled_by_staff_id IS NULL").run();
 sqlite.prepare("INSERT INTO core_users(id, org_id, email, display_name) VALUES('01MGR00000000000000000000A','tcc','mgr@x.com','Store Manager')").run();
 sqlite.prepare("INSERT INTO core_user_app_roles(user_id, app_id, role_id, granted_at) VALUES('01MGR00000000000000000000A','retail','manager','x')").run();
 let who = "neal@towncountryclean.com";
@@ -111,6 +114,7 @@ await t("Workshop picked: production value and labor % charts; Settings lists pr
   await p.goto(url + "/#/settings");
   await p.waitForSelector('select[name="work:Wash & Fold"]');
   ok((await p.inputValue('select[name="work:Wash & Fold"]')) === "Laundry Hub");
+  await p.locator(".set-card").filter({ hasText: "Production work" }).screenshot({ path: join(SHOTS, "11-production-work.png") });
 });
 await t("light theme", async () => {
   await light.goto(url + "/#/snapshot?p=last7");

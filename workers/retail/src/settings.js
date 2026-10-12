@@ -1,6 +1,7 @@
 // Retail Snapshot settings (core_settings, app 'retail', key 'snapshot'). Admins and the Owner change them.
 import { HttpError, audit } from "../../planner/src/util.js";
 import { requireRole } from "../../planner/src/auth.js";
+import { assemblerPlants, addDays, localToday } from "./snapshot.js";
 
 export const DEFAULTS = {
   targetRetail: 17,            // store labor cost / store revenue, %
@@ -17,6 +18,7 @@ export const DEFAULTS = {
   overtimeMultiplier: 1.5,
   summary: { enabled: false, to: [], hour: 7, days: [1, 2, 3, 4, 5, 6] },
   // which plant does the work for each SMRT financial department; its pieces' value is that plant's production value
+  assemblers: { Conveyor: "Workshop" },   // SMRT 'Assembled by' name -> plant ("department" = use the department map)
   plantWork: {
     "Dry Cleaning Tops": "Workshop", "Dry Cleaning Bottoms": "Workshop", "Laundry Tops": "Workshop", "Laundry Bottoms": "Workshop",
     "Household": "Workshop", "Wash & Fold": "Laundry Hub",
@@ -33,7 +35,7 @@ const name = v => String(v ?? "").trim().replace(/\s+/g, " ").slice(0, 60);
 export async function loadSettings(db, env) {
   const r = await db.prepare("SELECT value_json FROM core_settings WHERE org_id=? AND app_id='retail' AND key='snapshot'").bind(env.ORG_ID).first();
   const s = r ? JSON.parse(r.value_json) : {};
-  return { ...DEFAULTS, ...s, avgRates: { ...DEFAULTS.avgRates, ...(s.avgRates || {}) }, rollup: s.rollup || DEFAULTS.rollup, hidden: s.hidden || [], summary: { ...DEFAULTS.summary, ...(s.summary || {}) }, plantWork: s.plantWork || DEFAULTS.plantWork };
+  return { ...DEFAULTS, ...s, avgRates: { ...DEFAULTS.avgRates, ...(s.avgRates || {}) }, rollup: s.rollup || DEFAULTS.rollup, hidden: s.hidden || [], summary: { ...DEFAULTS.summary, ...(s.summary || {}) }, plantWork: s.plantWork || DEFAULTS.plantWork, assemblers: s.assemblers || DEFAULTS.assemblers };
 }
 
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -61,9 +63,10 @@ export function cleanSettings(b) {
     overtimeAfter: num(b.overtimeAfter ?? 40, 0, 80, "Overtime after"),
     overtimeMultiplier: num(b.overtimeMultiplier ?? 1.5, 1, 3, "Overtime rate"),
     summary: cleanSummary(b.summary),
-    plantWork: {},
+    plantWork: {}, assemblers: {},
   };
   for (const [k, v] of Object.entries(b.plantWork || {})) { const d = name(k), pl = name(v); if (d && pl) out.plantWork[d] = pl; }
+  for (const [k, v] of Object.entries(b.assemblers || {})) { const a = String(k).trim().slice(0, 60), pl = name(v); if (a && pl) out.assemblers[a] = pl; }
   for (const [k, v] of Object.entries(b.avgRates || {})) { const n = name(k); if (n) out.avgRates[n] = num(v, 0, 200, `Hourly rate for ${n}`); }
   for (const [k, v] of Object.entries(b.rollup || {})) { const a = name(k), t = name(v); if (a && t && a !== t) out.rollup[a] = t; }
   for (const h of b.hidden || []) { const n = name(h); if (n && !out.hidden.includes(n)) out.hidden.push(n); }
@@ -89,5 +92,12 @@ export async function settingsContext(db, env) {
       FROM labor_daily_hours h LEFT JOIN labor_pay_rates r ON r.person_id=h.person_id AND r.deleted_at IS NULL
       WHERE h.work_date >= date('now','-35 days') AND h.deleted_at IS NULL`).first();
   const last = await db.prepare("SELECT value_json FROM core_settings WHERE org_id=? AND app_id='core' AND key='rippling_last'").bind(env.ORG_ID).first();
-  return { locations, departments, posDepartments, rates, rippling: last ? JSON.parse(last.value_json) : null };
+  // who assembled pieces in the last 60 days, and which plant their work counts for
+  const today = localToday(env.TIMEZONE);
+  const asm = (await db.prepare(`SELECT st.smrt_name AS name, COUNT(*) AS pieces FROM pos_items i JOIN pos_staff st ON st.id=i.assembled_by_staff_id JOIN pos_orders o ON o.id=i.order_id
+      WHERE o.org_id=? AND i.assembled_at >= ? AND i.removed_at IS NULL GROUP BY st.smrt_name ORDER BY pieces DESC LIMIT 60`).bind(env.ORG_ID, addDays(today, -60)).all()).results;
+  const s = await loadSettings(db, env);
+  const auto = await assemblerPlants(db, env, asm.map(a => a.name), { ...s, assemblers: {} }, today);
+  const assemblers = asm.map(a => ({ ...a, auto: auto.get(a.name) || null, set: s.assemblers[a.name] || "" }));
+  return { locations, departments, posDepartments, assemblers, rates, rippling: last ? JSON.parse(last.value_json) : null };
 }
