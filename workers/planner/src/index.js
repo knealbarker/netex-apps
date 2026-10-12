@@ -5,7 +5,7 @@ import { listUsers, createUser, updateUser, syncAccessGroup } from "./users.js";
 import { requireRole } from "./auth.js";
 import { HttpError, json, readJson } from "./util.js";
 import { allSettings, saveGroup, saveProduction, saveRuns } from "./settings.js";
-import { listTeam, addPerson, updatePerson, setTrainings } from "./team.js";
+import { listTeam, addPerson, updatePerson, setTrainings, teamHistory } from "./team.js";
 import { importDesktop } from "./import.js";
 import { piecesView } from "./pieces.js";
 import { loadPlan, savePlan, publishPlan, addCallout, removeCallout, publishedPlan } from "./plan.js";
@@ -44,6 +44,7 @@ const routes = [
   ["PUT", /^\/api\/settings\/runs$/, async (req, env, me) => json({ runs: await saveRuns(env.DB, env, me, (await readJson(req)).runs) })],
   ["PUT", /^\/api\/settings\/(\w+)$/, async (req, env, me, m) => json({ [m[1]]: await saveGroup(env.DB, env, me, m[1], await readJson(req)) })],
   ["GET", /^\/api\/team$/, async (req, env, me) => json(await listTeam(env.DB, env, me))],
+  ["GET", /^\/api\/team\/history$/, async (req, env, me) => json(await teamHistory(env.DB, env, me))],
   ["POST", /^\/api\/team$/, async (req, env, me) => json(await addPerson(env.DB, env, me, await readJson(req)), 201)],
   ["PATCH", /^\/api\/team\/([0-9A-Z]{26})$/, async (req, env, me, m) => json(await updatePerson(env.DB, env, me, m[1], await readJson(req)))],
   ["PUT", /^\/api\/team\/([0-9A-Z]{26})\/trainings$/, async (req, env, me, m) => json(await setTrainings(env.DB, env, me, m[1], (await readJson(req)).trainings))],

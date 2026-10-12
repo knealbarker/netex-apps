@@ -355,3 +355,31 @@ export function projectDay({ SET, TEAM, V, plan, day, admin = false }) {
     end: X.R.empty ? null : X.R.end, laborH: X.M ? X.M.regH + X.M.otH + X.M.opsH : 0, cost: X.M ? X.M.total : null, pct: X.M ? X.M.pct : null,
     otH: X.R.empty ? 0 : X.R.otTotal, short: X.R.empty ? 0 : X.R.P.shortTotal, verdict: X.verdict };
 }
+
+// ---------------------------------------------------------------- Team: training order from history
+/**
+ * Suggested training order per person from the last weeks of plans: where they actually worked most comes first
+ * (only days they clocked in, when the time clock has that day), then trainings they have but haven't worked, in their
+ * current order. A training they were planned on and worked, but don't have yet, is added. Needs 3+ days per person.
+ * H = { planned: [{day, personId, station}], worked: [{day, personId}] }; trainingOf = station code -> training id.
+ */
+export function rankingSuggestions(TEAM, trainingOf, H, minDays = 3) {
+  const worked = new Set(H.worked.map(w => `${w.day}|${w.personId}`)), clockDays = new Set(H.worked.map(w => w.day));
+  const cnt = new Map();
+  for (const p of H.planned) {
+    if (clockDays.has(p.day) && !worked.has(`${p.day}|${p.personId}`)) continue; // planned but didn't come in
+    const t = trainingOf[p.station]; if (!t) continue;
+    const m = cnt.get(p.personId) || cnt.set(p.personId, { _days: new Set(), by: {} }).get(p.personId);
+    m._days.add(p.day); m.by[t] = (m.by[t] || 0) + 1;
+  }
+  const out = [];
+  for (const person of TEAM.people.filter(p => p.status === "active")) {
+    const m = cnt.get(person.id); if (!m || m._days.size < minDays) continue;
+    const cur = person.trainings || [], total = Object.values(m.by).reduce((a, b) => a + b, 0);
+    const workedT = Object.keys(m.by).sort((a, b) => m.by[b] - m.by[a] || (cur.indexOf(a) + 1 || 99) - (cur.indexOf(b) + 1 || 99));
+    const next = [...workedT, ...cur.filter(t => !m.by[t])];
+    if (next.join() === cur.join()) continue;
+    out.push({ personId: person.id, name: person.name, days: m._days.size, from: cur, to: next, share: Object.fromEntries(workedT.map(t => [t, m.by[t] / total])), added: workedT.filter(t => !cur.includes(t)) });
+  }
+  return out.sort((a, b) => a.name.localeCompare(b.name));
+}

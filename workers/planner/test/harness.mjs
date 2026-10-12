@@ -70,8 +70,9 @@ export function makeEnv(db, extra = {}) {
 }
 
 // Local server that runs requests through the Worker (for the browser test). Signs in as whoever `who()` returns.
-export function serve(env, { fetchImpl, token, who }) {
+export function serve(env, { fetchImpl, token, who, down = () => false }) {
   const server = createServer(async (req, res) => {
+    if (down()) { req.socket.destroy(); return; } // "the internet is down" (for the offline test)
     const chunks = []; for await (const c of req) chunks.push(c);
     const headers = new Headers();
     for (const [k, v] of Object.entries(req.headers)) if (typeof v === "string") headers.set(k, v);

@@ -1,5 +1,6 @@
 // App shell: who's signed in, the header, the theme and the section router (#/plan, #/users, ...).
-import { api } from "./api.js";
+import { api, net } from "./api.js";
+import { startAlerts } from "./alerts.js";
 import { html, initials, roleName, RANK, toast } from "./ui.js";
 import * as users from "./views/users.js";
 import * as team from "./views/team.js";
@@ -17,6 +18,7 @@ const VIEWS = {
 };
 const TITLES = { plan: "Plan", floor: "Floor", review: "Review", team: "Team", settings: "Settings", users: "Users & access" };
 const ctx = { me: null };
+Object.defineProperty(ctx, "offline", { get: () => net.offline }); // screens go read-only while offline
 
 // ---------- theme (per PC; the dark default matches the desktop app) ----------
 const THEMES = ["system", "dark", "light"];
@@ -75,6 +77,34 @@ async function syncStatus() {
   } catch { /* the header line is optional */ }
 }
 
+// ---------- offline: a bar while the planner is showing what this PC saved; screens refresh when it changes ----------
+const bar = document.createElement("div");
+bar.className = "offline-bar"; bar.hidden = true; bar.setAttribute("role", "status");
+$(".top").after(bar);
+let wasOffline = false, rerouted = 0;
+window.addEventListener("pp-net", e => {
+  const { offline, savedAt } = e.detail;
+  bar.hidden = !offline;
+  if (offline) bar.textContent = `Offline — showing what this PC saved${savedAt ? ` at ${new Date(savedAt).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })}${new Date(savedAt).toDateString() === new Date().toDateString() ? "" : ` on ${new Date(savedAt).toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" })}`}` : ""}. Nothing can be changed until the connection is back.`;
+  // redraw once when it changes (at most every 10 s, so a flaky connection can't make the screen flicker)
+  if (offline !== wasOffline) { wasOffline = offline; if (ctx.me && Date.now() - rerouted > 10000) { rerouted = Date.now(); setTimeout(route, 0); } }
+});
+window.addEventListener("online", () => { if (net.offline && ctx.me) route(); });
+
+// keep a fresh copy of today's and the next work day's plan on this PC (for when the internet is down)
+async function warm() {
+  try {
+    const V = await api("/pieces");
+    await Promise.all([api("/settings"), api("/team"), ...[V.isWorkDay ? V.today : null, V.next].filter(Boolean).flatMap(d => [api(`/plan/${d}`), api(`/floor/${d}`)])]);
+  } catch { /* next time */ }
+}
+function offlineReady() {
+  if (!("serviceWorker" in navigator)) return;
+  navigator.serviceWorker.register("/sw.js").then(() => setTimeout(warm, 15000)).catch(() => {});
+  setInterval(warm, 15 * 60 * 1000);
+  document.querySelector('a[href="/cdn-cgi/access/logout"]')?.addEventListener("click", () => { try { navigator.serviceWorker.controller?.postMessage("forget"); } catch {} });
+}
+
 async function start() {
   try {
     const { user } = await api("/me");
@@ -93,6 +123,8 @@ async function start() {
   window.addEventListener("hashchange", route);
   route();
   syncStatus();
+  startAlerts();
+  offlineReady();
   setInterval(syncStatus, 5 * 60 * 1000);
 }
 start();

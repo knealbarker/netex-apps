@@ -120,3 +120,16 @@ export async function setTrainings(db, env, me, personId, list) {
   await audit(db, { orgId: env.ORG_ID, userId: me.id, appId: env.APP_ID, entity: "plan_person_trainings", entityId: personId, action: "update", changes: { trainings: list } });
   return { personId, trainings: list };
 }
+
+/** The last 90 days of who was planned where, and who clocked in (for the Team screen's "order from history"). */
+export async function teamHistory(db, env, me) {
+  requireRole(me, "manager");
+  const { departmentId, locationId } = await productionIds(db, env.ORG_ID);
+  const from = new Date(Date.now() - 90 * 864e5).toISOString().slice(0, 10);
+  const planned = (await db.prepare(`SELECT d.work_date AS day, s.code AS station, a.person_id AS personId FROM plan_assignments a JOIN plan_days d ON d.id=a.day_id
+      JOIN plan_stations s ON s.id=a.station_id WHERE d.location_id=? AND d.work_date >= ? AND a.person_id IS NOT NULL AND a.deleted_at IS NULL AND a.hours > 0`).bind(locationId, from).all()).results;
+  const worked = (await db.prepare(`SELECT work_date AS day, person_id AS personId FROM labor_daily_hours WHERE department_id=? AND work_date >= ? AND hours > 0 AND deleted_at IS NULL GROUP BY work_date, person_id`)
+    .bind(departmentId, from).all()).results;
+  const stations = (await db.prepare("SELECT code, training_id AS training FROM plan_stations WHERE location_id=? AND deleted_at IS NULL").bind(locationId).all()).results;
+  return { planned, worked, trainingOf: Object.fromEntries(stations.filter(s => s.training).map(s => [s.code, s.training])) };
+}

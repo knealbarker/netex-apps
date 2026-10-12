@@ -20,13 +20,15 @@ export async function render(main) {
   const root = Symbol("floor"); main._floor = root;
   const alive = () => main._floor === root && document.getElementById("fl-root");
   let lang = store.get("floorLang") === "es" ? "es" : "en";
-  let V, SET, pub, day, F = null, seenReady = new Map();
+  let V, SET, pub, day, F = null, seenReady = new Map(), streak = null, streakAt = 0;
 
   async function load() {
     [V, SET] = await Promise.all([api("/pieces"), SET ? Promise.resolve(SET) : api("/settings")]);
     V.runs = SET.runs;
     day = V.isWorkDay ? V.today : V.next;
-    const r = await api(`/floor/${day}`);
+    const wantStreak = Date.now() - streakAt > 30 * 60 * 1000;
+    const r = await api(`/floor/${day}${wantStreak ? "?streak" : ""}`);
+    if (wantStreak) { streak = r.streak || null; streakAt = Date.now(); }
     const sig = r.published?.snapshot?.sig;
     if (!pub || sig !== pub.snapshot?.sig || r.published?.at !== pub.at) { pub = r.published; F = pub ? FM.replay(pub.snapshot) : null; }
   }
@@ -104,7 +106,7 @@ export async function render(main) {
         ${isToday && live.length ? raw(html`<div class="f-big"><b>${ontime} <small>${t.of} ${live.length}</small></b><span>${t.ontime}</span></div>`) : ""}
         ${F.R.empty ? "" : raw(html`<div class="f-big"><b>${FM.hm(F.R.end)}</b><span>${t.doneby}</span></div>`)}
         ${isToday && todo ? raw(html`<div class="f-big"><b>${FM.fmtN(done)} <small>${t.of} ${FM.fmtN(todo)}</small></b><span>${t.done}</span></div>`) : ""}
-        <div class="f-sp"></div><div class="f-clock">${clock}</div>${raw(tools)}
+        <div class="f-sp"></div>${streak && streak.days >= 2 ? raw(html`<div class="f-streak" title="${t.streakTip}">${streak.days} ${t.streakLab} ${streak.target}%</div>`) : ""}<div class="f-clock">${clock}</div>${raw(tools)}
       </div>
       ${raw(alert)}
       <div class="f-main">

@@ -1,7 +1,8 @@
 // Settings: one card per topic, each with its own Save button (enabled once something changes).
 // Admins and the Owner can edit; everyone else sees the values read-only.
 import { api } from "../api.js";
-import { html, raw, toast, RANK } from "../ui.js";
+import { html, raw, toast, RANK, openDialog } from "../ui.js";
+import { notifyState, askNotify } from "../alerts.js";
 
 const CAT_NAMES = { dct: "DC tops", dcb: "DC bottoms", slt: "Starch tops", slb: "Starch bottoms", comf: "Comforters", tc: "Tablecloths" };
 const CATS = Object.keys(CAT_NAMES);
@@ -56,10 +57,15 @@ const GROUPS = [
     ["departments", "Rippling departments", "listText", "Comma-separated, as Rippling spells them."],
     ["useTimes", "Use actual clock-in times", "bool", "Updates the plan with when people really clocked in."],
   ] },
+  { id: "summary", title: "Daily summary email", lead: "An end-of-day email: how today went against the plan, each shuttle's ready time, the crew from the time clock, and the next work day's pieces, crew and projection.", fields: [
+    ["on", "Send the daily summary", "bool", "On work days, once, after the time below."],
+    ["to", "Send to", "listText", "Comma-separated. Each address must be verified in Cloudflare (Email Routing › Destination addresses) before it can receive mail."],
+    ["at", "Send after", "time", "Central time. Pick a time after the plant has gone home."],
+  ] },
   { id: "business", title: "Business", lead: "", fields: [["name", "Business name", "text", "Printed at the top of the plan."]] },
 ];
 
-const SECTIONS = [["day", "Working day"], ["staffing", "Overtime & moves"], ["money", "Labor & prices"], ["stations", "Stations & speeds"], ["wash", "Washers"], ["runs", "Shuttle runs"], ["route", "Route deliveries"], ["alerts", "Shuttle alerts"], ["smrt", "SMRT mapping"], ["rippling", "Rippling"], ["business", "Business"], ["import", "Import"]];
+const SECTIONS = [["day", "Working day"], ["staffing", "Overtime & moves"], ["money", "Labor & prices"], ["stations", "Stations & speeds"], ["wash", "Washers"], ["runs", "Shuttle runs"], ["route", "Route deliveries"], ["alerts", "Shuttle alerts"], ["summary", "Daily summary email"], ["smrt", "SMRT mapping"], ["rippling", "Rippling"], ["business", "Business"], ["import", "Import"]];
 
 export async function render(main, ctx) {
   const { me } = ctx;
@@ -90,8 +96,34 @@ export async function render(main, ctx) {
     return html`<label class="field row-field" for="${id}"><span>${label}${help ? raw(html`<small>${help}</small>`) : ""}</span><span class="inwrap">${raw(input)}${unit}</span></label>`;
   };
 
+  const extras = {
+    alerts: () => html`<div class="sum-status" id="notifyLine"></div>`,
+    summary: () => canEdit ? html`<div class="sum-status" id="sumStatus">${raw(summaryStatus())}</div>
+      <div class="set-actions"><button type="button" class="btn small" id="sumPreview">Preview today's email</button><button type="button" class="btn small" id="sumTest">Send a test now</button></div>` : "",
+    rippling: () => canEdit ? html`<div class="sum-status">${raw(ripStatus())}</div>` : "",
+    money: () => canEdit && S.status ? html`<div class="sum-status">${raw(payLine())}</div>` : "",
+  };
+  const fmtWhen = iso => new Date(iso).toLocaleString(undefined, { weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+  function summaryStatus() {
+    const st = S.status || {}, L = st.summary, T = st.summaryTest;
+    const parts = [];
+    if (!st.emailReady) parts.push('<span class="bad">●</span> Email sending isn\'t switched on for the planner yet.');
+    if (L) parts.push(L.sent?.length ? html`<span class="ok">●</span> Last sent ${fmtWhen(L.at)} to ${L.sent.join(", ")}${L.failed?.length ? ` · not delivered to ${L.failed.map(f => f.to).join(", ")}` : ""}` : html`<span class="bad">●</span> ${fmtWhen(L.at)}: couldn't send — ${L.failed?.[0]?.error || "unknown error"}`);
+    else parts.push("Not sent yet.");
+    if (T) parts.push(html`Last test ${fmtWhen(T.at)}: ${T.sent?.length ? `sent to ${T.sent.join(", ")}` : `failed — ${T.failed?.[0]?.error || ""}`}`);
+    return parts.join("<br>");
+  }
+  function ripStatus() {
+    const r = S.status?.rippling, p = S.status?.payRates;
+    if (!r) return "No time clock report from Rippling yet.";
+    return html`Last report ${fmtWhen(r.at)} (${r.rows} rows). ${r.rateColumn ? raw(html`<span class="ok">●</span> Pay rates read from the “${r.rateColumn}” column`) : raw('<span class="bad">●</span> The report has no pay rate column yet — add “Pay rate” to the Rippling report to cost labor per person')}${p ? ` · ${p.withRate} of ${p.people} people on the team have a rate.` : "."}`;
+  }
+  function payLine() {
+    const p = S.status.payRates;
+    return p.withRate ? html`Labor is costed with each person's pay rate from Rippling (${p.withRate} of ${p.people} people have one); the average below is used for anyone without one.` : "Rippling hasn't sent pay rates yet, so labor is costed at the average below.";
+  }
   const groupCard = g => html`<section class="card set-card" id="sec-${g.id}" data-group="${g.id}">
-      <header><h2>${g.title}</h2>${g.lead ? raw(html`<p>${g.lead}</p>`) : ""}</header>
+      <header><h2>${g.title}</h2>${g.lead ? raw(html`<p>${g.lead}</p>`) : ""}</header>${raw(extras[g.id] ? extras[g.id]() : "")}
       <form class="set-form" novalidate>${g.fields.map(f => raw(fieldHtml(g.id, f)))}
         ${canEdit ? raw('<div class="set-foot"><span class="saved-note" aria-live="polite"></span><button class="btn primary" type="submit" disabled>Save</button></div>') : ""}</form></section>`;
 
@@ -187,10 +219,41 @@ export async function render(main, ctx) {
     <div class="settings-layout">
       <nav class="set-nav" aria-label="Settings sections">${SECTIONS.filter(([id]) => id !== "import" || isOwner).map(([id, l]) => raw(html`<a href="#/settings" data-jump="sec-${id}">${l}</a>`))}</nav>
       <div class="set-cards">
-        ${raw(groupCard(GROUPS[0]))}${raw(groupCard(GROUPS[1]))}${raw(groupCard(GROUPS[2]))}${raw(stationsCard())}${raw(groupCard(GROUPS[3]))}
-        ${raw(runsCard())}${raw(groupCard(GROUPS[4]))}${raw(groupCard(GROUPS[5]))}${raw(groupCard(GROUPS[6]))}${raw(groupCard(GROUPS[7]))}${raw(groupCard(GROUPS[8]))}${raw(importCard())}
+        ${["day", "staffing", "money"].map(id => raw(groupCard(GROUPS.find(g => g.id === id))))}${raw(stationsCard())}${raw(groupCard(GROUPS.find(g => g.id === "wash")))}
+        ${raw(runsCard())}${["route", "alerts", "summary", "smrt", "rippling", "business"].map(id => raw(groupCard(GROUPS.find(g => g.id === id))))}${raw(importCard())}
       </div>
     </div>`;
+
+  // this PC's pop-up notifications for shuttle alerts
+  function drawNotify() {
+    const el = main.querySelector("#notifyLine"); if (!el) return;
+    const s2 = notifyState();
+    el.innerHTML = s2 === "granted" ? '<span class="ok">●</span> Pop-up notifications are on for this PC.'
+      : s2 === "denied" ? '<span class="bad">●</span> Notifications are blocked for this site in this browser. Allow them in the browser\'s site settings to get pop-ups.'
+      : s2 === "unsupported" ? "This browser can't show pop-up notifications; alerts show inside the planner."
+      : html`Alerts show inside the planner. ${raw('<button type="button" class="linkish" id="notifyOn">Also show Windows pop-ups on this PC</button>')}`;
+    el.querySelector("#notifyOn")?.addEventListener("click", async () => { await askNotify(); drawNotify(); });
+  }
+  drawNotify();
+  main.querySelector("#sumPreview")?.addEventListener("click", async e => {
+    const b = e.currentTarget; b.disabled = true;
+    try {
+      const m = await api("/summary/preview");
+      const dlg = openDialog({ title: m.subject, submitLabel: "Close", body: html`<div class="sum-preview">${raw(m.html.replace(/^[\s\S]*?<body[^>]*>/i, "").replace(/<\/body>[\s\S]*$/i, ""))}</div>`, onSubmit: () => {} });
+      dlg.classList.add("wide"); dlg.querySelector("[data-close]").hidden = true;
+    } catch (x) { toast(x.message, "bad"); } finally { b.disabled = false; }
+  });
+  main.querySelector("#sumTest")?.addEventListener("click", () => openDialog({
+    title: "Send a test summary now?", submitLabel: "Send",
+    body: html`<p class="dlg-lead">Today's summary, as it stands right now.</p><label class="field"><span>Send to</span><input class="input" name="to" type="email" value="${S.groups.summary.to[0] || ""}" required>
+      <small>Must be verified in Cloudflare › Email Routing › Destination addresses.</small></label>`,
+    async onSubmit(form) {
+      const r = await api("/summary/send", { method: "POST", body: { to: form.to.value } });
+      S = await api("/settings"); const st = main.querySelector("#sumStatus"); if (st) st.innerHTML = summaryStatus();
+      if (!r.sent.length) throw new Error(r.failed[0]?.error || "Not sent.");
+      toast(`Sent to ${r.sent.join(", ")}.`);
+    },
+  }));
 
   main.querySelectorAll("[data-jump]").forEach(a => a.addEventListener("click", e => {
     e.preventDefault(); const t = document.getElementById(a.dataset.jump);

@@ -654,3 +654,68 @@ form.fu .input { padding: 7px 10px; font-size: 14px; }
 @media (max-width: 980px) { .rv-grid { grid-template-columns: 1fr; } }
 @media (max-width: 640px) { form.fu { grid-template-columns: 1fr 1fr; } form.fu .input { grid-column: 1 / -1; } .day-nav .input { width: auto; flex: 1; } .day-nav { width: 100%; } }
 .field-help { color: var(--muted); font-size: 13px; margin: -6px 0 16px; }
+
+/* ---------- stage 5: Plan extras ---------- */
+#pl-root.busy { opacity: .6; pointer-events: none; transition: opacity .2s; }
+.date-pick .input { width: auto; padding: 6px 10px; font-size: 14px; }
+.seg button.custom { color: var(--info); }
+.wash-sum { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 13px; color: var(--muted); margin-bottom: 10px; }
+.wash-sum b { color: var(--text); }
+.wash-row { display: grid; grid-template-columns: 78px 1fr; gap: 8px; align-items: start; padding: 6px 0; border-top: 1px solid var(--line); font-size: 13px; }
+.wash-row > b { font-weight: 600; padding-top: 3px; }
+.wash-row > div { display: flex; flex-wrap: wrap; gap: 5px; }
+.wl { display: inline-flex; flex-direction: column; line-height: 1.2; padding: 3px 8px 3px 7px; border-radius: 7px; background: var(--bg2); border-left: 3px solid var(--c); font-weight: 600; }
+.wl small { color: var(--muted); font-weight: 500; font-size: 11.5px; }
+#pl-chg-box > summary { list-style: none; cursor: pointer; margin-bottom: 0; }
+#pl-chg-box > summary::-webkit-details-marker { display: none; }
+#pl-chg-box > summary h2::after { content: "▸"; color: var(--faint); font-size: 12px; margin-left: 8px; display: inline-block; transition: transform .15s; }
+#pl-chg-box[open] > summary h2::after { transform: rotate(90deg); }
+#pl-chg-box[open] > summary { margin-bottom: 10px; }
+.chg-list { list-style: none; margin: 0; padding: 0; max-height: 360px; overflow-y: auto; font-size: 13px; }
+.chg-list li { display: grid; grid-template-columns: 64px 1fr; gap: 8px; padding: 6px 0; border-top: 1px solid var(--line); }
+.chg-list time { color: var(--faint); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.chg-list small { color: var(--faint); }
+.chg-list li.ready span { color: var(--good); } .chg-list li.warn span { color: var(--warn); } .chg-list li.publish span { font-weight: 600; }
+.rv-note { margin: -6px 0 14px; }
+.ord { margin-top: 2px; } .ord b { color: var(--accent); }
+.f-streak { padding: 6px 12px; border-radius: 999px; background: var(--good-soft); color: var(--good); font-weight: 700; font-size: 15px; white-space: nowrap; }
+.rv-next { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 10px; margin-bottom: 12px; }
+.rv-next > div { background: var(--bg2); border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; }
+.rv-next b { display: block; font-size: 22px; letter-spacing: -.01em; }
+.rv-next span { color: var(--muted); font-size: 12.5px; }
+.offline-bar { position: sticky; top: 57px; z-index: 19; margin: 0; padding: 8px 22px; background: var(--warn-soft); color: var(--warn); font-size: 14px; font-weight: 600; border-bottom: 1px solid color-mix(in srgb, var(--warn) 40%, transparent); backdrop-filter: blur(10px); }
+.sum-preview { border: 1px solid var(--line2); border-radius: 12px; overflow: hidden; background: #f4f6fa; max-height: 60vh; overflow-y: auto; }
+.sum-status { font-size: 13px; color: var(--muted); margin: 4px 0 12px; }
+.sum-status .ok { color: var(--good); } .sum-status .bad { color: var(--bad); }
+.set-actions { display: flex; flex-wrap: wrap; gap: 8px; margin: 4px 0 12px; }
+
+/* ---------- printed plan (Plan › Print) ---------- */
+.print-sheet { display: none; }
+@media print {
+  @page { size: letter landscape; margin: 0.35in; }
+  body.printing { background: #fff; color: #141b2b; font-size: 11px; }
+  body.printing .top, body.printing .toasts, body.printing .offline-bar, body.printing #pl-root, body.printing .skip { display: none !important; }
+  body.printing main { padding: 0 !important; max-width: none !important; }
+  body.printing .print-sheet { display: block; color: #141b2b; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .ps-head { display: flex; justify-content: space-between; align-items: flex-end; background: #1d2330; color: #fff; padding: 10px 14px; border-radius: 6px; margin-bottom: 12px; }
+  .ps-head b { font-size: 16px; display: block; } .ps-head span { font-size: 11px; }
+  .ps-kpi { display: flex; gap: 14px; font-size: 12px; } .ps-kpi b { font-size: 14px; }
+  .ps-axis, .ps-row { display: grid; grid-template-columns: 120px 1fr 92px; gap: 6px; align-items: center; }
+  .ps-axis { font-size: 9px; color: #677084; text-transform: uppercase; letter-spacing: .05em; margin-bottom: 2px; }
+  .ps-axis > div:last-child, .ps-done { text-align: right; }
+  .ps-ticks { position: relative; height: 14px; } .ps-ticks span { position: absolute; transform: translateX(-50%); text-transform: none; letter-spacing: 0; }
+  html:has(body.printing) { background: #fff; }
+  .ps-row { min-height: var(--rh, 30px); border-top: 1px solid #e6e9ef; break-inside: avoid; }
+  .ps-row:nth-child(even) { background: #f7f8fa; }
+  .ps-name b { display: block; font-size: 12px; } .ps-name small { color: #677084; font-size: 9px; }
+  .ps-track { position: relative; height: calc(var(--rh, 30px) - 6px); }
+  .ps-hr { position: absolute; top: 0; bottom: 0; border-left: 1px solid #e3e6ec; }
+  .ps-bar { position: absolute; top: 2px; bottom: 2px; background: var(--c); color: #fff; border-radius: 3px; font-size: 9px; font-weight: 700; padding: 4px 4px 0; overflow: hidden; white-space: nowrap; }
+  .ps-brk { position: absolute; top: 2px; bottom: 2px; background: #fff; border: 1px solid #969cab; color: #677084; font-size: 8px; text-align: center; padding-top: 5px; overflow: hidden; }
+  .ps-dl { position: absolute; top: -2px; bottom: -2px; border-left: 1.5px dashed #d83347; }
+  .ps-done b { font-size: 12px; display: block; } .ps-done small { font-size: 9px; }
+  .ps-done.home { color: #1d6b3f; } .ps-done.ot { color: #b45309; }
+  .ps-waves { display: flex; flex-wrap: wrap; gap: 6px 18px; margin-top: 10px; font-size: 11px; }
+  .ps-waves b { color: #d83347; }
+  .ps-foot { margin-top: 10px; color: #969cab; font-size: 9px; text-align: right; }
+}

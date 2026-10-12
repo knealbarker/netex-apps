@@ -2,6 +2,7 @@
 import { api } from "../api.js";
 import { html, raw, toast, RANK } from "../ui.js";
 import { fmtClock, hm, fmtH, fmtN, fmt$ } from "../engine/engine.js";
+import * as M from "../plan/model.js";
 
 const SMRT_ORDER = (customer, no) => `https://towncountryclean.smrtapp.com/posx/dash/customer/clothestracker/${encodeURIComponent(customer)}/?saleId=${String(no).replace(/\D/g, "")}`;
 const longDay = d => new Date(d + "T12:00:00").toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" });
@@ -11,8 +12,11 @@ const mins = h => Math.round(h * 60);
 let pick = null;
 
 export async function render(main, ctx) {
-  const can = RANK[ctx.me.role] >= RANK.manager;
+  const can = RANK[ctx.me.role] >= RANK.manager, admin = RANK[ctx.me.role] >= RANK.admin;
+  let NX = null; // the next work day's projection, kept while moving between days
   main.innerHTML = html`<div class="loading"><span class="spin"></span>Adding up the day…</div>`;
+  const asked = (location.hash.match(/[?&]day=(\d{4}-\d{2}-\d{2})/) || [])[1];
+  if (asked) pick = asked;
   // first visit: today once the day has started, otherwise the last work day
   const d0 = new Date(), localDay = new Date(d0.getTime() - d0.getTimezoneOffset() * 6e4).toISOString().slice(0, 10);
   let D = await api(`/review/${pick && pick <= localDay ? pick : localDay}`);
@@ -58,10 +62,13 @@ export async function render(main, ctx) {
         <section class="card pl-card"><header class="pl-cardhead"><div><h2>Pieces through the day</h2><p>Assembled in SMRT, counted as they happened${D.planned?.metrics?.end != null ? ", against the published plan's pace" : ""}.</p></div></header>${raw(chart())}</section>
         <section class="card pl-card"><header class="pl-cardhead"><div><h2>Deadlines</h2><p>When the last piece for each was assembled.</p></div></header>${raw(deadlines())}</section>
         <section class="card pl-card"><header class="pl-cardhead"><div><h2>Plan vs. actual</h2><p>${D.planned ? `${D.planned.source === "published" ? `Published${D.planned.by ? ` by ${D.planned.by}` : ""}` : "Saved, not published"}; actual times from Rippling. Differences of 10 minutes or more are shown.` : "No plan was saved for this day."}</p></div></header>${raw(people())}</section>
+        <section class="card pl-card" id="rv-nextday"><header class="pl-cardhead"><div><h2>Next work day · ${shortDay(D.nextWork)}</h2><p>Pieces to plan for, the crew and the projection.</p></div>
+          <a class="btn small primary" href="#/plan?day=${D.nextWork}">Open ${new Date(D.nextWork + "T12:00:00").toLocaleDateString(undefined, { weekday: "long" })}'s plan</a></header><div id="rv-nextday-body"><p class="muted pad">Working it out…</p></div></section>
         <section class="card pl-card"><header class="pl-cardhead"><div><h2>Last ${D.trend.length} work days</h2><p>Pieces assembled per labor hour${D.money ? ", and labor % of revenue" : ""}.</p></div></header>${raw(trend())}</section>
       </div>
       ${raw(followups())}
     </div>`;
+    nextDay();
     main.querySelector("#rv-prev").addEventListener("click", () => go(D.prev));
     main.querySelector("#rv-next").addEventListener("click", () => D.next && go(D.next));
     main.querySelector("#rv-date").addEventListener("change", e => { if (e.target.value && e.target.value <= D.today) go(e.target.value); });
@@ -75,6 +82,26 @@ export async function render(main, ctx) {
         toast(resolved ? "Marked done." : "Saved."); D = await api(`/review/${pick}`); draw();
       } catch (x) { toast(x.message, "bad"); btns.forEach(b => { b.disabled = false; }); }
     }));
+  }
+
+  // the next work day: its saved crew (or a suggestion from history) planned with the pieces known now
+  async function nextDay() {
+    const day = D.nextWork, el = () => main.querySelector("#rv-nextday-body");
+    try {
+      if (!NX || NX.day !== day) {
+        const [V, SET, TEAM, plan] = await Promise.all([api(`/pieces?day=${day}`), api("/settings"), api("/team"), api(`/plan/${day}`)]);
+        NX = { day, N: M.projectDay({ SET, TEAM, V, plan, day, admin }), target: SET.groups.money.laborTarget };
+      }
+      const N = NX.N, box = el(); if (!box || D.nextWork !== day) return;
+      if (!N) { box.innerHTML = html`<p class="muted pad">No pieces due that day yet.</p>`; return; }
+      box.innerHTML = html`<div class="rv-next">
+          <div><b>${N.expected ? "~" : ""}${fmtN(N.pieces)}</b><span>pieces to plan for${N.expected ? ` · ${fmtN(N.known)} known now` : ""}</span></div>
+          <div><b>${N.crew.length}</b><span>people · ${N.suggested ? "suggested" : "planned"}</span></div>
+          <div><b class="${N.short > 0.5 ? "c-bad" : ""}">${N.end != null ? hm(N.end) : "—"}</b><span>projected done by</span></div>
+          ${admin ? raw(html`<div><b class="${N.pct == null ? "" : N.pct <= NX.target ? "c-good" : "c-bad"}">${N.pct != null ? N.pct.toFixed(1) + "%" : "—"}</b><span>projected labor</span></div>`) : ""}
+        </div>
+        <p class="muted small">Crew: ${N.basis}.${N.otH > 0.04 ? ` ${fmtH(N.otH)} overtime.` : ""}${N.short > 0.5 ? ` ${fmtN(N.short)} pieces wouldn't get done.` : ""}</p>`;
+    } catch (e) { const box = el(); if (box) box.innerHTML = html`<p class="muted pad">Couldn't work out the next day: ${e.message}</p>`; }
   }
 
   function chart() {

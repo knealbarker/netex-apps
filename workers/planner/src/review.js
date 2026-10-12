@@ -138,7 +138,7 @@ export async function reviewDay(db, env, me, day) {
     for (const v of vs) if (!v.name) v.name = names.get(v.personId) || "Someone";
   }
 
-  return { day, today, isToday: day === today, isWorkDay: workDays.includes(weekday(day)), prev: prevWorkDay(day, workDays), next: day < today ? nextWorkDay(day, workDays) : null,
+  return { day, today, isToday: day === today, isWorkDay: workDays.includes(weekday(day)), prev: prevWorkDay(day, workDays), next: day < today ? nextWorkDay(day, workDays) : null, nextWork: nextWorkDay(day, workDays),
     done: money ? done : { ...done, revenue: undefined }, due, deadlines, labor, people: vs, planned: planned ? { source: planned.source, at: planned.at || null, by: planned.by || null, metrics: planned.metrics } : null,
     followups: await followups(db, env, day), trend: await trend(db, env, day, workDays, departmentId, cat, prices, money ? { payAvg: groups.money.payAvg, rates } : null), money };
 }

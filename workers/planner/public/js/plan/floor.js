@@ -9,7 +9,8 @@ export const TXT = {
     plan: "Plan", full: "Full screen", exit: "Exit full screen", lang: "Español", min: "min", clock: "clocks out", pace: "White line = where we should be by now", first: "do these first",
     washStart: "Washers start", washDone: "Laundry wash done", comfDone: "Last comforters out of the washer", rotation: "rotation", publishedAt: "Plan published",
     notPublished: "A manager publishes the plan from the Plan screen. It shows here right away.", nextDay: "Plan for", changed: "The plan changed since it was published",
-    cats: { dct: "DC tops", dcb: "DC bottoms", slt: "Laundry tops", slb: "Laundry bottoms", comf: "Comforters", tc: "Tablecloths" }, comf: "Comforters", opLaundry: "Laundry operator", opDc: "DC operator" },
+    cats: { dct: "DC tops", dcb: "DC bottoms", slt: "Laundry tops", slb: "Laundry bottoms", comf: "Comforters", tc: "Tablecloths" }, comf: "Comforters", opLaundry: "Laundry operator", opDc: "DC operator",
+    streakLab: "work days in a row with labor under", streakTip: "Labor cost as a share of the value of the pieces finished" },
   es: { ontrack: "A TIEMPO", slipping: "ATRASÁNDOSE", atrisk: "EN RIESGO", noplan: "SIN PLAN PUBLICADO", deadlines: "Entregas de hoy", deadlinesFor: "Entregas", now: "Ahora", coming: "Próximamente",
     done: "piezas terminadas hoy", of: "de", ontime: "entregas a tiempo", doneby: "todos terminan a las", ready: "LISTO", readyAbout: "listo como a las", behind: "atrasado",
     left: "faltan", shuttle: "camioneta", counter: "mostrador", route: "ruta", overdue: "Atrasadas", leaves: "sale", notready: "sin terminar", okload: "Pueden cargar la", shuttleWord: "camioneta",
@@ -17,7 +18,8 @@ export const TXT = {
     plan: "Plan", full: "Pantalla completa", exit: "Salir", lang: "English", min: "min", clock: "sale", pace: "Línea blanca = donde deberíamos ir", first: "hacer primero",
     washStart: "Empiezan las lavadoras", washDone: "Termina el lavado de ropa", comfDone: "Salen los últimos edredones", rotation: "rotación", publishedAt: "Plan publicado",
     notPublished: "Un gerente publica el plan desde la pantalla Plan. Aparece aquí de inmediato.", nextDay: "Plan para", changed: "El plan cambió desde que se publicó",
-    cats: { dct: "Camisas DC", dcb: "Pantalones DC", slt: "Camisas almidón", slb: "Pantalones almidón", comf: "Edredones", tc: "Manteles" }, comf: "Edredones", opLaundry: "Operador lavandería", opDc: "Operador DC" },
+    cats: { dct: "Camisas DC", dcb: "Pantalones DC", slt: "Camisas almidón", slb: "Pantalones almidón", comf: "Edredones", tc: "Manteles" }, comf: "Edredones", opLaundry: "Operador lavandería", opDc: "Operador DC",
+    streakLab: "días seguidos con mano de obra bajo", streakTip: "Costo de mano de obra contra el valor de las piezas terminadas" },
 };
 
 /** Replays the published plan with the same engine the Plan screen used. */

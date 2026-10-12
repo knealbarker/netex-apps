@@ -3,6 +3,7 @@
 // Training is per kind of work: SLB 1/2 share one training, as do DCT 1-3.
 import { api } from "../api.js";
 import { html, raw, toast, initials, RANK, openDialog } from "../ui.js";
+import { rankingSuggestions } from "../plan/model.js";
 
 const PLUS = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>';
 const PEN = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20h4L19 9l-4-4L4 16z"/><path d="M14 6l4 4"/></svg>';
@@ -30,6 +31,7 @@ export async function render(main, ctx) {
         <div><h1>Team</h1><p>${active.length} people on the production team. Each person's trainings are listed in order: 1 is where they belong first.</p></div>
         <div class="head-actions">
           ${former ? raw(html`<label class="check"><input type="checkbox" id="former" ${raw(showFormer ? "checked" : "")}> Show former (${former})</label>`) : ""}
+          ${canTrain ? raw(html`<button class="btn" id="fromHistory" title="Reorder trainings by where people have actually worked">Order from history</button>`) : ""}
           ${canEdit ? raw(html`<button class="btn primary" id="addPerson">${raw(PLUS)}Add person</button>`) : ""}
         </div>
       </div>
@@ -44,7 +46,7 @@ export async function render(main, ctx) {
         ${people.map(p => raw(html`<div class="trow ${p.status === "active" ? "" : "former"}" role="listitem">
           ${canEdit ? raw(html`<button class="who-btn" data-edit="${p.id}" aria-label="Edit ${p.name}">`) : raw('<div class="who-btn">')}
             <span class="avatar" aria-hidden="true">${initials(p.name)}</span>
-            <span class="who-txt"><b>${p.name}</b><small>${[p.usualStart ? `In ${p.usualStart}` : "", p.payrollId ? `Rippling #${p.payrollId}` : "", p.status === "active" ? "" : "Former"].filter(Boolean).join(" · ")}</small></span>
+            <span class="who-txt"><b>${p.name}</b><small>${[p.usualStart ? `In ${p.usualStart}` : "", p.payrollId ? `Rippling #${p.payrollId}` : "", "rate" in p ? (p.rate ? `$${p.rate.toFixed(2)}/h` : "no pay rate yet") : "", p.status === "active" ? "" : "Former"].filter(Boolean).join(" · ")}</small></span>
           ${raw(canEdit ? "</button>" : "</div>")}
           <ol class="tchips" aria-label="Trainings in order">
             ${p.trainings.length ? p.trainings.map((t, i) => raw(html`<li class="tchip ${focus === t ? "hit" : ""} ${i === 0 ? "first" : ""}" title="${tName(t)?.name || t}"><i>${i + 1}</i>${tName(t)?.short || t}</li>`))
@@ -57,6 +59,7 @@ export async function render(main, ctx) {
 
     main.querySelector("#former")?.addEventListener("change", e => { showFormer = e.target.checked; draw(); });
     main.querySelector("#addPerson")?.addEventListener("click", () => personDialog(null, reload));
+    main.querySelector("#fromHistory")?.addEventListener("click", () => historyDialog(data, reload));
     main.querySelector("#clearFocus")?.addEventListener("click", () => { focus = null; draw(); });
     main.querySelectorAll("[data-focus]").forEach(b => b.addEventListener("click", () => { focus = focus === b.dataset.focus ? null : b.dataset.focus; draw(); main.querySelector(`[data-focus="${b.dataset.focus}"]`)?.focus(); }));
     main.querySelectorAll("[data-edit]").forEach(b => b.addEventListener("click", () => personDialog(data.people.find(p => p.id === b.dataset.edit), reload)));
@@ -64,6 +67,32 @@ export async function render(main, ctx) {
   }
   async function reload() { Object.assign(data, await api("/team")); draw(); }
   draw();
+}
+
+// "Order from history": where each person actually worked most comes first (from saved plans and the time clock).
+async function historyDialog(data, done) {
+  const H = await api("/team/history");
+  const list = rankingSuggestions(data, H.trainingOf, H);
+  const short = id => data.trainings.find(t => t.id === id)?.short || id;
+  const days = new Set(H.planned.map(p => p.day)).size;
+  if (!list.length) {
+    toast(days < 5 ? `Not enough saved plans yet (${days} day${days === 1 ? "" : "s"}). This needs at least 3 worked days per person — try again in a week or two.` : "Nothing to change: the training order already matches where people have worked.", "ok", 9000);
+    return;
+  }
+  openDialog({
+    title: "Training order from history", submitLabel: "Apply checked",
+    body: html`<p class="dlg-lead">From ${days} days of plans over the last 90 days, counting only days the person clocked in. Where someone works most becomes 1st; trainings they have but haven't worked move to the end. Untick anyone you don't want changed.</p>
+      <div class="aa-list">${list.map((x, i) => raw(html`<label class="aa"><input type="checkbox" name="s" value="${i}" checked>
+        <span><b>${x.name}</b> <small>${x.days} days</small><small class="ord">${x.from.length ? x.from.map(short).join(" › ") : "none"} <b>→</b> ${x.to.map(t => `${short(t)}${x.share[t] ? ` (${Math.round(x.share[t] * 100)}%)` : ""}`).join(" › ")}${x.added.length ? ` · adds ${x.added.map(short).join(", ")}` : ""}</small></span></label>`))}</div>`,
+    onOpen: (form, dlg) => dlg.classList.add("wide"),
+    async onSubmit(form) {
+      const pick = [...form.querySelectorAll("[name=s]:checked")].map(x => list[+x.value]);
+      if (!pick.length) throw new Error("Check at least one person.");
+      for (const x of pick) await api(`/team/${x.personId}/trainings`, { method: "PUT", body: { trainings: x.to } });
+      toast(`Updated the training order for ${pick.length} ${pick.length === 1 ? "person" : "people"}.`);
+      done();
+    },
+  });
 }
 
 // Ordered list editor: move up/down, remove, add from what's left.
