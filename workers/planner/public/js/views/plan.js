@@ -314,31 +314,30 @@ export async function render(main, ctx) {
       <div class="v-kpis">${v.kpis.map(k => raw(html`<div class="v-k"><b class="${k.cls || ""}">${k.v}</b><span>${k.l}</span></div>`))}</div>`;
   }
 
-  // today: "185 done in 6.2 hrs" and "120 left · ETC 2:35 PM" (hours from the plan's station times so far; ETC from the re-plan from now)
+  // today: "185 in 6.2 hrs" (green) and "120 by 2:35" (yellow; red when it runs into overtime). Neal, Oct 13
+  function hmShort(h) { const m = Math.round(h * 60) % 1440, H = Math.floor(m / 60) % 12 || 12; return `${H}:${String(m % 60).padStart(2, "0")}`; }
+  function doneLine(n, hrs) { return html`<span class="t-sub t-done">${fmtN(n)}${hrs >= 0.05 ? ` in ${hrs.toFixed(1)} hrs` : " done"}</span>`; }
+  function leftLine(n, etc, ot) { return n > 0 ? html`<span class="t-sub t-left ${ot ? "ot" : ""}">${fmtN(n)}${etc != null ? ` by ${hmShort(etc)}` : " left"}</span>` : ""; }
   function tileLive(k, done, L) {
-    const c = L && L.on && L.cats && L.cats[k]; if (!c) return "";
-    const hrs = c.hrsSoFar >= 0.05 ? ` in ${c.hrsSoFar.toFixed(1)} hrs` : "";
-    const left = Math.round(c.left);
-    const etc = left > 0 && c.etc != null ? ` · ETC ${hm(c.etc)}` : "";
-    return { done: hrs, left: left > 0 ? `<span class="t-sub t-left">${fmtN(left)} left${etc}</span>` : "" };
+    const c = L && L.on && L.cats && L.cats[k]; if (!c) return null;
+    return doneLine(done, c.hrsSoFar) + leftLine(Math.round(c.left), c.etc, c.ot);
   }
-  function totalHrs(L) { if (!L?.on || !L.cats) return ""; const h = CATS.reduce((t, k) => t + L.cats[k].hrsSoFar, 0); return h >= 0.05 ? ` in ${h.toFixed(1)} hrs` : ""; }
-  function totalLeft(L) {
-    if (!L?.on || !L.fromNow) return ""; const f = L.fromNow, n = Math.round(f.left); if (n <= 0) return "";
-    return html`<span class="t-sub t-left">${fmtN(n)} left${f.etc != null ? ` · ETC ${hm(f.etc)}` : ""}</span>`;
+  function totalLive(D, L) {
+    if (!L?.on || !L.cats) return null;
+    return doneLine(D.doneTotal, CATS.reduce((t, k) => t + L.cats[k].hrsSoFar, 0)) + leftLine(Math.round(L.fromNow.left), L.fromNow.etc, L.fromNow.ot);
   }
   function drawTiles(X, L) {
     const P = X.P, D = P.dp.D, el = document.getElementById("pl-tiles");
     el.innerHTML = CATS.map(k => {
       const over = st.overrides[k] != null, smrt = P.dp.base[k], v = P.q[k];
       const done = P.isToday ? D.done[k] : 0;
-      const lv = P.isToday ? tileLive(k, done, L) : "";
-      const sub = over ? `typed · SMRT says ${fmtN(smrt)}` : P.isToday ? `${fmtN(done)} done${lv.done || ""}` : P.dp.expected && D.expected[k] > D.q[k] ? `expected · ${fmtN(D.q[k])} in so far` : "due";
-      return html`<${can ? "button" : "div"} class="tile ${v ? "" : "zero"} ${over ? "typed" : ""}" ${can ? raw(`type="button" data-cat="${k}" title="Change the number to plan with.${P.isToday ? " Hours: time the plan has had people on this work so far today. ETC: when it should be finished, re-planned from now with who's here." : ""}"`) : ""}>
-        <span class="t-label"><i class="sw" style="--c:${CAT_COLOR[k]}"></i>${TILE[k]}</span><b class="t-num">${fmtN(v)}</b><span class="t-sub">${sub}</span>${raw(lv && lv.left || "")}
+      const lv = P.isToday && !over ? tileLive(k, done, L) : null;
+      const sub = over ? `typed · SMRT says ${fmtN(smrt)}` : P.isToday ? `${fmtN(done)} done` : P.dp.expected && D.expected[k] > D.q[k] ? `expected · ${fmtN(D.q[k])} in so far` : "due";
+      return html`<${can ? "button" : "div"} class="tile ${v ? "" : "zero"} ${over ? "typed" : ""}" ${can ? raw(`type="button" data-cat="${k}" title="Change the number to plan with.${P.isToday ? " Green: done so far, and the hours the plan has had people on it. Yellow: left, and when it should be finished (red if that runs into overtime), re-planned from now with who's here." : ""}"`) : ""}>
+        <span class="t-label"><i class="sw" style="--c:${CAT_COLOR[k]}"></i>${TILE[k]}</span><b class="t-num">${fmtN(v)}</b>${raw(lv || html`<span class="t-sub">${sub}</span>`)}
         ${P.isToday && v ? raw(html`<span class="bar" aria-hidden="true"><i style="width:${Math.min(100, Math.round(done / v * 100))}%"></i></span>`) : ""}</${can ? "button" : "div"}>`;
     }).join("") + html`<div class="tile total"><span class="t-label">All pieces</span><b class="t-num">${P.expected ? "~" : ""}${fmtN(CATS.reduce((t, k) => t + P.q[k], 0))}</b>
-      <span class="t-sub">${P.isToday ? `${fmtN(D.doneTotal)} done${totalHrs(L)} · ${fmtN(D.orders)} orders` : `${fmtN(D.orders)} orders so far`}</span>${raw(P.isToday ? totalLeft(L) : "")}</div>`;
+      ${raw((P.isToday && totalLive(D, L)) || html`<span class="t-sub">${P.isToday ? `${fmtN(D.doneTotal)} done · ` : ""}${fmtN(D.orders)} orders${P.isToday ? "" : " so far"}</span>`)}</div>`;
     el.querySelectorAll("[data-cat]").forEach(b => b.addEventListener("click", () => countDialog(b.dataset.cat)));
   }
   function countDialog(k) {

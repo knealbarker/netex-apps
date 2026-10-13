@@ -530,7 +530,7 @@ export function liveSuggestions(X, hidden = new Set()) {
   list.sort((a, b) => order[a.cls] - order[b.cls]);
   // per kind of work: planned hours so far (today's plan, up to now) and when the re-plan from now finishes it
   const cats = {};
-  for (const k of CATS) cats[k] = { hrsSoFar: 0, left: q2[k], etc: null, short: R2.empty ? 0 : (R2.P.short[k] || 0) };
+  for (const k of CATS) cats[k] = { hrsSoFar: 0, left: q2[k], etc: null, ot: false, short: R2.empty ? 0 : (R2.P.short[k] || 0) };
   if (X.R && !X.R.empty) for (const rw of X.R.rows) if (rw.staffed) for (const sg of rw.segs) {
     const k = catOfStation(E, sg.stn); if (k && sg.from < now) cats[k].hrsSoFar += Math.min(sg.to, now) - sg.from;
   }
@@ -538,14 +538,15 @@ export function liveSuggestions(X, hidden = new Set()) {
   if (!R2.empty) for (const rw of R2.rows) if (rw.staffed) for (const sg of rw.segs) {
     const k = catOfStation(E2, sg.stn); if (!k || !(sg.pcs > 0)) continue;
     cats[k].etc = Math.max(cats[k].etc ?? 0, sg.to); pcsH[k].pcs += sg.pcs; pcsH[k].h += sg.to - sg.from;
+    if (sg.to > rw.x.schedEnd + 0.02) cats[k].ot = true;
   }
   // more than fits in the shifts: we always finish, so the ETC runs on at the same pace (Neal, Oct 13)
   for (const k of CATS) {
     const c = cats[k]; if (!(c.short > 0.5)) continue;
     const rate = pcsH[k].h > 0 ? pcsH[k].pcs / pcsH[k].h : +(P.s.rates?.[k === "slt" ? "sltSolo" : k]) || 0;
-    if (rate > 0) c.etc = Math.max(c.etc ?? now, now) + c.short / rate;
+    c.ot = true; if (rate > 0) c.etc = Math.max(c.etc ?? now, now) + c.short / rate;
   }
   const lastEtc = Math.max(R2.empty ? 0 : R2.end, ...CATS.map(k => cats[k].etc ?? 0));
-  return { on: true, list, cats, fromNow: { left: leftTotal, end: R2.empty ? null : R2.end, etc: lastEtc || null, short, people: onCrewNow.size, noShow: noShow.length } };
+  return { on: true, list, cats, fromNow: { left: leftTotal, end: R2.empty ? null : R2.end, etc: lastEtc || null, ot: CATS.some(k => cats[k].ot), short, people: onCrewNow.size, noShow: noShow.length } };
 }
 const posLabel = (E, code) => (E.POS.find(p => p.id === code) || {}).label || code;
