@@ -534,9 +534,18 @@ export function liveSuggestions(X, hidden = new Set()) {
   if (X.R && !X.R.empty) for (const rw of X.R.rows) if (rw.staffed) for (const sg of rw.segs) {
     const k = catOfStation(E, sg.stn); if (k && sg.from < now) cats[k].hrsSoFar += Math.min(sg.to, now) - sg.from;
   }
+  const pcsH = Object.fromEntries(CATS.map(k => [k, { pcs: 0, h: 0 }]));
   if (!R2.empty) for (const rw of R2.rows) if (rw.staffed) for (const sg of rw.segs) {
-    const k = catOfStation(E2, sg.stn); if (k && sg.pcs > 0) cats[k].etc = Math.max(cats[k].etc ?? 0, sg.to);
+    const k = catOfStation(E2, sg.stn); if (!k || !(sg.pcs > 0)) continue;
+    cats[k].etc = Math.max(cats[k].etc ?? 0, sg.to); pcsH[k].pcs += sg.pcs; pcsH[k].h += sg.to - sg.from;
   }
-  return { on: true, list, cats, fromNow: { left: leftTotal, end: R2.empty ? null : R2.end, short, people: onCrewNow.size, noShow: noShow.length } };
+  // more than fits in the shifts: we always finish, so the ETC runs on at the same pace (Neal, Oct 13)
+  for (const k of CATS) {
+    const c = cats[k]; if (!(c.short > 0.5)) continue;
+    const rate = pcsH[k].h > 0 ? pcsH[k].pcs / pcsH[k].h : +(P.s.rates?.[k === "slt" ? "sltSolo" : k]) || 0;
+    if (rate > 0) c.etc = Math.max(c.etc ?? now, now) + c.short / rate;
+  }
+  const lastEtc = Math.max(R2.empty ? 0 : R2.end, ...CATS.map(k => cats[k].etc ?? 0));
+  return { on: true, list, cats, fromNow: { left: leftTotal, end: R2.empty ? null : R2.end, etc: lastEtc || null, short, people: onCrewNow.size, noShow: noShow.length } };
 }
 const posLabel = (E, code) => (E.POS.find(p => p.id === code) || {}).label || code;

@@ -319,13 +319,13 @@ export async function render(main, ctx) {
     const c = L && L.on && L.cats && L.cats[k]; if (!c) return "";
     const hrs = c.hrsSoFar >= 0.05 ? ` in ${c.hrsSoFar.toFixed(1)} hrs` : "";
     const left = Math.round(c.left);
-    const etc = left <= 0 ? "" : c.short > 0.5 ? ` · <span class="bad-txt">won't finish</span>` : c.etc != null ? ` · ETC ${hm(c.etc)}` : "";
+    const etc = left > 0 && c.etc != null ? ` · ETC ${hm(c.etc)}` : "";
     return { done: hrs, left: left > 0 ? `<span class="t-sub t-left">${fmtN(left)} left${etc}</span>` : "" };
   }
   function totalHrs(L) { if (!L?.on || !L.cats) return ""; const h = CATS.reduce((t, k) => t + L.cats[k].hrsSoFar, 0); return h >= 0.05 ? ` in ${h.toFixed(1)} hrs` : ""; }
   function totalLeft(L) {
     if (!L?.on || !L.fromNow) return ""; const f = L.fromNow, n = Math.round(f.left); if (n <= 0) return "";
-    return html`<span class="t-sub t-left">${fmtN(n)} left${f.short > 0.5 ? raw(' · <span class="bad-txt">won\'t all finish</span>') : f.end != null ? ` · ETC ${hm(f.end)}` : ""}</span>`;
+    return html`<span class="t-sub t-left">${fmtN(n)} left${f.etc != null ? ` · ETC ${hm(f.etc)}` : ""}</span>`;
   }
   function drawTiles(X, L) {
     const P = X.P, D = P.dp.D, el = document.getElementById("pl-tiles");
@@ -333,7 +333,7 @@ export async function render(main, ctx) {
       const over = st.overrides[k] != null, smrt = P.dp.base[k], v = P.q[k];
       const done = P.isToday ? D.done[k] : 0;
       const lv = P.isToday ? tileLive(k, done, L) : "";
-      const sub = over ? `typed · SMRT says ${fmtN(smrt)}` : P.isToday ? `${fmtN(done)} done${lv.done || ""}${P.dp.withOverdue && st.V.overdue.q[k] ? ` · incl. ${fmtN(st.V.overdue.q[k])} overdue` : ""}` : P.dp.expected && D.expected[k] > D.q[k] ? `expected · ${fmtN(D.q[k])} in so far` : "due";
+      const sub = over ? `typed · SMRT says ${fmtN(smrt)}` : P.isToday ? `${fmtN(done)} done${lv.done || ""}` : P.dp.expected && D.expected[k] > D.q[k] ? `expected · ${fmtN(D.q[k])} in so far` : "due";
       return html`<${can ? "button" : "div"} class="tile ${v ? "" : "zero"} ${over ? "typed" : ""}" ${can ? raw(`type="button" data-cat="${k}" title="Change the number to plan with.${P.isToday ? " Hours: time the plan has had people on this work so far today. ETC: when it should be finished, re-planned from now with who's here." : ""}"`) : ""}>
         <span class="t-label"><i class="sw" style="--c:${CAT_COLOR[k]}"></i>${TILE[k]}</span><b class="t-num">${fmtN(v)}</b><span class="t-sub">${sub}</span>${raw(lv && lv.left || "")}
         ${P.isToday && v ? raw(html`<span class="bar" aria-hidden="true"><i style="width:${Math.min(100, Math.round(done / v * 100))}%"></i></span>`) : ""}</${can ? "button" : "div"}>`;
