@@ -844,7 +844,9 @@ button.wk { cursor: pointer; } button.wk:hover { background: var(--hover); }
 .pv-foot { position: fixed; left: 0; right: 0; bottom: 0; z-index: 20; display: flex; gap: 10px; align-items: center; justify-content: flex-end; padding: 10px 16px calc(10px + env(safe-area-inset-bottom)); background: var(--bg2); border-top: 1px solid var(--line); }
 .pv-foot .btn { min-height: 48px; padding: 0 18px; font-size: 15px; }
 @media (max-width: 640px) {
-  .pv-foot .btn { flex: 1; }
+  .pv-foot { gap: 8px; padding-left: 12px; padding-right: 12px; }
+  .pv-foot .btn { flex: 1; padding: 0 10px; font-size: 14px; }
+  .pv-foot .help-i { display: none; }
   .pv-tools .pv-tool span { display: none; }
   .pv-tool svg { width: 20px; height: 20px; }
   .pv-head .seg { width: 100%; } .pv-head .seg button { flex: 1; }

@@ -405,7 +405,7 @@ export function clockInOf(P) {
 
 // ---------------------------------------------------------------- publishing
 export function sigOf(P) {
-  const crew = Object.entries(P.crew).filter(([, c]) => c.emp).sort(([a], [b]) => a.localeCompare(b)).map(([k, c]) => [k, c.emp, c.start, +c.hrs, c.stop || ""]);
+  const crew = Object.entries(P.crew).filter(([, c]) => c.emp).sort(([a], [b]) => a.localeCompare(b)).map(([k, c]) => [k, c.emp, c.start, +c.hrs, c.stop || "", ...(c.moves && c.moves.length ? [c.moves.map(m => m.at + ">" + m.to).join(",")] : [])]);
   const s = JSON.stringify([crew, CATS.map(k => Math.round(P.q[k] || 0))]);
   let h = 2166136261; for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); }
   return (h >>> 0).toString(36);
