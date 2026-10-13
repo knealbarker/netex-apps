@@ -250,7 +250,12 @@ await t("during the day: no-show, clocked in but not planned, then send-home whe
   // someone who clocked in and went home isn't suggested as "clocked in but not on the plan"
   const goneP = P0({ crew, isToday: true, now: 15.5, clock: [...clock.slice(0, 2), { personId: "f", clockIn: `${DAY}T06:30:00`, clockOut: `${DAY}T14:00:00` }] });
   ok(!M.liveSuggestions(M.evaluate(goneP)).list.some(x => x.key === "unplanned:f"), "Fran went home: no suggestion");
-  eq(M.clockState(goneP, "f", 15.5), "gone"); eq(M.clockState(goneP, "f", 14.5), "break"); eq(M.clockState(goneP, "a", 15.5), "in");
+  eq(M.clockState(goneP, "f", 15.5), "gone"); eq(M.clockState(goneP, "a", 15.5), "in");
+  // out at 2:00: a break only if that's around their planned break, and only for an hour
+  eq(M.clockState(goneP, "f", 14.5), "gone", "no break planned then");
+  eq(M.clockState(goneP, "f", 14.5, { s: 13.75, e: 14.25 }), "break");
+  eq(M.clockState(goneP, "f", 15.25, { s: 13.75, e: 14.25 }), "gone", "break ran over an hour");
+  ok(Object.keys(M.breaksOf(M.evaluate(goneP).R)).length > 0, "planned breaks are known per person");
   // after every planned shift has ended with pieces still left: an ETC past now, and it's overtime
   const Lx = M.liveSuggestions(M.evaluate(P0({ crew, isToday: true, now: 16, clock })));
   ok(Lx.fromNow.left > 0 && Lx.fromNow.etc > 16 && Lx.fromNow.ot, JSON.stringify(Lx.fromNow));

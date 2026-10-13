@@ -370,9 +370,11 @@ export async function render(main, ctx) {
       ${other.length ? raw(html`<optgroup label="Not trained here">${other.map(e => raw(opt(e, 0)))}</optgroup>`) : ""}`;
   }
   // under the person's name: what the time clock says, never the plan (the plan's start is in its own column)
-  function attLine(P, c) {
-    const a = c.emp ? M.attendanceOf(P, c.emp, c.start) : null;
+  function attLine(P, c, brk) {
+    const a = c.emp ? M.attendanceOf(P, c.emp, c.start, brk) : null;
     if (!a) return "";
+    if (a.state === "gone") return html`<small class="muted">Clocked out ${fmtClock(a.outAt)} · gone for the day</small>`;
+    if (a.state === "break") return html`<small class="warn-txt">On break since ${fmtClock(a.outAt)}</small>`;
     if (a.state === "in") return html`<small class="${a.lateMin ? "warn-txt" : "good-txt"}">Clocked in ${fmtClock(a.inAt)}${a.lateMin ? ` · ${a.lateMin} min late` : ""}</small>`;
     if (a.state === "missing") return html`<small class="bad-txt">Not clocked in · due ${fmtClock(a.due)}</small>`;
     return a.due > P.now ? html`<small class="muted">Not in yet · starts ${fmtClock(a.due)}</small>` : html`<small class="muted">Not clocked in yet</small>`;
@@ -380,14 +382,15 @@ export async function render(main, ctx) {
   function drawCrew(X) {
     const P = X.P, E = X.E, el = document.getElementById("pl-crew");
     const keep = document.activeElement && el.contains(document.activeElement) ? document.activeElement.id : null;
-    const clock = M.clockInOf(P);
+    const clock = M.clockInOf(P), brks = M.breaksOf(X.R);
     const row = (p, isOps) => {
       const c = st.crew[p.id], dis = can ? "" : "disabled";
+      const cs = c.emp && P.isToday && P.now != null ? M.clockState(P, c.emp, P.now, brks[c.emp]) : null;
       const rk = c.emp ? E.rankOf(E.empById(c.emp), p.id) : 0;
-      return html`<div class="cr-row ${c.emp ? "" : "vacant"}" data-code="${p.id}">
+      return html`<div class="cr-row ${c.emp ? "" : "vacant"} ${cs === "gone" ? "gone" : ""}" data-code="${p.id}">
         <div class="cr-st"><i class="sw" style="--c:${COLOR[isOps ? "ops" : p.type]}"></i><span><b>${p.label}</b><small>${TYPE_DESC[isOps ? "ops" : p.type] || ""}</small></span></div>
         <label class="cr-who"><span class="sr">Person on ${p.label}</span><select class="input" id="who-${p.id}" data-f="emp" ${dis}>${raw(personOptions(P, E, p.id))}</select>
-          ${c.emp && !rk ? raw('<small class="warn-txt">Not trained here</small>') : raw(attLine(P, c))}</label>
+          ${c.emp && !rk ? raw('<small class="warn-txt">Not trained here</small>') : raw(attLine(P, c, brks[c.emp]))}</label>
         <label class="cr-f"><span>Planned start</span><input class="input" type="time" step="300" id="start-${p.id}" data-f="start" value="${c.start}" ${c.emp ? "" : "disabled"} ${dis}></label>
         <label class="cr-f"><span>Hours</span><input class="input" type="number" min="0" max="16" step="0.25" id="hrs-${p.id}" data-f="hrs" value="${c.hrs}" ${c.emp ? "" : "disabled"} ${dis}></label>
         <label class="cr-f"><span>Hard stop</span><input class="input" type="time" step="300" id="stop-${p.id}" data-f="stop" value="${c.stop || ""}" ${c.emp ? "" : "disabled"} ${dis}></label>

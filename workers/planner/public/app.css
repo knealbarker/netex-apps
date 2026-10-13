@@ -767,3 +767,6 @@ dialog.help-dlg .dlg-body p { margin: 0 0 10px; line-height: 1.5; }
 .wv-left { display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: 13px; }
 .wl-cat { display: inline-flex; align-items: center; gap: 5px; }
 .wl-cat i { width: 8px; height: 8px; border-radius: 2px; }
+
+/* clocked out for the day: shown where they were, but no longer working (Neal, Oct 13) */
+.cr-row.gone { opacity: .5; }

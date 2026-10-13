@@ -341,23 +341,46 @@ export function autoAssign(P, E, ids) {
  *   { state: "in", inAt, due, lateMin }      clocked in (lateMin > 0 when that was 10+ minutes after the planned start)
  *   { state: "missing", due }                 15+ minutes past the planned start (or late-arrival time) with no punch
  *   { state: "upcoming", due }                not in yet, and the planned start isn't 15 minutes past
+ *   { state: "break" | "gone", inAt, outAt }  clocked out (see clockState)
  */
 export const GRACE_H = 0.25, LATE_H = 10 / 60;
-export function attendanceOf(P, personId, start) {
+export function attendanceOf(P, personId, start, brk) {
   if (!P.isToday || !personId || P.now == null) return null;
   const clock = clockInOf(P), late = lateOf(P);
   const due = Math.max(parseTime(start) ?? 0, parseTime(late[personId]) ?? 0);
-  if (clock[personId]) { const inAt = parseTime(clock[personId]), m = Math.round((inAt - due) * 60); return { state: "in", inAt, due, lateMin: inAt - due >= LATE_H - 1e-9 ? m : 0 }; }
+  if (clock[personId]) {
+    const inAt = parseTime(clock[personId]), m = Math.round((inAt - due) * 60), lateMin = inAt - due >= LATE_H - 1e-9 ? m : 0;
+    const cs = clockState(P, personId, P.now, brk);
+    if (cs === "gone" || cs === "break") return { state: cs, inAt, due, lateMin, outAt: lastOutOf(P, personId) };
+    return { state: "in", inAt, due, lateMin };
+  }
   if (!(P.clock || []).length) return null;    // no time clock report today: can't tell
   return P.now >= due + GRACE_H ? { state: "missing", due } : { state: "upcoming", due };
 }
 /** Today's first clock-in per person (HH:MM, local), from Rippling. */
-/** Today's Rippling punches for one person at hour `now`: "in" (an open punch), "break" (out under an hour), "gone" (out longer), or null (no punches). */
-export function clockState(P, id, now) {
+/**
+ * Today's Rippling punches for one person at hour `now` (Neal, Oct 13):
+ *   "in"    an open punch
+ *   "break" clocked out around their planned break (brk = {s, e}, ±30 min) and not yet an hour ago
+ *   "gone"  clocked out at any other time, or a break that ran over an hour: gone for the day (a new punch brings them back)
+ *   null    no punches today
+ */
+export function clockState(P, id, now, brk) {
   const rows = (P.clock || []).filter(c => c.personId === id); if (!rows.length) return null;
   if (rows.some(c => !c.clockOut)) return "in";
-  const lastOut = Math.max(...rows.map(c => { const t = String(c.clockOut).slice(11, 16).split(":"); return +t[0] + (+t[1] || 0) / 60; }));
-  return now - lastOut > 1 ? "gone" : "break";
+  const L = lastOutOf(P, id), atBreak = brk && brk.s != null && L >= brk.s - 0.5 && L <= (brk.e ?? brk.s) + 0.5;
+  return atBreak && now - L <= 1 ? "break" : "gone";
+}
+/** Hour of a person's latest clock-out today, or null. */
+export function lastOutOf(P, id) {
+  const outs = (P.clock || []).filter(c => c.personId === id && c.clockOut).map(c => { const t = String(c.clockOut).slice(11, 16).split(":"); return +t[0] + (+t[1] || 0) / 60; });
+  return outs.length ? Math.max(...outs) : null;
+}
+/** Each person's planned break window today, from a simulated plan: { personId: {s, e} }. */
+export function breaksOf(R) {
+  const out = {}; if (!R || R.empty) return out;
+  for (const r of R.rows) if (r.staffed && r.brkS != null && r.emp) out[r.emp.empId] = { s: r.brkS, e: r.brkS + (r.x.b || 0) };
+  return out;
 }
 export function clockInOf(P) {
   const out = {};
@@ -463,7 +486,7 @@ export function liveSuggestions(X, hidden = new Set()) {
   const at5 = h => hhmm(Math.ceil(h * 12) / 12);
 
   // the crew from now on: remaining hours; people who should be in by now but haven't clocked in are left out
-  const crew2 = {}, noShow = [];
+  const crew2 = {}, noShow = [], brks = breaksOf(X.R);
   for (const [code, c] of Object.entries(P.crew)) {
     crew2[code] = { ...c };
     if (!c.emp) continue;
@@ -472,12 +495,14 @@ export function liveSuggestions(X, hidden = new Set()) {
     if (haveClock && !clock[c.emp] && now >= due + GRACE_H) { noShow.push({ code, c, due }); crew2[code] = { ...c, emp: "" }; continue; }
     // Rippling decides who's really here: clocked out for good (no open punch for over an hour) = gone;
     // still on the clock after their planned hours = keeps working (re-checked every minute)
-    const st = clockState(P, c.emp, now);
+    const st = clockState(P, c.emp, now, brks[c.emp]);
     if (haveClock && st === "gone") { crew2[code] = { ...c, emp: "" }; continue; }
     const worked = Math.max(0, now - start); let rem = Math.max(0, (+c.hrs || 0) - worked);
     if (haveClock && st === "in" && rem <= 0.05) rem = 0.5;
     if (rem <= 0.05) { crew2[code] = { ...c, emp: "" }; continue; }
-    crew2[code] = { ...c, start: hhmm(Math.max(start, now)), hrs: Math.round(rem * 12) / 12 };
+    // on break: no work until they're expected back
+    const from = st === "break" ? Math.max(now, lastOutOf(P, c.emp) + Math.max(0.25, (brks[c.emp]?.e ?? 0) - (brks[c.emp]?.s ?? 0) || 0.5)) : Math.max(start, now);
+    crew2[code] = { ...c, start: hhmm(Math.min(23.9, from)), hrs: Math.round(rem * 12) / 12 };
   }
   // nobody already on today's crew (finished, not in yet, out) is offered again as "free"
   const notFree = Object.values(P.crew).map(c => c.emp).filter(id => id && !Object.values(crew2).some(c => c.emp === id));
@@ -501,7 +526,7 @@ export function liveSuggestions(X, hidden = new Set()) {
   const need = E2.stationNeed(q2);
   for (const [id, t] of Object.entries(clock)) {
     if (onCrewNow.has(id) || out.has(id) || Object.values(P.crew).some(c => c.emp === id)) continue;
-    if (clockState(P, id, now) !== "in") continue; // only people on the clock right now (not someone who went home)
+    if (clockState(P, id, now, brks[id]) !== "in") continue; // only people on the clock right now (not someone who went home)
     const e = P.people.find(x => x.id === id); if (!e) continue;
     const st = E.POS.filter(p => !P.crew[p.id].emp && E.rankOf(e, p.id)).sort((a, b) => (need[b.id] || 0) - (need[a.id] || 0) || E.rankOf(e, a.id) - E.rankOf(e, b.id))[0];
     add({ key: `unplanned:${id}`, cls: "w", title: `${e.name} clocked in at ${hm(parseTime(t))} but isn't on the plan`,
