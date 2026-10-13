@@ -18,13 +18,15 @@ const GROUPS = [
     ["staggerBreaks", "Stagger breaks", "bool", "So a station is never empty for everyone's break at once."],
     ["spread", "Max finish spread", "int", "How far apart people's finish times may be before the plan rebalances.", { min: 0, max: 240, unit: "min" }],
   ] },
-  { id: "staffing", title: "Overtime & moves", lead: "What the plan may do when work runs long or short.", fields: [
+  { id: "staffing", title: "Overtime & moves", lead: "What the plan may do when work runs long or short. Regular time is always used before overtime. Tablecloths are pressed on any open DCT or DCB press.", fields: [
     ["allowOT", "Allow overtime", "bool", ""],
     ["otMax", "Max overtime per person", "num", "", { step: 0.25, min: 0, max: 8, unit: "h" }],
     ["otMult", "Overtime pay multiplier", "num", "", { step: 0.05, min: 1, max: 3, unit: "×" }],
     ["allowMoves", "Move people to other stations", "bool", "When their station's work is done, move them to the busiest station they're trained on."],
     ["allowClockOut", "Clock out when no work is left", "bool", ""],
     ["minPaid", "Minimum paid hours before clock-out", "num", "", { step: 0.25, min: 0, max: 12, unit: "h" }],
+    ["comfMax", "People on comforters at once", "num", "Comforters are folded and packaged on one table.", { step: 1, min: 1, max: 4, unit: "people" }],
+    ["comfExtra", "Each extra person on comforters adds", "num", "Of one person's speed: 20% means two people do 1.2× as many.", { step: 5, min: 0, max: 100, unit: "%" }],
   ] },
   { id: "money", title: "Labor & prices", lead: "Used for labor as a share of revenue. Prices are updated from SMRT's averages when SMRT is connected.", fields: [
     ["payAvg", "Average hourly pay", "num", "", { step: 0.25, min: 0, max: 200, unit: "$/h" }],

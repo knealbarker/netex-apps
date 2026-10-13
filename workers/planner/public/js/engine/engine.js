@@ -127,6 +127,11 @@ export function createEngine(S) {
   // Minute-by-minute simulation of the day. Everyone starts on their assigned station. When a station type has no work
   // left, its person moves to the busiest station they're trained on that's free (or comforters). When nothing they can
   // do is left, they clock out.
+  //  - Regular time before overtime (Neal, Oct 13): people still in their regular hours pick work first; someone already
+  //    in overtime only keeps working what no one on regular time can take over.
+  //  - Tablecloths are pressed on any DCT or DCB press nobody is using, so several trained people can do them at once
+  //    (as many as there are open presses). Comforters are folded on one table: up to s.comfMax people, each extra
+  //    person adding s.comfExtra (a share of one person's speed).
   function simulate(q) {
     const I = stationInfo(), r = s.rates, dt = 1 / 60;
     const A = CATS.reduce((t, k) => t + (s.asmInclude[k] ? (q[k] || 0) : 0), 0);
@@ -151,6 +156,10 @@ export function createEngine(S) {
       if (t < x.schedEnd - EPS) return true;
       return x.ot > 0 && t < x.schedEnd + x.ot - EPS;
     };
+    // tablecloths and comforters take more than one person; the rest are one person per station
+    const PRESSES = STATIONS.filter(x => x.type === "dct" || x.type === "dcb").map(x => x.id);
+    const COMF_MAX = Math.max(1, Math.round(+s.comfMax || 2)), COMF_EXTRA = Math.max(0, +(s.comfExtra ?? 0.2));
+    const multi = id => (HAS_TC && TYPE_OF[id] === "tc") || (HAS_COMF && TYPE_OF[id] === "comf");
     const has = t => { const k = POOL_OF(t); return k === "dcb" && !HAS_TC ? (avl("dcb") > 1e-4 || avl("tc") > 1e-4) : avl(k) > 1e-4; };
     const remH = t => { const k = POOL_OF(t); return k === "slt" ? pool.slt / r.sltSolo : k === "dcb" ? pool.dcb / r.dcb + (HAS_TC ? 0 : pool.tc / r.tc) : pool[k] / perHr[k]; };
     const tStart = Math.min(...emps.map(e => e.x.start)), tMax = Math.max(...emps.map(e => e.x.schedEnd + e.x.ot)) + dt;
@@ -168,50 +177,71 @@ export function createEngine(S) {
       const left = Object.keys(pool).some(k => pool[k] > 1e-4);
       if (!left) break;
       tNow = t;
-      const occ = {}, asg = new Map();
-      const av = emps.filter(e => avail(e, t));
-      if (!av.length) { t += dt; continue; }
-      const okAt = (e, id) => !occ[id] && can(e, id) && under(e, id) && has(TYPE_OF[id]) && (TYPE_OF[id] !== "slt2" || occ.slt1);
-      // 1) everyone stays on their current station (station owners first, helper station last)
-      av.sort((a, b) => ((a.pos === "slt2") - (b.pos === "slt2")) || ((a.home === "slt2") - (b.home === "slt2")));
-      for (const e of av) { if (!e.swapped && okAt(e, e.pos)) { occ[e.pos] = e; asg.set(e, e.pos); e.home = e.pos; } }
-      for (const e of av.slice().sort((a, b) => (a.home === "slt2") - (b.home === "slt2"))) { if (asg.has(e)) continue; const h = e.home; if (h && okAt(e, h)) { occ[h] = e; asg.set(e, h); } }
+      const occ = {}, asg = new Map(), many = {};   // many: how many people are on tablecloths / comforters this minute
+      const avAll = emps.filter(e => avail(e, t));
+      if (!avAll.length) { t += dt; continue; }
+      // a press is free when no one is on it and it isn't being used for tablecloths
+      const pressFree = () => PRESSES.filter(id => !occ[id]).length - (many.tc || 0) > 0;
+      const room = id => {
+        const ty = TYPE_OF[id];
+        if (multi(id)) return ty === "tc" ? pressFree() : (many.comf || 0) < COMF_MAX;
+        if (occ[id]) return false;
+        return !(HAS_TC && (ty === "dct" || ty === "dcb")) || pressFree();
+      };
+      const take = (e, id) => { if (multi(id)) many[TYPE_OF[id]] = (many[TYPE_OF[id]] || 0) + 1; else occ[id] = e; asg.set(e, id); };
+      const okAt = (e, id) => room(id) && can(e, id) && under(e, id) && has(TYPE_OF[id]) && (TYPE_OF[id] !== "slt2" || occ.slt1);
+      const inOT = e => t >= e.x.schedEnd - EPS;
+      const reg = avAll.filter(e => !inOT(e)), late = avAll.filter(inOT);
+      // 1) everyone on regular time stays on their current station (station owners first, then tablecloths/comforters,
+      //    the helper station last)
+      const order = (a, b) => ((a.pos === "slt2") - (b.pos === "slt2")) || (multi(a.pos) - multi(b.pos)) || ((a.home === "slt2") - (b.home === "slt2"));
+      reg.sort(order);
+      for (const e of reg) { if (!e.swapped && okAt(e, e.pos)) { take(e, e.pos); e.home = e.pos; } }
+      for (const e of reg.slice().sort((a, b) => ((a.home === "slt2") - (b.home === "slt2")) || (multi(a.home || "") - multi(b.home || "")))) { if (asg.has(e)) continue; const h = e.home; if (h && okAt(e, h)) take(e, h); }
+      const av = reg;
       // 2) rotation: someone who reached a station's max hours swaps with a qualified co-worker
       for (const e of av) {
         if (asg.has(e)) continue; const X = e.home;
         if (!X || !has(TYPE_OF[X]) || under(e, X)) continue;
         e.rotated = true;
-        if (occ[X]) { e.home = null; continue; }
+        if (occ[X] || multi(X)) { e.home = null; continue; }
         let swap = null;
         for (const [f, Y] of asg) {
           if (f === e || Y === X || (Y === "comf" && !HAS_COMF)) continue;
           if (qual(f, X) && under(f, X) && qual(e, Y) && under(e, Y) && (TYPE_OF[X] !== "slt2" || occ.slt1)) { swap = [f, Y]; break; }
         }
-        if (swap) { const [f, Y] = swap; occ[X] = f; asg.set(f, X); f.home = X; f.rotated = true; f.swapped = true; occ[Y] = e; asg.set(e, Y); e.home = Y; }
+        if (swap) { const [f, Y] = swap; occ[X] = f; asg.set(f, X); f.home = X; f.rotated = true; f.swapped = true; if (multi(Y)) asg.set(e, Y); else { occ[Y] = e; asg.set(e, Y); } e.home = Y; }
         else e.home = null;
       }
-      // 3) anyone free moves to the busiest open station they're qualified for
-      const free = av.filter(e => !asg.has(e));
+      // 3) anyone free moves to the busiest open station they're qualified for: first those on regular time, then those
+      //    already in overtime (who keep their own station when it's still open)
       const pick = (e, allowHelper) => {
         let best = null, bs = -1;
         for (const st of STATIONS) {
-          if (occ[st.id] || !can(e, st.id) || !under(e, st.id) || !has(st.type)) continue;
+          if (!room(st.id) || !can(e, st.id) || !under(e, st.id) || !has(st.type)) continue;
           if (st.type === "slt2" && (!allowHelper || !occ.slt1)) continue;
-          const busy = STATIONS.filter(x => POOL_OF(x.type) === POOL_OF(st.type) && occ[x.id]).length;
+          const busy = multi(st.id) ? (many[st.type] || 0) : STATIONS.filter(x => POOL_OF(x.type) === POOL_OF(st.type) && occ[x.id]).length;
           const rkx = rankOf(empById(e.empId), st.id), sc = remH(st.type) / (busy + 1) * (rkx === 2 ? 0.9 : rkx >= 3 ? 0.8 : 1);
           if (sc > bs) { bs = sc; best = st.id; }
         }
         return best;
       };
-      for (const e of free) { const p = pick(e, false); if (p) { occ[p] = e; asg.set(e, p); e.home = p; } }
-      for (const e of free) { if (asg.has(e)) continue; const p = pick(e, true); if (p) { occ[p] = e; asg.set(e, p); e.home = p; } }
+      let free = av.filter(e => !asg.has(e));
+      for (const e of free) { const p = pick(e, false); if (p) { take(e, p); e.home = p; } }
+      for (const e of free) { if (asg.has(e)) continue; const p = pick(e, true); if (p) { take(e, p); e.home = p; } }
+      late.sort(order);
+      for (const e of late) { if (!e.swapped && okAt(e, e.pos)) take(e, e.pos); else if (e.home && okAt(e, e.home)) take(e, e.home); }
+      for (const e of late) { if (asg.has(e)) continue; const p = pick(e, false) || pick(e, true); if (p) { take(e, p); e.home = p; } }
+      free = avAll.filter(e => !asg.has(e));
       // 4) comforters for anyone still free
       if (!HAS_COMF) for (const e of free) { if (!asg.has(e) && avl("comf") > 1e-4) asg.set(e, "comf"); }
       // produce
       const byPool = {};
+      const nComf = HAS_COMF ? [...asg.values()].filter(x => TYPE_OF[x] === "comf").length : 0;
+      const comfEach = nComf > 1 ? (1 + COMF_EXTRA * (nComf - 1)) / nComf : 1;   // two at the table: each at 60% with +20%
       for (const [e, stn] of asg) {
         let ty = stn === "comf" ? "comf" : POOL_OF(TYPE_OF[stn]); if (ty === "dcb" && !HAS_TC && avl("dcb") <= 1e-4) ty = "tc";
-        const out = stn === "comf" ? r.comf * dt : (stn === "slt1" ? r.sltSolo * dt : stn === "slt2" ? (r.sltPair - r.sltSolo) * dt : perHr[ty] * dt);
+        const out = stn === "comf" ? r.comf * dt * (HAS_COMF && TYPE_OF.comf === "comf" ? comfEach : 1) : (stn === "slt1" ? r.sltSolo * dt : stn === "slt2" ? (r.sltPair - r.sltSolo) * dt : perHr[ty] * dt);
         (byPool[ty] = byPool[ty] || []).push({ e, stn, out });
       }
       for (const k in byPool) {

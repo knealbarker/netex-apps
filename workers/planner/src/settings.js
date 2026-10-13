@@ -25,7 +25,8 @@ const f = {
 export const SCHEMA = {
   business: { name: f.text("Town & Country Cleaners") },
   day: { workDays: f.days([1, 2, 3, 4, 5]), defStart: f.time("07:00"), fullDay: f.num(7.5, 1, 14), breakMin: f.int(30, 0, 120), breakAfter: f.num(4, 0, 12), spread: f.int(30, 0, 240), staggerBreaks: f.bool(true) },
-  staffing: { allowOT: f.bool(true), otMax: f.num(2, 0, 8), otMult: f.num(1.5, 1, 3), allowMoves: f.bool(true), allowClockOut: f.bool(true), minPaid: f.num(4, 0, 12) },
+  staffing: { allowOT: f.bool(true), otMax: f.num(2, 0, 8), otMult: f.num(1.5, 1, 3), allowMoves: f.bool(true), allowClockOut: f.bool(true), minPaid: f.num(4, 0, 12),
+    comfMax: f.int(2, 1, 4), comfExtra: f.int(20, 0, 100) },
   money: { payAvg: f.num(15, 0, 200), laborTarget: f.num(17, 0, 100), pdfMoney: f.bool(false),
     prices: f.perCat(f.num(0, 0, 1000), { dct: 7.5, dcb: 8, slt: 4.15, slb: 7.25, comf: 30, tc: 12 }) },
   route: { dayBefore: f.bool(true), readyBy: f.time("08:00") },
