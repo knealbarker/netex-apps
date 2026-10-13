@@ -135,32 +135,33 @@ await t("Settings: summary email card with recipients, preview, Rippling pay-rat
   ok(await p.isVisible("#notifyLine"), "notification line");
 });
 await t("Plan: suggested crew, keep it, washers and Changes today", async () => {
-  await p.goto(url + "/#/plan"); await p.waitForSelector("#pl-crew .cr-row");
+  await p.goto(url + "/#/plan"); await p.waitForSelector("#pl-board .sb");
   await p.click("#pl-keep"); await saved();
-  await p.fill("#hrs-dct1", "5"); await p.press("#hrs-dct1", "Tab"); await saved();
+  // move someone from a station card: the sheet shows what changes, Move saves it
+  await p.click('#pl-board .sb[data-g="dct"] .pchip[data-emp]');
+  await p.waitForSelector("dialog.sheet #ms-impact div");
+  await p.click('dialog.sheet .ms-opt:has(input[value="slb"])'); await p.waitForSelector("dialog.sheet #ms-impact div");
+  await p.click('dialog.sheet button[type="submit"]'); await saved();
+  ok(await p.locator('#pl-board .sb[data-g="slb"] .pchip[data-emp]').count() >= 1, "now on starch bottoms");
   ok(!(await p.isVisible("#pl-full")) && !(await p.isVisible("#pl-auto")), "Auto-assign and All full day are gone");
   for (const id of ["#pl-checks", "#pl-waves", "#pl-money", "#pl-wash"]) ok(!(await p.$(id)), id + " is off the Plan");
   await p.click("#pl-chg-box summary"); await p.waitForSelector("#pl-chg .chg-list li");
-  ok(await p.isVisible('#pl-chg >> text=hours 7h 30m → 5h'), "change logged");
+  ok(await p.isVisible('#pl-chg >> text=/moved from|moves to/'), "change logged");
   ok(await p.isVisible('#pl-chg >> text=Neal Barker'), "who");
   await shot(p, "e3-plan.png");
 });
-await t("Plan: each top button has a ? that explains it; today shows Suggestions right now", async () => {
-  for (const id of ["suggest", "print", "publish"]) {
-    await p.click(`.plan-head [data-help="${id}"]`);
+await t("Plan: Publish has a ? that explains it; today shows the starch bottoms card", async () => {
+  for (const id of ["publish"]) {
+    await p.click(`.pv-foot [data-help="${id}"]`);
     await p.waitForSelector("dialog.help-dlg");
-    if (id === "suggest") await p.locator("dialog").screenshot({ path: join(SHOTS, "e3b-help.png") });
+    if (id === "publish") await p.locator("dialog").screenshot({ path: join(SHOTS, "e3b-help.png") });
     ok(await p.locator("dialog.help-dlg li, dialog.help-dlg p").count() >= 1, id);
     await p.click('dialog.help-dlg button[type="submit"]');
     await p.waitForSelector("dialog", { state: "detached" });
   }
   if (isWorkDay) {
-    const n = await p.locator("#pl-live .sugg li").count();
-    ok((await p.isVisible("#pl-live")) === n > 0, "suggestions card only when there are suggestions");
-    if (n) { ok(/Suggestions right now/.test(await p.textContent("#pl-live")));
-      await p.locator("#pl-live").screenshot({ path: join(SHOTS, "e3c-live.png") });
-      await p.click("#pl-live-box > summary"); ok(!(await p.isVisible("#pl-live .sugg")), "collapses");
-      await p.click("#pl-live-box > summary"); ok(await p.isVisible("#pl-live .sugg"), "opens again"); } }
+    ok(await p.isVisible("#pl-neck"), "starch bottoms card"); ok(/Starch bottoms/.test(await p.textContent("#pl-neck")));
+    await p.locator("#pl-neck").screenshot({ path: join(SHOTS, "e3c-neck.png") }); }
 });
 await t("Plan: Print builds a one-page timeline", async () => {
   await p.evaluate(() => { window.print = () => { window.__printed = true; }; });
@@ -176,12 +177,12 @@ await t("Plan: Print builds a one-page timeline", async () => {
 await t("Plan: another date from the picker gets its own tab and saves on its own", async () => {
   await p.fill("#pl-date", later); await p.dispatchEvent("#pl-date", "change");
   await p.waitForSelector(`[data-day="${later}"].custom[aria-selected="true"]`);
-  await p.waitForSelector("#pl-crew .cr-row");
+  await p.waitForSelector("#pl-board .sb");
   await p.click("#pl-keep"); await saved();
   ok((await api("GET", `/plan/${later}`)).body.rev === 1, "saved for the later day");
-  await p.goto(url + `/#/plan?day=${LAST}`); await p.waitForSelector("#pl-crew .cr-row");
+  await p.goto(url + `/#/plan?day=${LAST}`); await p.waitForSelector("#pl-board .sb");
   ok(await p.isVisible("text=This day is over"), "past day banner"); ok(!(await p.isVisible("#pl-pub")), "read-only");
-  ok(await p.isDisabled(`#who-slt1`), "pickers disabled");
+  ok(!(await p.$("#pl-board .pchip.add")), "no adding on a past day");
 });
 await t("Publish, then the Floor shows the plan and the labor streak", async () => {
   await p.goto(url + `/#/plan?day=${DAY}`); await p.waitForSelector("#pl-pub");
@@ -196,7 +197,7 @@ await t("Review: the next work day's projection and a link to its plan", async (
   ok(/pieces to plan for/.test(await p.textContent("#rv-nextday")), "projection: " + await p.textContent("#rv-nextday"));
   ok(await p.isVisible('#rv-nextday >> text=projected labor'), "owner sees labor");
   await shot(p, "e6-review.png");
-  await p.click("#rv-nextday a.btn"); await p.waitForSelector("#pl-crew");
+  await p.click("#rv-nextday a.btn"); await p.waitForSelector("#pl-board .sb");
   ok(await p.evaluate(d => document.querySelector(`[data-day="${d}"]`)?.getAttribute("aria-selected") === "true", nextWorkDay(LAST, WD)), "opened that day's plan");
 });
 await t("Shuttle alerts: ready and both warnings, the right number of minutes before", async () => {
@@ -214,16 +215,16 @@ await t("Shuttle alerts: ready and both warnings, the right number of minutes be
   ok(!dueAlerts({ ...V, isWorkDay: false }, S.runs, A0, 9).length, "nothing on a day off");
 });
 await t("Offline: the plan still opens from what this PC saved, read-only, and comes back online", async () => {
-  await p.goto(url + `/#/plan?day=${DAY}`); await p.waitForSelector("#pl-crew .cr-row");
+  await p.goto(url + `/#/plan?day=${DAY}`); await p.waitForSelector("#pl-board .sb");
   await p.waitForFunction(async () => (await navigator.serviceWorker.getRegistration())?.active?.state === "activated", null, { timeout: 15000 });
-  await p.reload(); await p.waitForSelector("#pl-crew .cr-row"); // now under the service worker
+  await p.reload(); await p.waitForSelector("#pl-board .sb"); // now under the service worker
   await p.waitForTimeout(500);
   down = true; await ctx.setOffline(true); // Playwright's offline mode doesn't reach the service worker, so the server drops connections too
   await p.reload();
-  await p.waitForSelector("#pl-crew .cr-row", { timeout: 15000 });
+  await p.waitForSelector("#pl-board .sb", { timeout: 15000 });
   await p.waitForSelector(".offline-bar:not([hidden])");
   ok(/Offline — showing what this PC saved/.test(await p.textContent(".offline-bar")));
-  ok(!(await p.isVisible("#pl-pub")) && await p.isDisabled("#who-slt1"), "read-only");
+  ok(!(await p.isVisible("#pl-pub")) && !(await p.$("#pl-board .pchip.add")), "read-only");
   await shot(p, "e7-offline.png", false);
   await p.goto(url + "/#/floor"); await p.waitForSelector(".f-band", { timeout: 15000 });
   ok(!(await p.isVisible("text=NO PLAN PUBLISHED")), "floor shows the saved published plan");
@@ -238,18 +239,32 @@ await t("Viewer: no pay rates, no labor money, can't edit", async () => {
   ok(!(await v.p.isVisible("text=/h")), "no rates");
   await v.p.goto(url + `/#/review?day=${LAST}`); await v.p.waitForSelector("#rv-nextday .rv-next");
   ok(!(await v.p.isVisible("text=projected labor")), "no money");
-  await v.p.goto(url + "/#/plan"); await v.p.waitForSelector("#pl-crew");
+  await v.p.goto(url + "/#/plan"); await v.p.waitForSelector("#pl-board .sb");
   ok(!(await v.p.isVisible("#pl-suggest")) && !(await v.p.isVisible("#pl-pub")), "no editing");
   await v.ctx.close(); who = NEAL;
 });
 await t("Phone width: plan and settings fit", async () => {
   const m = await page({ width: 390, height: 844 });
-  await m.p.goto(url + "/#/plan"); await m.p.waitForSelector("#pl-crew .cr-row");
+  await m.p.goto(url + "/#/plan"); await m.p.waitForSelector("#pl-board .sb");
   ok(await m.p.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1), "no sideways scroll");
   await shot(m.p, "e8-plan-phone.png");
   await m.p.goto(url + "/#/settings"); await m.p.waitForSelector("#sec-summary");
   ok(await m.p.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1), "settings fit");
   await m.ctx.close();
+});
+await t("Tablet: the plan fits, and a person's sheet opens with what changes", async () => {
+  const m = await page({ width: 1194, height: 834 });
+  await m.p.goto(url + "/#/plan"); await m.p.waitForSelector("#pl-board .sb");
+  ok(await m.p.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1), "no sideways scroll");
+  await m.p.screenshot({ path: join(SHOTS, "e9-plan-tablet.png") });
+  await m.p.click("#pl-board .pchip[data-emp]"); await m.p.waitForSelector("dialog.sheet #ms-impact div");
+  await m.p.screenshot({ path: join(SHOTS, "e9b-move-sheet.png") });
+  await m.ctx.close();
+  const ph = await page({ width: 390, height: 844 });
+  await ph.p.goto(url + "/#/plan"); await ph.p.waitForSelector("#pl-board .sb");
+  await ph.p.click("#pl-board .pchip[data-emp]"); await ph.p.waitForSelector("dialog.sheet #ms-impact div");
+  await ph.p.screenshot({ path: join(SHOTS, "e9c-move-phone.png") });
+  await ph.ctx.close();
 });
 await t("no page errors", async () => { ok(!errors.length, errors.join("\n")); });
 

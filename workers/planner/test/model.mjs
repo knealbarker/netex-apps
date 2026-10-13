@@ -119,6 +119,20 @@ await t("a manager's move: from its time the person works the new station; Team'
   const P3 = staffed(); P3.people = P3.people.map(e => e.id === "c" ? { ...e, leaveBy: "11:00" } : e); P3.crew.dct1.stop = "12:00";
   ok(M.evaluate(P3).R.rows.find(r => r.st.id === "dct1").clockOut > 11.5, "the day's own hard stop wins");
 });
+await t("station board: groups, starch bottoms card, moving someone, and a move that finishes it sooner", async () => {
+  eq(M.boardGroups(pos.stations.concat(pos.ops)).map(g => g.key), ["slb", "slt", "dct", "dcb", "tc", "comf", "asm", "ops"]);
+  const P = staffed(); P.q = { ...P.q, slb: 400 };
+  const X = M.evaluate(P), B = M.bottleneck(X, null);
+  eq([B.k, B.presses], ["slb", 1]); ok(B.etc > 0 && B.needed > 0, JSON.stringify(B));
+  // whole-day move: Cora goes to an empty DC bottoms spot; a later move keeps her station and adds a move
+  const C1 = M.applyMove(P.crew, pos.stations.concat(pos.ops), "c", "dcb", "06:00");
+  ok(C1.dcb1.emp === "c" && !C1.dct1.emp, "planned on DCB for the day");
+  const C2 = M.applyMove(P.crew, pos.stations.concat(pos.ops), "c", "slb", "09:30");
+  eq(C2.dct1.moves, [{ at: "09:30", to: "slb2" }]); eq(M.stationAt(C2.dct1, "dct1", 10), "slb2"); eq(M.stationAt(C2.dct1, "dct1", 8), "dct1");
+  // Ana (SLT 1, trained on SLB 2nd) or someone else can help: the proposal finishes starch bottoms sooner
+  const mv = M.bottleneckMoves(X, null);
+  ok(mv.length && mv[0].kAfter < mv[0].kBefore - 1 / 6, JSON.stringify(mv.map(m => [m.name, m.at, m.kBefore, m.kAfter])));
+});
 await t("a late shuttle offers a fix that makes it earlier", async () => {
   const P = staffed(); P.crew.slt1.start = "09:00"; P.crew.slt2.start = "09:00";
   P.q.dcb = 0; P.waves = P.waves.map(w => ({ ...w, q: { ...w.q, dcb: 0 } })); // nobody here can do DCB

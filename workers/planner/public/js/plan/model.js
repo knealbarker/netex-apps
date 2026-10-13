@@ -605,3 +605,122 @@ export function liveSuggestions(X, hidden = new Set()) {
   return { on: true, list, cats, fromNow: { left: leftTotal, end: R2.empty ? null : R2.end, etc: lastEtc || null, ot: CATS.some(k => cats[k].ot), otH: (R2.empty ? 0 : R2.otTotal || 0) + extraH, short, people: onCrewNow.size, noShow: noShow.length } };
 }
 const posLabel = (E, code) => (E.POS.find(p => p.id === code) || {}).label || code;
+
+// ---------------------------------------------------------------- the station board (Plan redesign, Oct 13)
+/** Station groups in board order, starch bottoms first: [{key, label, codes, cat}] — key is the kind of work (slt covers SLT 1 and the helper). */
+export const GROUP_LABEL = { slb: "Starch bottoms", slt: "Starch tops", dct: "Dry cleaning tops", dcb: "Dry cleaning bottoms", comf: "Comforters", tc: "Tablecloths", asm: "Inspect, assemble, bag", ops: "Machine operators" };
+export const groupOf = type => (type === "slt2" ? "slt" : type);
+export function boardGroups(POS) {
+  const order = ["slb", "slt", "dct", "dcb", "tc", "comf", "asm", "ops"], out = [];
+  for (const key of order) {
+    const codes = POS.filter(p => groupOf(p.type) === key).map(p => p.id);
+    if (codes.length) out.push({ key, label: GROUP_LABEL[key], codes, cat: CATS.includes(key) ? key : null });
+  }
+  return out;
+}
+
+/** When each kind of work is finished in a simulated plan (last minute anyone works on it), plus assembly. */
+export function catEnds(E, R) {
+  const out = {}; if (!R || R.empty) return out;
+  for (const rw of R.rows) if (rw.staffed) for (const sg of rw.segs) {
+    if (!(sg.pcs > 0)) continue;
+    const k = catOfStation(E, sg.stn) || (E.TYPE_OF[sg.stn] === "asm" ? "asm" : null);
+    if (k) out[k] = Math.max(out[k] ?? 0, sg.to);
+  }
+  return out;
+}
+
+/** Does work of kind k run past someone's scheduled shift in this plan? */
+export function catOvertime(E, R, k) {
+  if (!R || R.empty) return false;
+  return R.rows.some(rw => rw.staffed && rw.segs.some(sg => sg.pcs > 0 && sg.to > rw.x.schedEnd + 0.02 && (catOfStation(E, sg.stn) || (E.TYPE_OF[sg.stn] === "asm" ? "asm" : null)) === k));
+}
+
+/**
+ * Move a person to another kind of work from a time (a crew copy comes back; the input isn't changed).
+ *  - from their start (or before): they're simply planned on that station, in an empty spot of it when there is one
+ *  - later in the day: a move is added (later moves of theirs are replaced) to an empty spot, else the first one
+ */
+export function applyMove(crew, POS, empId, toKey, at) {
+  const C = JSON.parse(JSON.stringify(crew));
+  const code = Object.keys(C).find(k => C[k].emp === empId); if (!code) return C;
+  const c = C[code], targets = POS.filter(p => groupOf(p.type) === toKey).map(p => p.id);
+  if (!targets.length) return C;
+  const empty = targets.find(t => t !== code && !C[t].emp);
+  const startH = parseTime(c.start) ?? 0, atH = parseTime(at) ?? startH;
+  if (atH <= startH + 1e-6 && empty) {
+    C[empty] = { ...c, moves: [] }; C[code] = { emp: "", start: c.start, hrs: c.hrs, stop: "", source: "" };
+    return C;
+  }
+  if (targets.includes(code) && atH <= startH + 1e-6) { c.moves = []; return C; }
+  const keep = (c.moves || []).filter(m => (parseTime(m.at) ?? 0) < atH - 1e-6);
+  c.moves = [...keep, { at: hhmm(Math.max(atH, startH)), to: empty || targets[0] }];
+  c.source = "user";
+  return C;
+}
+
+/** Where a person is (which code) at hour t after their moves: the station code they work then. */
+export function stationAt(c, code, t) {
+  let cur = code;
+  for (const m of (c.moves || []).slice().sort((a, b) => a.at.localeCompare(b.at))) if ((parseTime(m.at) ?? 99) <= t + 1e-6) cur = m.to;
+  return cur;
+}
+
+/**
+ * The bottleneck card: starch bottoms when there are any (Neal: the reason for the planner), else whatever finishes last.
+ * Today it uses the re-plan from now (L); other days the plan itself.
+ */
+export function bottleneck(X, L) {
+  const { P, E, R } = X;
+  if (R.empty) return null;
+  const ends = catEnds(E, R), live = P.isToday && L && L.on && L.cats;
+  let k = (P.q.slb || 0) > 0.5 ? "slb" : CATS.filter(c => (P.q[c] || 0) > 0.5).sort((a, b) => (ends[b] ?? 0) - (ends[a] ?? 0))[0];
+  if (!k) return null;
+  const total = P.q[k] || 0, done = live ? Math.max(0, total - L.cats[k].left) : 0, left = live ? L.cats[k].left : total;
+  const etc = live ? L.cats[k].etc : ends[k] ?? null, ot = live ? !!L.cats[k].ot : catOvertime(E, R, k);
+  // presses on it: people whose own station is this kind of work (now, today), and when their shifts end
+  const t0 = P.isToday && P.now != null ? P.now : Math.min(...R.rows.filter(r => r.staffed).map(r => r.x.start));
+  const on = R.rows.filter(rw => rw.staffed && groupOf(E.TYPE_OF[stationAt(P.crew[rw.st.id], rw.st.id, t0)]) === k);
+  const shiftEnd = on.length ? Math.max(...on.map(r => r.x.schedEnd)) : null;
+  const perPress = k === "slt" ? P.s.rates.sltSolo : P.s.rates[k] || 0;
+  const hoursLeft = shiftEnd != null ? Math.max(0.25, shiftEnd - t0) : null;
+  return { k, total, done, left, etc, ot, presses: on.length, perPress, expected: on.length * perPress, shiftEnd,
+    needed: hoursLeft && left > 0.5 ? left / hoursLeft : 0 };
+}
+
+/**
+ * Moves that would finish the bottleneck sooner: someone from another kind of work, trained for it, moved at one of
+ * `times` (default: today = now; another day = 9:00, 10:30 and 12:00). Each is tried on the whole plan; kept when the
+ * bottleneck finishes at least 10 minutes sooner and the day doesn't end later. Best first, at most `max`.
+ */
+export function bottleneckMoves(X, L, { max = 2, times } = {}) {
+  const { P, E } = X, B = bottleneck(X, L); if (!B || B.left < 0.5) return [];
+  const groups = boardGroups(E.POS), target = groups.find(g => g.key === B.k); if (!target) return [];
+  const live = P.isToday && P.now != null;
+  const ts = times || (live ? [Math.ceil(P.now * 12) / 12] : [9, 10.5, 12]);
+  const score = crew => {
+    const X2 = evaluate({ ...P, crew });
+    if (live) { const L2 = liveSuggestions(X2, new Set()); return L2.on ? { k: L2.cats[B.k].etc ?? 0, end: L2.fromNow.etc ?? 0 } : null; }
+    const e = catEnds(X2.E, X2.R); return { k: e[B.k] ?? 0, end: X2.R.end ?? 0 };
+  };
+  const base = { k: B.etc ?? 0, end: live ? (L.fromNow.etc ?? 0) : (X.R.end ?? 0) };
+  const out = [], brks = breaksOf(X.R);
+  for (const [code, c] of Object.entries(P.crew)) {
+    if (!c.emp || target.codes.includes(code)) continue;
+    const type = E.TYPE_OF[code]; if (!type || type === "asm" && false) continue;
+    const e = P.people.find(p => p.id === c.emp); if (!e) continue;
+    const rk = Math.min(...target.codes.map(t => E.rankOf(e, t) || 99)); if (rk >= 99) continue;
+    if (live && clockState(P, c.emp, P.now, brks[c.emp]) === "gone") continue;
+    const start = parseTime(c.start) ?? 0, end = start + (+c.hrs || 0) + 0.5;
+    for (const t of ts) {
+      if (t < start - 1e-6 || t > end - 1) continue;
+      if (groupOf(E.TYPE_OF[stationAt(c, code, t)]) === B.k) continue;
+      const crew = applyMove(P.crew, E.POS, c.emp, B.k, hhmm(t)), sc = score(crew); if (!sc) continue;
+      if (sc.k <= base.k - 1 / 6 && sc.end <= base.end + 1 / 12) out.push({ empId: c.emp, name: e.name, from: groupOf(type), at: hhmm(t), rank: rk, k: B.k, kBefore: base.k, kAfter: sc.k, endBefore: base.end, endAfter: sc.end, crew });
+    }
+  }
+  out.sort((a, b) => a.kAfter - b.kAfter || a.endAfter - b.endAfter || a.rank - b.rank);
+  const seen = new Set(), best = [];
+  for (const m of out) { if (seen.has(m.empId)) continue; seen.add(m.empId); best.push(m); if (best.length >= max) break; }
+  return best;
+}

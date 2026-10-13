@@ -291,10 +291,8 @@ await t("Plan: pieces for the next work day, by store, with a late list", async 
   await db.prepare("INSERT INTO int_sync_runs(id,integration_id,started_at,finished_at,status,message) VALUES('lv','smrt',?,?,'ok','live: test')").bind(new Date().toISOString(), new Date().toISOString()).run();
   await ingestDay(db, { orgId: "tcc", runId: "lv", mode: "backfill", day: addDays(today, -3) }, orders, items);
   await p.goto(url + "/#/plan");
-  await p.waitForSelector(".tiles");
-  const tiles = await p.locator(".tile .t-num").allTextContents();
-  ok(tiles.length === 7, JSON.stringify(tiles));
-  ok(await p.isVisible('.wv:has-text("Quitman")'), "Quitman deadline");
+  await p.waitForSelector("#pl-board .sb");
+  ok(await p.locator("#pl-board .sb").count() >= 6, "a card per kind of work");
   await p.screenshot({ path: join(SHOTS, "14-plan.png"), fullPage: true });
 });
 await t("no page errors", async () => { ok(!errors.length, errors.join("\n")); });
