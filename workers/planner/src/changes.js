@@ -90,7 +90,7 @@ export async function listChanges(db, env, day) {
   const ev = (await db.prepare(`SELECT e.at, e.key, e.kind, e.text, u.display_name AS who FROM plan_events e LEFT JOIN core_users u ON u.id=e.user_id WHERE e.org_id=? AND e.day=? ORDER BY e.at DESC`)
     .bind(env.ORG_ID, day).all()).results;
   // shuttle alerts are keyed ready:<run> and warn<min>:<run>; hidden while shuttles are off
-  for (const e of ev) if (SHUTTLES || !/^(ready|warn\d+):/.test(e.key || "")) out.push({ at: e.at, who: null, text: e.text, tag: e.kind === "ready" ? "ready" : e.kind === "warn" ? "warn" : e.kind });
+  for (const e of ev) if (SHUTTLES || !/^(ready|warn\d+):|^(accept|dismiss):risk:/.test(e.key || "")) out.push({ at: e.at, who: null, text: e.text, tag: e.kind === "ready" ? "ready" : e.kind === "warn" ? "warn" : e.kind });
   // the time clock: punches edited or removed in Rippling (Production), so a punch that came and went leaves a trace
   const hm = iso => { const m = /T(\d\d:\d\d)/.exec(iso || ""); return m ? clock(m[1]) : "?"; };
   let punches = [];
