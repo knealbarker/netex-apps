@@ -879,3 +879,7 @@ dialog.sheet .dlg-body { max-height: min(70vh, 640px); overflow: auto; }
   dialog.sheet .dlg-body { max-height: 72vh; }
   dialog.sheet .dlg-foot .btn { flex: 1; min-height: 48px; }
 }
+.sched-days { grid-template-columns: repeat(7, minmax(0, 1fr)); }
+.sched-days .ms-time input[type=checkbox] { position: absolute; opacity: 0; pointer-events: none; }
+.sched-days .ms-time:has(input:checked) { background: var(--text); color: var(--bg); border-color: var(--text); }
+@media (max-width: 420px) { .sched-days { grid-template-columns: repeat(4, minmax(0, 1fr)); } }

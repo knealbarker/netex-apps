@@ -252,6 +252,15 @@ await t("Phone width: plan and settings fit", async () => {
   ok(await m.p.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1), "settings fit");
   await m.ctx.close();
 });
+await t("Team: a manager sets someone's usual schedule and must-leave-by", async () => {
+  await p.goto(url + "/#/team"); await p.waitForSelector("[data-sched]");
+  await p.click("[data-sched]"); await p.waitForSelector("dialog.sheet");
+  for (const k of ["1", "2", "3", "4", "5"]) await p.check(`dialog input[name="d${k}"]`, { force: true });
+  await p.fill('dialog input[name="usualHours"]', "7"); await p.fill('dialog input[name="leaveBy"]', "14:45"); await p.fill('dialog input[name="leaveNote"]', "School pickup");
+  await p.screenshot({ path: join(SHOTS, "e10-schedule.png") });
+  await p.click('dialog button[type="submit"]'); await p.waitForSelector("dialog", { state: "detached" });
+  ok(await p.isVisible("text=/Mon–Fri.*leaves by 2:45 PM \\(School pickup\\)/"), "summary on the row");
+});
 await t("Tablet: the plan fits, and a person's sheet opens with what changes", async () => {
   const m = await page({ width: 1194, height: 834 });
   await m.p.goto(url + "/#/plan"); await m.p.waitForSelector("#pl-board .sb");

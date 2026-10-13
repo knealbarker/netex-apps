@@ -16,6 +16,7 @@ export function awayText(t, today) {
   if (t.fromDay === t.toDay) return `Out ${when(t.fromDay)}`;
   return `Out ${t.fromDay <= today ? "until" : `${shortDay(t.fromDay)} –`} ${shortDay(t.toDay)}`;
 }
+const CLK = '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>';
 const PEN = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20h4L19 9l-4-4L4 16z"/><path d="M14 6l4 4"/></svg>';
 
 export async function render(main, ctx) {
@@ -60,13 +61,13 @@ export async function render(main, ctx) {
         ${people.map(p => raw(html`<div class="trow ${p.status === "active" ? "" : "former"}" role="listitem">
           ${canEdit ? raw(html`<button class="who-btn" data-edit="${p.id}" aria-label="Edit ${p.name}">`) : raw('<div class="who-btn">')}
             <span class="avatar" aria-hidden="true">${initials(p.name)}</span>
-            <span class="who-txt"><b>${p.name}</b>${(p.away || []).length && p.status === "active" ? raw(html`<span class="away-chips">${p.away.slice(0, 3).map(t => raw(html`<span class="chip ${t.kind === "late" ? "late" : "off"}" title="${t.note || ""}">${awayText(t, T)}</span>`))}${p.away.length > 3 ? raw(html`<span class="chip">+${p.away.length - 3} more</span>`) : ""}</span>`) : ""}<small>${[p.usualStart ? `In ${p.usualStart}` : "", p.payrollId ? `Rippling #${p.payrollId}` : "", "rate" in p ? (p.rate ? `$${p.rate.toFixed(2)}/h` : "no pay rate yet") : "", p.status === "active" ? "" : "Former"].filter(Boolean).join(" · ")}</small></span>
+            <span class="who-txt"><b>${p.name}</b>${(p.away || []).length && p.status === "active" ? raw(html`<span class="away-chips">${p.away.slice(0, 3).map(t => raw(html`<span class="chip ${t.kind === "late" ? "late" : "off"}" title="${t.note || ""}">${awayText(t, T)}</span>`))}${p.away.length > 3 ? raw(html`<span class="chip">+${p.away.length - 3} more</span>`) : ""}</span>`) : ""}<small>${[schedText(p), p.payrollId ? `Rippling #${p.payrollId}` : "", "rate" in p ? (p.rate ? `$${p.rate.toFixed(2)}/h` : "no pay rate yet") : "", p.status === "active" ? "" : "Former"].filter(Boolean).join(" · ")}</small></span>
           ${raw(canEdit ? "</button>" : "</div>")}
           <ol class="tchips" aria-label="Trainings in order">
             ${p.trainings.length ? p.trainings.map((t, i) => raw(html`<li class="tchip ${focus === t ? "hit" : ""} ${i === 0 ? "first" : ""}" title="${tName(t)?.name || t}"><i>${i + 1}</i>${tName(t)?.short || t}</li>`))
               : raw('<li class="tnone">No trainings yet</li>')}
           </ol>
-          ${canTrain && p.status === "active" ? raw(html`<span class="trow-act"><button class="btn ghost small" data-away="${p.id}">${raw(CAL)}Time off</button><button class="btn ghost small" data-train="${p.id}">${raw(PEN)}Trainings</button></span>`) : raw("<span></span>")}
+          ${canTrain && p.status === "active" ? raw(html`<span class="trow-act"><button class="btn ghost small" data-sched="${p.id}">${raw(CLK)}Schedule</button><button class="btn ghost small" data-away="${p.id}">${raw(CAL)}Time off</button><button class="btn ghost small" data-train="${p.id}">${raw(PEN)}Trainings</button></span>`) : raw("<span></span>")}
         </div>`))}
         ${people.length ? "" : raw('<div class="empty-row">No one on the team yet.</div>')}
       </div>`;
@@ -77,12 +78,39 @@ export async function render(main, ctx) {
     main.querySelector("#clearFocus")?.addEventListener("click", () => { focus = null; draw(); });
     main.querySelectorAll("[data-focus]").forEach(b => b.addEventListener("click", () => { focus = focus === b.dataset.focus ? null : b.dataset.focus; draw(); main.querySelector(`[data-focus="${b.dataset.focus}"]`)?.focus(); }));
     main.querySelectorAll("[data-edit]").forEach(b => b.addEventListener("click", () => personDialog(data.people.find(p => p.id === b.dataset.edit), reload)));
+    main.querySelectorAll("[data-sched]").forEach(b => b.addEventListener("click", () => scheduleDialog(data.people.find(p => p.id === b.dataset.sched), reload)));
     main.querySelectorAll("[data-away]").forEach(b => b.addEventListener("click", () => awayDialog(data.people.find(p => p.id === b.dataset.away), data, reload)));
     main.querySelector("#awayAny")?.addEventListener("click", () => awayDialog(null, data, reload));
     main.querySelectorAll("[data-train]").forEach(b => b.addEventListener("click", () => trainingsDialog(data.people.find(p => p.id === b.dataset.train), data.trainings, reload)));
   }
   async function reload() { Object.assign(data, await api("/team")); draw(); }
   draw();
+}
+
+// The standing schedule (Neal, Oct 13): every plan starts from it; a one-day change (stay late, send home) is made on the Plan.
+const DAYS = [["1", "Mon"], ["2", "Tue"], ["3", "Wed"], ["4", "Thu"], ["5", "Fri"], ["6", "Sat"], ["0", "Sun"]];
+function schedText(p) {
+  const d = p.usualDays ? (p.usualDays === "12345" ? "Mon–Fri" : DAYS.filter(([k]) => p.usualDays.includes(k)).map(([, l]) => l).join(" ")) : "";
+  return [d, p.usualStart ? `in ${clock12(p.usualStart)}` : "", p.usualHours ? `${p.usualHours}h` : "", p.leaveBy ? `leaves by ${clock12(p.leaveBy)}${p.leaveNote ? ` (${p.leaveNote})` : ""}` : ""].filter(Boolean).join(" · ");
+}
+function scheduleDialog(p, done) {
+  const days = p.usualDays || "";
+  openDialog({
+    title: `${p.name}: usual schedule`, submitLabel: "Save",
+    body: html`<p class="dlg-lead">Every plan starts from this. A one-day change, like staying late or going home early, is made on the Plan.</p>
+      <fieldset class="ms-times sched-days"><legend>Usual days</legend>${DAYS.map(([k, l]) => raw(html`<label class="ms-time"><input type="checkbox" name="d${k}" ${days.includes(k) ? "checked" : ""}><span>${l}</span></label>`))}</fieldset>
+      <div class="two"><label class="field"><span>Usual clock-in</span><input class="input" name="usualStart" type="time" step="300" value="${p.usualStart || ""}"></label>
+        <label class="field"><span>Usual hours</span><input class="input" name="usualHours" type="number" min="1" max="16" step="0.25" inputmode="decimal" value="${p.usualHours ?? ""}" placeholder="Settings' full day"></label></div>
+      <div class="two"><label class="field"><span>Must leave by <em>(optional)</em></span><input class="input" name="leaveBy" type="time" step="300" value="${p.leaveBy || ""}"></label>
+        <label class="field"><span>Why <em>(managers see this)</em></span><input class="input" name="leaveNote" maxlength="120" value="${p.leaveNote || ""}" placeholder="School pickup"></label></div>`,
+    onOpen: (f, d) => d.classList.add("sheet"),
+    async onSubmit(f) {
+      const e = f.elements;
+      const body = { usualDays: DAYS.filter(([k]) => e["d" + k].checked).map(([k]) => k).join(""), usualStart: e.usualStart.value || null,
+        usualHours: e.usualHours.value === "" ? null : +e.usualHours.value, leaveBy: e.leaveBy.value || null, leaveNote: e.leaveNote.value };
+      await api(`/team/${p.id}`, { method: "PATCH", body }); toast("Schedule saved."); done();
+    },
+  });
 }
 
 // "Order from history": where each person actually worked most comes first (from saved plans and the time clock).
