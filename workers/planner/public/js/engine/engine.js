@@ -229,9 +229,18 @@ export function createEngine(S) {
       let free = av.filter(e => !asg.has(e));
       for (const e of free) { const p = pick(e, false); if (p) { take(e, p); e.home = p; } }
       for (const e of free) { if (asg.has(e)) continue; const p = pick(e, true); if (p) { take(e, p); e.home = p; } }
+      // overtime only for work the people on regular time can't finish in the regular hours they have left
+      const regCap = k => { let h = 0; for (const [f, id] of asg) if (!inOT(f) && POOL_OF(TYPE_OF[id] || id) === k) h += Math.max(0, f.x.schedEnd - t) * (k === "slt" ? r.sltSolo : perHr[k]); return h; };
+      const needOT = id => { const k = id === "comf" ? "comf" : POOL_OF(TYPE_OF[id]); return pool[k] > regCap(k) + 1e-4; };
+      const okLate = (e, id) => okAt(e, id) && needOT(id);
       late.sort(order);
-      for (const e of late) { if (!e.swapped && okAt(e, e.pos)) take(e, e.pos); else if (e.home && okAt(e, e.home)) take(e, e.home); }
-      for (const e of late) { if (asg.has(e)) continue; const p = pick(e, false) || pick(e, true); if (p) { take(e, p); e.home = p; } }
+      for (const e of late) { if (!e.swapped && okLate(e, e.pos)) take(e, e.pos); else if (e.home && okLate(e, e.home)) take(e, e.home); }
+      for (const e of late) {
+        if (asg.has(e)) continue;
+        let p = pick(e, false) || pick(e, true);
+        if (p && !needOT(p)) p = null;
+        if (p) { take(e, p); e.home = p; }
+      }
       free = avAll.filter(e => !asg.has(e));
       // 4) comforters for anyone still free
       if (!HAS_COMF) for (const e of free) { if (!asg.has(e) && avl("comf") > 1e-4) asg.set(e, "comf"); }
