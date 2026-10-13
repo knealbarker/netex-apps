@@ -23,6 +23,11 @@ With the `CF_API_TOKEN` secret set, every change also rewrites the Netex users g
 - **Team** — trainings in order, pay rates (Admins/Owner), **Order from history** (training order from where people worked).
 - **Settings** — everything the plan uses, shuttle alerts (and Windows pop-ups per PC), the **daily summary email**,
   Rippling status (whether pay rates are coming through), and the desktop import.
+- **Planned start vs. clocked in** (`src/attendance.js`, `attendanceOf` in `js/plan/model.js`): the crew's start and end
+  columns are the plan; under each name is what the time clock (Rippling) says, with when it was last heard from. Today,
+  15 minutes past someone's planned start (or late-arrival time) with no punch, the row and their timeline bar turn red and
+  the cron (every 5 minutes) writes "wasn't clocked in" once to Changes today; a clock-in 10+ minutes late is written too.
+  Punches edited or removed in Rippling also show there (from `labor_punch_log`, kept by netex-sync).
 - **Shuttle alerts** on every screen (`public/js/alerts.js`): a deadline ready, and the two warnings before a shuttle leaves
   with work unfinished. Logged once in Changes today.
 - **Offline** (`public/sw.js`): each PC keeps the app and the plans it has read (today's and the next work day's are fetched

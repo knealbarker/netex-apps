@@ -330,6 +330,22 @@ export function autoAssign(P, E, ids) {
   for (const c of Object.values(r.crew)) if (c.emp) { const p = prev[c.emp]; if (p) { c.hrs = p.hrs; c.stop = p.stop; } c.source = clock[c.emp] ? "clock" : "user"; }
   return r;
 }
+/**
+ * Today's attendance for one person on the plan, against the time clock (Neal, Oct 13). The plan's start is only a plan:
+ * someone can be put on a station from any time. Returns null when there's nothing to say (not today, no time clock yet).
+ *   { state: "in", inAt, due, lateMin }      clocked in (lateMin > 0 when that was 10+ minutes after the planned start)
+ *   { state: "missing", due }                 15+ minutes past the planned start (or late-arrival time) with no punch
+ *   { state: "upcoming", due }                not in yet, and the planned start isn't 15 minutes past
+ */
+export const GRACE_H = 0.25, LATE_H = 10 / 60;
+export function attendanceOf(P, personId, start) {
+  if (!P.isToday || !personId || P.now == null) return null;
+  const clock = clockInOf(P), late = lateOf(P);
+  const due = Math.max(parseTime(start) ?? 0, parseTime(late[personId]) ?? 0);
+  if (clock[personId]) { const inAt = parseTime(clock[personId]), m = Math.round((inAt - due) * 60); return { state: "in", inAt, due, lateMin: inAt - due >= LATE_H - 1e-9 ? m : 0 }; }
+  if (!(P.clock || []).length) return null;    // no time clock report today: can't tell
+  return P.now >= due + GRACE_H ? { state: "missing", due } : { state: "upcoming", due };
+}
 /** Today's first clock-in per person (HH:MM, local), from Rippling. */
 export function clockInOf(P) {
   const out = {};
@@ -435,7 +451,7 @@ export function liveSuggestions(X, hidden = new Set()) {
     if (!c.emp) continue;
     const start = parseTime(c.start) ?? 7, due = Math.max(start, parseTime(late[c.emp]) ?? 0);
     if (out.has(c.emp)) { crew2[code] = { ...c, emp: "" }; continue; }
-    if (haveClock && !clock[c.emp] && now > due + 20 / 60) { noShow.push({ code, c, due }); crew2[code] = { ...c, emp: "" }; continue; }
+    if (haveClock && !clock[c.emp] && now >= due + GRACE_H) { noShow.push({ code, c, due }); crew2[code] = { ...c, emp: "" }; continue; }
     const worked = Math.max(0, now - start), rem = Math.max(0, (+c.hrs || 0) - worked);
     if (rem <= 0.05) { crew2[code] = { ...c, emp: "" }; continue; }
     crew2[code] = { ...c, start: hhmm(Math.max(start, now)), hrs: Math.round(rem * 12) / 12 };

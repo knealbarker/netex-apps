@@ -95,7 +95,7 @@ await t("Changes today: plan saves are written out in plain words, with who did 
   await call("POST", `/plan/${day}/callouts`, { as: "mo@example.com", body: { personId: P.Cora, note: "sick" } });
   const L = (await call("GET", `/changes/${today}`)).body.list.map(x => x.text);
   const has = s => ok(L.some(x => x.includes(s)), `missing "${s}" in ${JSON.stringify(L)}`);
-  has("Ana Test on SLT 1 (in 6:00 AM, 7h 30m)"); has("Ana Test moved from SLT 1 to SLB 1"); has("Ana Test: clock-in 6:00 AM → 5:30 AM");
+  has("Ana Test on SLT 1 (starts 6:00 AM, 7h 30m)"); has("Ana Test moved from SLT 1 to SLB 1"); has("Ana Test: planned start 6:00 AM → 5:30 AM");
   has("Beto Test: hours 7h 30m → 6h"); has("Beto Test: hard stop at 12:00 PM"); has("Starch tops: 99 pieces typed in"); has("Cora Test called out — sick");
   ok((await call("GET", `/changes/${today}`)).body.list.find(x => x.text.includes("moved")).who === "Mo Manager");
 });

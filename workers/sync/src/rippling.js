@@ -8,6 +8,7 @@
 //   - People are matched by Rippling employee number (core_people.payroll_id). Someone new is added in their department.
 //   - Finished days go into labor_daily_hours (one row per person, day, department and location).
 //   - Today's punches replace labor_clock_today, so the apps can see who's in right now.
+//     What changed since the last report (new punch, clock-out, edit, removal) is kept in labor_punch_log.
 //   - If the export has a pay rate column (pay_rate, hourly_rate, ...), the rate goes into labor_pay_rates.
 // Clock punches themselves are not kept after the day is added up (Neal, Oct 10).
 import { ulid, nowIso, sha1 } from "./util.js";
@@ -89,7 +90,12 @@ export async function ingestRippling(db, { orgId, integrationId, today, csv, kee
   // Rippling can send the same export many times; an identical file on the same day changes nothing, so skip it
   const hash = await sha1(`${today}|${csv}`);
   const last = await db.prepare("SELECT value_json FROM core_settings WHERE org_id=? AND app_id='core' AND key='rippling_last'").bind(orgId).first();
-  if (!keepToday && last && JSON.parse(last.value_json).hash === hash) return { duplicate: true, rows: 0, used: 0, days: 0, people: 0, added: [], today: 0, skipped: 0, departments: {}, rates: 0 };
+  if (!keepToday && last && JSON.parse(last.value_json).hash === hash) {
+    // same report as last time: nothing changed, but the time clock is now known to be current as of this report
+    await db.prepare("UPDATE core_settings SET value_json=?, updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE org_id=? AND app_id='core' AND key='rippling_last'")
+      .bind(JSON.stringify({ ...JSON.parse(last.value_json), at: nowIso() }), orgId).run();
+    return { duplicate: true, rows: 0, used: 0, days: 0, people: 0, added: [], today: 0, skipped: 0, departments: {}, rates: 0 };
+  }
   const rows = parseCsv(csv);
   if (!rows.length) return { rows: 0, used: 0, days: 0, people: 0, added: [], today: 0, skipped: 0, departments: {}, rates: 0 };
   const miss = RIPPLING_COLUMNS.filter(c => !(c in rows[0]));
@@ -197,6 +203,42 @@ export async function ingestRippling(db, { orgId, integrationId, today, csv, kee
   if (!keepToday) stmts.push(db.prepare(`INSERT INTO core_settings(org_id,app_id,key,value_json) VALUES(?, 'core', 'rippling_last', ?)
     ON CONFLICT(org_id,app_id,key) DO UPDATE SET value_json=excluded.value_json, updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now'), rev=rev+1`)
     .bind(orgId, JSON.stringify({ hash, at: nowIso(), rows: rows.length, rateColumn: rateCol || null })));
+  // what changed in today's punches since the last report (kept: the table above is replaced each time)
+  let punchLog = [];
+  if (!keepToday) punchLog = await punchChanges(db, orgId, today, todayRows, runId, now);
   for (let i = 0; i < stmts.length; i += 90) await db.batch(stmts.slice(i, i + 90));
-  return { rows: rows.length, used, days: daily.size, people: new Set([...daily.values()].map(d => d.pid)).size, added, today: keepToday ? 0 : todayRows.length, skipped, departments: byDept, rates: rateChanges, rateColumn: rateCol || null };
+  if (punchLog.length) {
+    try { for (let i = 0; i < punchLog.length; i += 90) await db.batch(punchLog.slice(i, i + 90)); }
+    catch (e) { console.log(JSON.stringify({ job: "rippling-punch-log", status: "error", error: String(e.message || e) })); }
+  }
+  return { punchChanges: punchLog.length, rows: rows.length, used, days: daily.size, people: new Set([...daily.values()].map(d => d.pid)).size, added, today: keepToday ? 0 : todayRows.length, skipped, departments: byDept, rates: rateChanges, rateColumn: rateCol || null };
+}
+
+/**
+ * Compares today's punches in the new report with the ones stored from the last report and returns the inserts for
+ * labor_punch_log: 'in' (a new punch), 'out' (a clock-out added), 'changed' (times edited in Rippling), 'removed'
+ * (the punch is gone from the report). Matched by Rippling's time_entry_id (or person + clock-in when it has none).
+ */
+export async function punchChanges(db, orgId, today, todayRows, runId, now) {
+  let before = [];
+  try {
+    before = (await db.prepare(`SELECT c.person_id AS pid, c.department_id AS depId, c.clock_in AS cin, c.clock_out AS cout, c.payroll_entry_id AS eid
+        FROM labor_clock_today c JOIN core_people p ON p.id=c.person_id WHERE p.org_id=? AND substr(c.clock_in,1,10)=?`).bind(orgId, today).all()).results;
+  } catch { return []; }
+  const keyOf = (eid, pid, cin) => eid ? `e:${eid}` : `p:${pid}|${cin}`;
+  const old = new Map(before.map(b => [keyOf(b.eid, b.pid, b.cin), b]));
+  const out = [], add = (pid, depId, eid, change, cin, cout, wasIn = null, wasOut = null) => out.push(db.prepare(
+    `INSERT INTO labor_punch_log(id, org_id, person_id, day, department_id, payroll_entry_id, change, clock_in, clock_out, was_in, was_out, seen_at, sync_run_id)
+     VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)`).bind(ulid(), orgId, pid, today, depId || null, eid || null, change, cin, cout, wasIn, wasOut, now, runId));
+  const seen = new Set();
+  for (const t of todayRows) {
+    const cin = t.cin.iso, cout = t.cout ? t.cout.iso : null, k = keyOf(t.id, t.pid, cin);
+    seen.add(k);
+    const b = old.get(k);
+    if (!b) { add(t.pid, t.depId, t.id, "in", cin, null); if (cout) add(t.pid, t.depId, t.id, "out", cin, cout); continue; }
+    if (b.cin !== cin || (b.cout && cout && b.cout !== cout) || (b.cout && !cout)) add(t.pid, t.depId, t.id, "changed", cin, cout, b.cin, b.cout);
+    else if (!b.cout && cout) add(t.pid, t.depId, t.id, "out", cin, cout);
+  }
+  for (const [k, b] of old) if (!seen.has(k)) add(b.pid, b.depId, b.eid, "removed", b.cin, b.cout);
+  return out;
 }

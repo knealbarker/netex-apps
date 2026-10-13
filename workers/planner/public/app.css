@@ -469,6 +469,10 @@ button.tile:hover { background: var(--hover); }
 .gb.ot { background: repeating-linear-gradient(-45deg, color-mix(in srgb, var(--c) 30%, var(--card)) 0 5px, color-mix(in srgb, var(--warn) 30%, var(--card)) 5px 10px); }
 .gb.brk { background: repeating-linear-gradient(-45deg, var(--bg2) 0 3px, var(--line2) 3px 6px); border-left: 0; padding: 0; z-index: 2; }
 .gb.idle { background: transparent; border: 1px dashed var(--line2); color: var(--muted); }
+.gb.noshow { background: repeating-linear-gradient(-45deg, color-mix(in srgb, var(--c) 18%, var(--card)) 0 5px, var(--card) 5px 10px); border: 1px dashed var(--bad); color: var(--bad); }
+.k-noshow { background: repeating-linear-gradient(-45deg, var(--line2) 0 3px, transparent 3px 6px); border: 1px dashed var(--bad); }
+.cr-asof { margin: 0 0 6px; }
+.chg-list li.clock span { color: var(--warn); }
 .g-dl, .g-now, .g-win { position: absolute; top: 0; bottom: 0; left: calc(124px + (100% - 124px) * var(--x)); pointer-events: none; z-index: 2; }
 .g-dl { border-left: 2px dashed color-mix(in srgb, var(--warn) 75%, transparent); }
 .g-dl.ok { border-left-color: color-mix(in srgb, var(--good) 65%, transparent); }

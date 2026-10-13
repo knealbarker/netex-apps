@@ -276,6 +276,26 @@ ok("custom work days: Saturday as a work day waits", !backfillAllowed({ day: "20
     const imp = await ingestRippling(sdb, { orgId: "tcc", integrationId: "rippling", today: "2026-10-12", csv: [hdr, "c1,Old Timer,82,Retail Advisor,Retail,TCC Quitman Retail,09/02/2026,09/02/2026 08:00 AM CDT,09/02/2026 01:00 PM CDT,5,America/Chicago,PAID,Web,Web,"].join("\n"), keepToday: true });
     ok("rippling: a hand import leaves today's punches alone", imp.used === 1 && one(S, "SELECT COUNT(*) n FROM labor_clock_today").n === 1);
   }
+  {
+    // the time clock record: a punch that shows up and is later removed in Rippling leaves a trace (Lupe, Oct 13)
+    const { sqlite: T, db: tdb } = freshDb();
+    const hdr = "time_entry_id,employee_name,employee_number,title,department_path,work_location,time_entry_date,clock_in_local,clock_out_local,duration_hours,timezone,status,clock_in_source,clock_out_source";
+    const row = (id, name, no, inAt, outAt = "") => `${id},${name},${no},Presser,Production,TCC SS Workshop,10/13/2026,10/13/2026 ${inAt} CDT,${outAt ? `10/13/2026 ${outAt} CDT` : ""},,America/Chicago,${outAt ? "PAID" : "OPEN"},Web,${outAt ? "Web" : ""}`;
+    const rep = rows => [hdr, ...rows].join("\n");
+    const log = () => T.prepare("SELECT p.payroll_id AS no, l.change, substr(l.clock_in,12,5) AS i, substr(l.clock_out,12,5) AS o, substr(l.was_in,12,5) AS wi FROM labor_punch_log l JOIN core_people p ON p.id=l.person_id ORDER BY l.rowid").all();
+    const r1 = await ingestRippling(tdb, { orgId: "tcc", integrationId: "rippling", today: "2026-10-13", csv: rep([row("e1", "Rosa Uno", 38, "04:48 AM"), row("e2", "Lupe Gallegos", 60, "06:12 AM")]) });
+    ok("punch log: first report of the day logs each clock-in", r1.punchChanges === 2 && log().every(x => x.change === "in"), log());
+    await ingestRippling(tdb, { orgId: "tcc", integrationId: "rippling", today: "2026-10-13", csv: rep([row("e1", "Rosa Uno", 38, "04:48 AM", "09:00 AM")]) });
+    const L = log();
+    ok("punch log: a clock-out and a removed punch are both recorded", L.length === 4 && L[2].change === "out" && L[2].o === "09:00" && L[3].change === "removed" && L[3].no === "60" && L[3].i === "06:12", L);
+    ok("punch log: today's table now matches Rippling (no Lupe)", one(T, "SELECT COUNT(*) n FROM labor_clock_today").n === 1);
+    await ingestRippling(tdb, { orgId: "tcc", integrationId: "rippling", today: "2026-10-13", csv: rep([row("e1", "Rosa Uno", 38, "04:40 AM", "09:00 AM")]) });
+    const c = log().at(-1);
+    ok("punch log: an edited punch keeps the time before the edit", c.change === "changed" && c.i === "04:40" && c.wi === "04:48", c);
+    const n = log().length;
+    await ingestRippling(tdb, { orgId: "tcc", integrationId: "rippling", today: "2026-10-13", csv: rep([row("e1", "Rosa Uno", 38, "04:40 AM", "09:00 AM")]) });
+    ok("punch log: an identical report adds nothing but moves the 'as of' time", log().length === n && !!JSON.parse(one(T, "SELECT value_json v FROM core_settings WHERE key='rippling_last'").v).at);
+  }
   ok("rippling: 12 PM and 12 AM", ripTime("10/12/2026 12:05 PM CDT").hm === "12:05" && ripTime("10/12/2026 12:05 AM CST").iso === "2026-10-12T00:05:00-06:00");
   let bad = null; try { await ingestRippling(rdb, { orgId: "tcc", integrationId: "rippling", today: "2026-10-12", csv: "a,b\n1,2" }); } catch (e) { bad = e.message; }
   ok("rippling: wrong file refused with a clear message", /missing/.test(bad || ""), bad);

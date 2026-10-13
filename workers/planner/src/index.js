@@ -12,6 +12,7 @@ import { loadPlan, savePlan, publishPlan, addCallout, removeCallout, publishedPl
 import { reviewDay, noteFollowup, laborStreak } from "./review.js";
 import { listChanges, addEvent } from "./changes.js";
 import { buildSummary, sendNow, scheduledSummary } from "./summary.js";
+import { checkAttendance } from "./attendance.js";
 import { localNow } from "./pieces.js";
 import { listTimeOff, addTimeOff, removeTimeOff } from "./timeoff.js";
 
@@ -111,8 +112,11 @@ export async function handle(req, env, opts = {}) {
 
 export default {
   async fetch(req, env) { return withHeaders(await handle(req, env)); },
-  // every 15 minutes: the daily summary email goes out once, after its time on work days
+  // every 5 minutes: today's plan against the time clock (not clocked in / clocked in late, written once each);
+  // the daily summary email goes out once, after its time on work days
   async scheduled(event, env, ctx) {
+    ctx.waitUntil(checkAttendance(env).then(r => { if (r.events.length) console.log(JSON.stringify({ job: "attendance", ...r })); })
+      .catch(e => console.error(JSON.stringify({ job: "attendance", error: String(e && e.stack || e) }))));
     ctx.waitUntil(scheduledSummary(env).then(r => { if (r.status === "sent" || r.status === "failed") console.log(JSON.stringify({ job: "summary", ...r })); })
       .catch(e => console.error(JSON.stringify({ job: "summary", error: String(e && e.stack || e) }))));
   },

@@ -20,14 +20,14 @@ export function planDiff(before, after, ovBefore, ovAfter, labels, names) {
   const moved = new Set();
   for (const [pid, code] of wa) {
     const was = wb.get(pid);
-    if (!was) { const c = after[code]; out.push(`${N(pid)} on ${L(code)} (in ${clock(c.start)}, ${hrs(c.hours)})`); moved.add(code); continue; }
+    if (!was) { const c = after[code]; out.push(`${N(pid)} on ${L(code)} (starts ${clock(c.start)}, ${hrs(c.hours)})`); moved.add(code); continue; }
     if (was !== code) { out.push(`${N(pid)} moved from ${L(was)} to ${L(code)}`); moved.add(code); }
   }
   for (const [pid, code] of wb) if (!wa.has(pid)) out.push(`${N(pid)} taken off ${L(code)}`);
   for (const [pid, code] of wa) {
     const a = after[code], b = before[wb.get(pid)];
     if (!b) continue;
-    if (a.start !== b.start) out.push(`${N(pid)}: clock-in ${clock(b.start)} → ${clock(a.start)}`);
+    if (a.start !== b.start) out.push(`${N(pid)}: planned start ${clock(b.start)} → ${clock(a.start)}`);
     if (+a.hours !== +b.hours) out.push(`${N(pid)}: hours ${hrs(b.hours)} → ${hrs(a.hours)}`);
     if ((a.stop || "") !== (b.stop || "")) out.push(a.stop ? `${N(pid)}: hard stop at ${clock(a.stop)}` : `${N(pid)}: hard stop removed`);
   }
@@ -85,6 +85,22 @@ export async function listChanges(db, env, day) {
   const ev = (await db.prepare(`SELECT e.at, e.kind, e.text, u.display_name AS who FROM plan_events e LEFT JOIN core_users u ON u.id=e.user_id WHERE e.org_id=? AND e.day=? ORDER BY e.at DESC`)
     .bind(env.ORG_ID, day).all()).results;
   for (const e of ev) out.push({ at: e.at, who: null, text: e.text, tag: e.kind === "ready" ? "ready" : e.kind === "warn" ? "warn" : e.kind });
+  // the time clock: punches edited or removed in Rippling (Production), so a punch that came and went leaves a trace
+  const hm = iso => { const m = /T(\d\d:\d\d)/.exec(iso || ""); return m ? clock(m[1]) : "?"; };
+  let punches = [];
+  try {
+    punches = (await db.prepare(`SELECT l.seen_at AS at, l.person_id AS pid, l.change, l.clock_in AS cin, l.clock_out AS cout, l.was_in AS wasIn, l.was_out AS wasOut
+        FROM labor_punch_log l WHERE l.org_id=? AND l.day=? AND l.change IN ('changed','removed')
+        AND (l.department_id IS NULL OR l.department_id=(SELECT d.id FROM core_departments d WHERE d.org_id=l.org_id AND d.name='Production')) ORDER BY l.seen_at DESC`)
+      .bind(env.ORG_ID, day).all()).results;
+  } catch { /* table not there yet */ }
+  for (const p of punches) {
+    const who = people.get(p.pid) || "Someone";
+    const span = (i, o) => `${hm(i)}${o ? `–${hm(o)}` : ""}`;
+    out.push({ at: p.at, who: "Rippling", tag: "clock", text: p.change === "removed"
+      ? `Time clock: ${who}'s punch ${span(p.cin, p.cout)} was removed in Rippling`
+      : `Time clock: ${who}'s punch changed in Rippling, ${span(p.wasIn, p.wasOut)} → ${span(p.cin, p.cout)}` });
+  }
   out.sort((a, b) => b.at.localeCompare(a.at));
   return { day, list: out.slice(0, 300) };
 }

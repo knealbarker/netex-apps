@@ -44,7 +44,7 @@ export async function loadPlan(db, env, day) {
     .map(r => r.key.replace(/^(dismiss|accept):/, ""));
   const late = away.filter(t => t.kind === "late" && !outIds.has(t.personId)).map(t => ({ id: t.id, personId: t.personId, at: t.at, note: t.note }));
   return { day, rev: d ? d.rev : 0, status: d ? d.status : "new", updatedAt: d?.updatedAt || null, updatedBy: updatedByName, crew, overrides, callouts, late, hidden, published,
-    history: await history(db, env, day, departmentId, locationId), clock: await clockToday(db, env, day) };
+    history: await history(db, env, day, departmentId, locationId), clock: await clockToday(db, env, day), clockAsOf: await clockAsOf(db, env) };
 }
 
 /** Who worked recent days (hours, first clock-in) and who was planned where: for "suggest from history" and the 40-hour watch. */
@@ -55,6 +55,11 @@ async function history(db, env, day, departmentId, locationId) {
   const planned = (await db.prepare(`SELECT d.work_date AS day, s.code AS station, a.person_id AS personId FROM plan_assignments a JOIN plan_days d ON d.id=a.day_id
       JOIN plan_stations s ON s.id=a.station_id WHERE d.location_id=? AND d.work_date >= ? AND d.work_date < ? AND a.person_id IS NOT NULL AND a.deleted_at IS NULL`).bind(locationId, from, day).all()).results;
   return { hours, planned };
+}
+/** When the last Rippling report arrived (the time clock is current as of then), or null. */
+async function clockAsOf(db, env) {
+  const r = await db.prepare("SELECT value_json FROM core_settings WHERE org_id=? AND app_id='core' AND key='rippling_last'").bind(env.ORG_ID).first();
+  try { return r ? JSON.parse(r.value_json).at || null : null; } catch { return null; }
 }
 async function clockToday(db, env, day) {
   const r = await db.prepare(`SELECT c.person_id AS personId, c.clock_in AS clockIn, c.clock_out AS clockOut FROM labor_clock_today c JOIN core_people p ON p.id=c.person_id

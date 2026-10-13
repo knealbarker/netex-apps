@@ -99,7 +99,7 @@ export async function render(main, ctx) {
     const dp = M.dayPieces(st.V, st.SET, pick);
     const q = M.effectiveQ(dp.base, st.overrides);
     return { s, ...pos, people, crew: st.crew, q, waves: dp.waves, day: pick, today: st.V.today, isToday: dp.isToday, now: dp.isToday ? nowH() : null,
-      callouts: st.plan.callouts, late: st.plan.late || [], history: st.plan.history, clock: st.plan.clock, published: st.plan.published, admin, expected: dp.expected && !Object.keys(st.overrides).length, dp };
+      callouts: st.plan.callouts, late: st.plan.late || [], history: st.plan.history, clock: st.plan.clock, clockAsOf: st.plan.clockAsOf || null, published: st.plan.published, admin, expected: dp.expected && !Object.keys(st.overrides).length, dp };
   }
   function suggest(why) {
     const P = makeP(), E = M.evaluate(P).E;
@@ -164,7 +164,7 @@ export async function render(main, ctx) {
       try {
         const p = await api(`/plan/${pick}`);
         if (p.rev !== st.rev) { adopt(p); toast(`${p.updatedBy || "Someone"} changed this plan. Showing their version.`, "warn", 6000); drawPage(); return; }
-        st.plan.callouts = p.callouts; st.plan.late = p.late || []; st.plan.hidden = p.hidden || []; st.plan.clock = p.clock; st.plan.published = p.published;
+        st.plan.callouts = p.callouts; st.plan.late = p.late || []; st.plan.hidden = p.hidden || []; st.plan.clock = p.clock; st.plan.clockAsOf = p.clockAsOf || null; st.plan.published = p.published;
       } catch { /* try again next minute */ }
     }
     update({ table: false });
@@ -369,6 +369,14 @@ export async function render(main, ctx) {
       ${trained.length ? raw(html`<optgroup label="Trained · best first">${trained.map(e => raw(opt(e, E.rankOf(e, code))))}</optgroup>`) : ""}
       ${other.length ? raw(html`<optgroup label="Not trained here">${other.map(e => raw(opt(e, 0)))}</optgroup>`) : ""}`;
   }
+  // under the person's name: what the time clock says, never the plan (the plan's start is in its own column)
+  function attLine(P, c) {
+    const a = c.emp ? M.attendanceOf(P, c.emp, c.start) : null;
+    if (!a) return "";
+    if (a.state === "in") return html`<small class="${a.lateMin ? "warn-txt" : "good-txt"}">Clocked in ${fmtClock(a.inAt)}${a.lateMin ? ` · ${a.lateMin} min late` : ""}</small>`;
+    if (a.state === "missing") return html`<small class="bad-txt">Not clocked in · due ${fmtClock(a.due)}</small>`;
+    return a.due > P.now ? html`<small class="muted">Not in yet · starts ${fmtClock(a.due)}</small>` : html`<small class="muted">Not clocked in yet</small>`;
+  }
   function drawCrew(X) {
     const P = X.P, E = X.E, el = document.getElementById("pl-crew");
     const keep = document.activeElement && el.contains(document.activeElement) ? document.activeElement.id : null;
@@ -379,15 +387,16 @@ export async function render(main, ctx) {
       return html`<div class="cr-row ${c.emp ? "" : "vacant"}" data-code="${p.id}">
         <div class="cr-st"><i class="sw" style="--c:${COLOR[isOps ? "ops" : p.type]}"></i><span><b>${p.label}</b><small>${TYPE_DESC[isOps ? "ops" : p.type] || ""}</small></span></div>
         <label class="cr-who"><span class="sr">Person on ${p.label}</span><select class="input" id="who-${p.id}" data-f="emp" ${dis}>${raw(personOptions(P, E, p.id))}</select>
-          ${c.emp && !rk ? raw('<small class="warn-txt">Not trained here</small>') : c.emp && clock[c.emp] ? raw(html`<small class="good-txt">Clocked in ${fmtClock(parseTime(clock[c.emp]))}</small>`) : c.emp && P.isToday && P.now > parseTime(c.start) + 0.25 && P.clock?.length ? raw('<small class="warn-txt">Not clocked in yet</small>') : ""}</label>
-        <label class="cr-f"><span>Clock-in</span><input class="input" type="time" step="300" id="start-${p.id}" data-f="start" value="${c.start}" ${c.emp ? "" : "disabled"} ${dis}></label>
+          ${c.emp && !rk ? raw('<small class="warn-txt">Not trained here</small>') : raw(attLine(P, c))}</label>
+        <label class="cr-f"><span>Planned start</span><input class="input" type="time" step="300" id="start-${p.id}" data-f="start" value="${c.start}" ${c.emp ? "" : "disabled"} ${dis}></label>
         <label class="cr-f"><span>Hours</span><input class="input" type="number" min="0" max="16" step="0.25" id="hrs-${p.id}" data-f="hrs" value="${c.hrs}" ${c.emp ? "" : "disabled"} ${dis}></label>
         <label class="cr-f"><span>Hard stop</span><input class="input" type="time" step="300" id="stop-${p.id}" data-f="stop" value="${c.stop || ""}" ${c.emp ? "" : "disabled"} ${dis}></label>
         <div class="cr-out" id="out-${p.id}"></div>
         <div class="cr-act">${can && c.emp ? raw(html`<button class="icon-btn" data-out="${p.id}" title="${first(M.nameOf(P, c.emp))} out or late" aria-label="${M.nameOf(P, c.emp)} out or late"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="10" cy="8" r="3.2"/><path d="M4 19c.6-3.2 2.9-5 6-5 1.4 0 2.6.4 3.6 1"/><path d="m16 15 5 5m0-5-5 5"/></svg></button>`) : ""}</div>
       </div>`;
     };
-    el.innerHTML = html`<div class="cr-head" aria-hidden="true"><span>Station</span><span>Person</span><span>Clock-in</span><span>Hours</span><span>Hard stop</span><span>Clock-out</span><span></span></div>
+    const asOf = P.isToday ? (P.clockAsOf ? `Time clock (Rippling) as of ${new Date(P.clockAsOf).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}. Start and end times below are the plan.` : "No time clock report from Rippling yet today. Start and end times below are the plan.") : "";
+    el.innerHTML = html`${asOf ? raw(html`<p class="cr-asof muted small">${asOf}</p>`) : ""}<div class="cr-head" aria-hidden="true"><span>Station</span><span>Person</span><span>Planned start</span><span>Hours</span><span>Hard stop</span><span>Planned end</span><span></span></div>
       ${pos.stations.map(p => raw(row(p, false)))}
       ${pos.ops.length ? raw(html`<div class="cr-sub">Operators</div>${pos.ops.map(p => raw(row(p, true)))}`) : ""}`;
     crewOutcomes(X);
@@ -560,17 +569,18 @@ export async function render(main, ctx) {
     let rows = "";
     for (const row of R.rows) {
       const p = row.st, name = row.staffed ? M.nameOf(P, st.crew[p.id].emp) : "";
+      const att = row.staffed ? M.attendanceOf(P, st.crew[p.id].emp, st.crew[p.id].start) : null, gone = att && att.state === "missing";
       let bars = "";
       if (row.staffed) {
         const steps = stepsOf(row), b0 = row.brkTaken > 0 ? row.brkS : null, b1 = b0 != null ? row.brkS + row.brkTaken : null;
         if (!steps.length) bars += html`<div class="gb idle" data-code="${p.id}" style="left:${pct(row.x.start)};width:${wid(row.x.start, Math.max(row.clockOut, row.x.start + 0.5))}" title="${name}: not needed">${first(name)} <small>not needed</small></div>`;
         steps.forEach((sp, i) => {
           const ot = sp.to > row.x.schedEnd + 0.02, col = COLOR[sp.stn === "comf" ? "comf" : E.TYPE_OF[sp.stn]] || COLOR.ops;
-          const label = i === 0 ? html`${first(name)} <small>${hm(row.x.start)}–${hm(row.clockOut)}</small>` : html`→ ${lbl(sp.stn)}`;
+          const label = i === 0 ? html`${first(name)} <small>${gone ? "not clocked in" : `${hm(row.x.start)}–${hm(row.clockOut)}`}</small>` : html`→ ${lbl(sp.stn)}`;
           let parts = [[sp.from, sp.to]];
           if (b0 != null && b1 > sp.from + 0.01 && b0 < sp.to - 0.01) parts = [[sp.from, b0], [b1, sp.to]].filter(x => x[1] - x[0] > 0.01);
           const big = parts.reduce((m, x, j) => x[1] - x[0] > parts[m][1] - parts[m][0] ? j : m, 0);
-          parts.forEach((x, j) => { bars += html`<div class="gb ${ot ? "ot" : ""}" data-code="${p.id}" style="left:${pct(x[0])};width:${wid(x[0], x[1])};--c:${col}" title="${name}: ${lbl(sp.stn)} ${fmtClock(sp.from)}–${fmtClock(sp.to)}${ot ? " (overtime)" : ""}">${j === big ? raw(label) : ""}</div>`; });
+          parts.forEach((x, j) => { bars += html`<div class="gb ${ot ? "ot" : ""} ${gone ? "noshow" : ""}" data-code="${p.id}" style="left:${pct(x[0])};width:${wid(x[0], x[1])};--c:${col}" title="${name}: ${lbl(sp.stn)} ${fmtClock(sp.from)}–${fmtClock(sp.to)}${ot ? " (overtime)" : ""}${gone ? " — planned; not clocked in" : ""}">${j === big ? raw(label) : ""}</div>`; });
         });
         if (row.brkTaken > 0) bars += html`<div class="gb brk" style="left:${pct(row.brkS)};width:${wid(row.brkS, row.brkS + row.brkTaken)}" title="Break ${fmtClock(row.brkS)}–${fmtClock(row.brkS + row.brkTaken)}"></div>`;
       }
@@ -592,9 +602,9 @@ export async function render(main, ctx) {
     if (fins.length > 1) { const lo = Math.min(...fins.filter(f => f >= R.end - s.spread / 60 - 1e-6)), hi = R.end; if (hi - lo > 0.02) lines += html`<div class="g-win" style="--x:${((lo - a) / (b - a)).toFixed(4)};--w:${((hi - lo) / (b - a)).toFixed(4)}" title="Everyone finishes between ${fmtClock(lo)} and ${fmtClock(hi)}"></div>`; }
     if (P.isToday && P.now > a && P.now < b) lines += html`<div class="g-now" style="--x:${((P.now - a) / (b - a)).toFixed(4)}" title="Now"></div>`;
     el.innerHTML = html`<div class="g-scroll"><div class="gantt"><div class="g-axis"><div></div><div class="g-ticks">${raw(ticks.join(""))}</div></div><div class="g-body">${raw(lines)}${raw(rows)}</div></div></div>
-      <div class="g-legend"><span><i class="k-dl"></i>shuttle must be ready</span><span><i class="k-win"></i>finish window (${s.spread} min)</span><span><i class="k-brk"></i>break</span><span><i class="k-ot"></i>overtime</span></div>`;
+      <div class="g-legend"><span><i class="k-dl"></i>shuttle must be ready</span><span><i class="k-win"></i>finish window (${s.spread} min)</span><span><i class="k-brk"></i>break</span><span><i class="k-ot"></i>overtime</span>${P.isToday ? raw('<span><i class="k-noshow"></i>planned, not clocked in</span>') : ""}</div>`;
   }
-  // drag a bar to move that person's clock-in, in 5-minute steps
+  // drag a bar to move that person's planned start, in 5-minute steps
   main.addEventListener("pointerdown", ev => {
     if (!alive()) return;
     const b = ev.target.closest?.(".gb[data-code]"); if (!b || !AX || !can) return;
@@ -615,7 +625,7 @@ export async function render(main, ctx) {
     if (!D) return; const d = D; D = null; d.b.classList.remove("drag");
     if (d.moved && d.step) {
       const t = Math.max(0, Math.min(23.9, d.start + d.step));
-      edit(() => { st.crew[d.code] = { ...st.crew[d.code], start: hhmm(t), source: "user" }; }, { msg: `${first(M.nameOf(makeP(), st.crew[d.code].emp))} clocks in at ${fmtClock(t)}` });
+      edit(() => { st.crew[d.code] = { ...st.crew[d.code], start: hhmm(t), source: "user" }; }, { msg: `${first(M.nameOf(makeP(), st.crew[d.code].emp))} starts at ${fmtClock(t)}` });
     } else main.querySelectorAll(`.gb[data-code="${d.code}"]`).forEach(x => { x.style.transform = ""; });
   };
   main.addEventListener("pointerup", dragEnd, on); main.addEventListener("pointercancel", dragEnd, on);
