@@ -23,6 +23,13 @@ export async function render(main, ctx) {
   if (!pick && (!D.isWorkDay || (D.labor.hours === 0 && D.done.pieces === 0))) D = await api(`/review/${D.prev}`);
   pick = D.day;
   draw();
+  // today: refresh every 2 minutes while this page is open (not while someone is typing a follow-up note)
+  const me = Symbol("review"); main._rv = me;
+  const timer = setInterval(async () => {
+    if (main._rv !== me || !document.getElementById("rv-root")) return clearInterval(timer);
+    if (!D.isToday || main.contains(document.activeElement) && /INPUT|SELECT|TEXTAREA/.test(document.activeElement.tagName)) return;
+    try { D = await api(`/review/${pick}`); draw(); } catch { /* next time */ }
+  }, 120000);
 
   async function go(day) { main.querySelector("#rv-root")?.classList.add("busy"); pick = day; D = await api(`/review/${day}`); draw(); }
 
@@ -49,7 +56,7 @@ export async function render(main, ctx) {
       { v: lastOut >= 0 ? hm(lastOut) : "—", s: `last out${stillIn ? " (some still in)" : ""}${D.planned?.metrics?.end != null ? ` · plan ${hm(D.planned.metrics.end)}` : ""}` },
     ];
     main.innerHTML = html`<div id="rv-root">
-      <div class="page-head"><div><h1>Review</h1><p>${longDay(D.day)}${D.isToday ? " · so far, live from SMRT and the time clock" : ""}</p></div>
+      <div class="page-head"><div><h1>${D.isToday ? "Today" : "Review"}</h1><p>${longDay(D.day)}${D.isToday ? " · so far, live from SMRT and the time clock" : ""}</p></div>
         <div class="head-actions day-nav">
           <button class="icon-btn" id="rv-prev" title="Previous work day" aria-label="Previous work day">‹</button>
           <label class="sr" for="rv-date">Day</label><input class="input" type="date" id="rv-date" value="${D.day}" max="${D.today}">
@@ -59,6 +66,7 @@ export async function render(main, ctx) {
       <section class="tiles rv-tiles">${tiles.map(x => raw(html`<div class="tile"><b class="t-num ${x.c ? "c-" + x.c : ""}">${x.v}</b><span class="t-sub">${x.s}</span></div>`))}</section>
       ${D.money && L.avgHours > 0.05 ? raw(html`<p class="muted small rv-note">Labor cost uses each person's pay rate from Rippling; ${fmtH(L.avgHours)} of ${fmtH(L.hours)} ${L.avgHours >= L.hours - 0.05 ? "are" : "is"} costed at the average ${fmt$(L.payAvg)}/h because Rippling hasn't sent a rate for ${L.avgHours >= L.hours - 0.05 ? "anyone yet" : "everyone"}.</p>`) : ""}
       <div class="rv-grid">
+        <section class="card pl-card rv-hours"><header class="pl-cardhead"><div><h2>By the hour</h2><p>Pieces assembled in SMRT each hour${D.isToday ? ", so far" : ""}. Assembly runs behind pressing, so spurts follow batches.</p></div></header>${raw(byHour())}</section>
         <section class="card pl-card"><header class="pl-cardhead"><div><h2>Pieces through the day</h2><p>Assembled in SMRT, counted as they happened${D.planned?.metrics?.end != null ? ", against the published plan's pace" : ""}.</p></div></header>${raw(chart())}</section>
         <section class="card pl-card"><header class="pl-cardhead"><div><h2>Deadlines</h2><p>When the last piece for each was assembled.</p></div></header>${raw(deadlines())}</section>
         <section class="card pl-card"><header class="pl-cardhead"><div><h2>Plan vs. actual</h2><p>${D.planned ? `${D.planned.source === "published" ? `Published${D.planned.by ? ` by ${D.planned.by}` : ""}` : "Saved, not published"}; actual times from Rippling. Differences of 10 minutes or more are shown.` : "No plan was saved for this day."}</p></div></header>${raw(people())}</section>
@@ -66,9 +74,11 @@ export async function render(main, ctx) {
           <a class="btn small primary" href="#/plan?day=${D.nextWork}">Open ${new Date(D.nextWork + "T12:00:00").toLocaleDateString(undefined, { weekday: "long" })}'s plan</a></header><div id="rv-nextday-body"><p class="muted pad">Working it out…</p></div></section>
         <section class="card pl-card"><header class="pl-cardhead"><div><h2>Last ${D.trend.length} work days</h2><p>Pieces assembled per labor hour${D.money ? ", and labor % of revenue" : ""}.</p></div></header>${raw(trend())}</section>
       </div>
+      ${D.isToday ? raw('<div id="rv-orders"></div>') : ""}
       ${raw(followups())}
     </div>`;
     nextDay();
+    if (D.isToday) orders();
     main.querySelector("#rv-prev").addEventListener("click", () => go(D.prev));
     main.querySelector("#rv-next").addEventListener("click", () => D.next && go(D.next));
     main.querySelector("#rv-date").addEventListener("change", e => { if (e.target.value && e.target.value <= D.today) go(e.target.value); });
@@ -123,6 +133,31 @@ export async function render(main, ctx) {
       <div class="g-legend"><span><i class="k-done"></i>Assembled</span>${m && m.end != null ? '<span><i class="k-plan"></i>Plan pace</span>' : ""}${D.due.pieces ? '<span><i class="k-due"></i>Due this day</span>' : ""}</div>`;
   }
 
+  // pieces assembled per clock hour, starch bottoms first (Neal, Oct 13: watch the bottleneck through the day)
+  function byHour() {
+    const H = D.done.byHour || {}, hours = Object.keys(H).map(Number).sort((a, b) => a - b);
+    if (!hours.length) return html`<p class="muted pad">${D.isToday ? "Fills in as pieces are assembled." : "No pieces were assembled this day."}</p>`;
+    const cols = [["slb", "Starch bottoms"], ["slt", "Starch tops"], ["dct", "DC tops"], ["dcb", "DC bottoms"], ["other", "Other"]];
+    const v = (h, k) => k === "other" ? (H[h].comf || 0) + (H[h].tc || 0) : (H[h][k] || 0);
+    const all = []; for (let h = hours[0]; h <= hours[hours.length - 1]; h++) all.push(h);
+    const top = Math.max(1, ...all.map(h => (H[h] ? v(h, "slb") : 0)));
+    const sum = k => all.reduce((t, h) => t + (H[h] ? v(h, k) : 0), 0);
+    const nowH = new Date().getHours();
+    return html`<div class="hr-scroll"><table class="hr-tbl"><thead><tr><th>Hour</th>${cols.map(([, l], i) => raw(html`<th class="${i === 0 ? "neck" : ""}">${l}</th>`))}<th>All</th></tr></thead><tbody>
+      ${all.map(h => { const row = H[h] || {}; const tot = Object.values(row).reduce((a, b) => a + b, 0), slb = H[h] ? v(h, "slb") : 0;
+        return raw(html`<tr class="${D.isToday && h === nowH ? "now" : ""}"><th>${hm(h)}–${hm(h + 1).replace(/ [AP]M/, "")}</th>
+          <td class="neck"><span class="hr-bar" style="--w:${Math.round(slb / top * 100)}%"></span><b>${slb || "·"}</b></td>${cols.slice(1).map(([k]) => raw(html`<td>${(H[h] ? v(h, k) : 0) || "·"}</td>`))}<td>${tot || "·"}</td></tr>`); })}
+      </tbody><tfoot><tr><th>Total</th>${cols.map(([k], i) => raw(html`<td class="${i === 0 ? "neck" : ""}"><b>${fmtN(sum(k))}</b></td>`))}<td><b>${fmtN(D.done.pieces)}</b></td></tr></tfoot></table></div>`;
+  }
+  // today: orders past their due time, and finished orders not marked ready (moved here from the Plan, Oct 13)
+  async function orders() {
+    const el = () => main.querySelector("#rv-orders");
+    try {
+      const V = await api("/pieces"); const box = el(); if (!box || !D.isToday) return;
+      const late = (V.late || []).filter(o => o.overdue || Date.parse(o.due) <= Date.now());
+      box.innerHTML = lateCard(late) + (V.notReady?.length ? notReadyCard(V.notReady) : "");
+    } catch { /* optional */ }
+  }
   function deadlines() {
     if (!D.deadlines.length) return html`<p class="muted pad">No orders were due this day.</p>`;
     const rows = D.deadlines.map(w => {
@@ -194,4 +229,27 @@ export async function render(main, ctx) {
           <input class="input" name="note" maxlength="500" placeholder="Note (optional)" aria-label="Note" value="${f.note || ""}"><button class="btn small" value="save">Save</button><button class="btn small ghost" value="resolve" title="The order is finished or the new date was met">Done</button></form>`) : ""}
       </div>`))}</div>`) : raw('<p class="muted">Nothing to follow up.</p>')}</section>`;
   }
+}
+
+function lateCard(rows) {
+  if (!rows.length) return html`<section class="card set-card"><header><h2>Late orders</h2><p>None right now — nothing is past its due time.</p></header></section>`;
+  return html`<section class="card set-card"><details data-k="late"><summary><h2>Late orders <span class="count">${rows.length}</span></h2>
+      <p>Orders past their due time that aren't finished. Where the pieces are comes from SMRT's item and lot status.</p></summary>
+    <div class="late-list">${rows.slice(0, 60).map(o => raw(html`<div class="late ${o.overdue ? "over" : ""}">
+      <div class="l-main"><a href="${o.customer ? SMRT_ORDER(o.customer, o.no) : "#"}" target="_blank" rel="noopener" class="l-no" title="Open in SMRT">${o.no}</a>
+        <span class="chip ${o.overdue ? "off" : "manager"}">${o.overdue ? `Overdue · due ${new Date(o.due).toLocaleDateString(undefined, { month: "short", day: "numeric" })}` : `Due ${new Date(o.due).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })}`}</span>
+        ${o.notes ? raw(html`<span class="chip" title="This order or one of its pieces has a note in SMRT">Note</span>`) : ""}</div>
+      <div class="l-meta"><span>${o.loc}</span><span>${o.left} of ${o.pieces} pieces left</span><span>${o.status}</span></div>
+      <div class="l-where">${Object.entries(o.open).map(([k, c]) => raw(html`<span>${c} ${k}</span>`))}</div>
+    </div>`))}</div>${rows.length > 60 ? raw(html`<p class="muted">…and ${rows.length - 60} more.</p>`) : ""}</details></section>`;
+}
+function notReadyCard(rows) {
+  const van = rows.filter(o => o.onVan).length;
+  return html`<section class="card set-card"><details data-k="ready"><summary><h2>Finished, but not ready in SMRT <span class="count soft">${rows.length}</span></h2>
+      <p>Every piece is assembled, but the order isn't marked ready.${van ? ` ${van} went out on the van and weren't racked at the store.` : ""} These are for the stores, not production.</p></summary>
+    <div class="late-list">${rows.slice(0, 60).map(o => raw(html`<div class="late">
+      <div class="l-main"><a href="${o.customer ? SMRT_ORDER(o.customer, o.no) : "#"}" target="_blank" rel="noopener" class="l-no" title="Open in SMRT">${o.no}</a>
+        <span class="chip ${o.onVan ? "admin" : ""}">${o.onVan ? "On the van · not checked in" : o.shuttle ? "Assembled · still at the plant, next shuttle" : "Assembled · not racked as ready"}</span></div>
+      <div class="l-meta"><span>${o.loc}</span><span>Due ${new Date(o.due).toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" })}</span><span>${o.pieces} pieces</span><span>${o.status}</span></div>
+    </div>`))}</div></details></section>`;
 }

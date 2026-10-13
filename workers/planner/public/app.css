@@ -885,3 +885,18 @@ dialog.sheet .dlg-body { max-height: min(70vh, 640px); overflow: auto; }
 .sched-days .ms-time input[type=checkbox] { position: absolute; opacity: 0; pointer-events: none; }
 .sched-days .ms-time:has(input:checked) { background: var(--text); color: var(--bg); border-color: var(--text); }
 @media (max-width: 420px) { .sched-days { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+
+/* Review › By the hour */
+.hr-scroll { overflow-x: auto; }
+.hr-tbl { width: 100%; border-collapse: collapse; font-size: 14px; font-variant-numeric: tabular-nums; }
+.hr-tbl th, .hr-tbl td { padding: 7px 8px; text-align: right; border-bottom: 1px solid var(--line); white-space: nowrap; }
+.hr-tbl thead th { font-size: 12px; color: var(--muted); font-weight: 600; }
+.hr-tbl tbody th, .hr-tbl tfoot th { text-align: left; font-weight: 500; color: var(--muted); }
+.hr-tbl td { color: var(--muted); }
+.hr-tbl .neck { position: relative; color: var(--text); min-width: 110px; }
+.hr-tbl td.neck b { position: relative; }
+.hr-bar { position: absolute; left: 8px; top: 50%; height: 14px; transform: translateY(-50%); width: calc((100% - 52px) * var(--w) / 100); background: color-mix(in srgb, #8b7cf6 40%, transparent); border-radius: 4px; }
+.hr-tbl tr.now th, .hr-tbl tr.now td { background: var(--accent-soft); }
+.hr-tbl tfoot td, .hr-tbl tfoot th { border-bottom: 0; color: var(--text); }
+#rv-orders .card { margin-top: 16px; }
+.rv-grid > * { min-width: 0; }
