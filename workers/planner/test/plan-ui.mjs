@@ -186,16 +186,6 @@ await t("another PC saved in between: this one gets their plan and a message", a
   await p.waitForFunction(() => document.getElementById("hrs-asm1").value === "4");
   ok((await plan()).crew.asm1.hours === 4, "their save stands");
 });
-await t("Auto-assign places the checked people", async () => {
-  await p.click("#pl-auto");
-  await p.waitForSelector("dialog .aa-list");
-  await p.click("dialog [data-none]");
-  for (const n of ["Ana", "Beto", "Cora", "Eli"]) await p.check(`dialog input[value="${ids[n]}"]`);
-  await p.click('dialog button[type="submit"]');
-  await saved(p);
-  const P = await plan(); const on = Object.values(P.crew).map(c => c.personId).sort();
-  ok(JSON.stringify(on) === JSON.stringify([ids.Ana, ids.Beto, ids.Cora, ids.Eli].sort()), JSON.stringify(P.crew));
-});
 await t("Labor and revenue card is there for the Owner", async () => {
   ok(await p.isVisible("#pl-money .m-big"));
 });

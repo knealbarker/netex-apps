@@ -365,7 +365,8 @@ input[type="file"].input { padding: 8px; }
 .warn-txt { color: var(--warn); } .good-txt { color: var(--good); } .bad-txt { color: var(--bad); }
 :is(.wv-sub, .v-k, .m-big) .good { color: var(--good); } :is(.wv-sub, .v-k, .m-big) .warn { color: var(--warn); } :is(.wv-sub, .v-k, .m-big) .bad { color: var(--bad); }
 .plan-head { margin-bottom: 12px; }
-.plan-head .head-actions { gap: 8px; }
+.plan-head .head-actions { gap: 8px; margin-left: auto; }
+.plan-head .saved-note:empty { display: none; }
 .plan-bar { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 14px; }
 .plan-bar .seg { margin-bottom: 0; }
 .btn.published { color: var(--good); border-color: color-mix(in srgb, var(--good) 40%, transparent); }

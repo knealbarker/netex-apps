@@ -28,16 +28,6 @@ const HELP = {
     <li>People marked <b>out</b> on Team are left off.</li></ul>
     <p><b>It replaces the crew</b> for this day, including changes you made by hand. Undo (Ctrl+Z) brings the old crew back. Nothing reaches the floor until you Publish.</p>
     <p>Best for starting a day. To change one or two things, edit the crew directly.</p>` },
-  auto: { title: "Auto-assign", body: `<p>You check who's working; the planner decides <b>which station</b> each one goes on.</p>
-    <ul><li>Each person goes where they rank highest in their trainings, with the busiest stations filled first.</li>
-    <li>Today, everyone who has clocked in is checked already, and their real clock-in times are used.</li>
-    <li>People already on the crew keep their hours and hard stop.</li></ul>
-    <p>It replaces the current station assignments. Undo brings them back.</p>
-    <p><b>vs. Suggest from history:</b> history decides <i>who</i> and <i>where</i> from past days; Auto-assign only decides <i>where</i>, for the people you pick.</p>` },
-  full: { title: "All full day", body: `<p>Sets <b>everyone already on the crew</b> to a full day (${"${FULL}"} in Settings › Working day):</p>
-    <ul><li>Clock-in goes back to their real clock-in today, or their usual one (not before a late arrival on Team).</li>
-    <li>Hard stops are cleared.</li><li>Nobody is added or moved.</li></ul>
-    <p>Useful after trimming hours when the work turns out bigger than expected. Undo brings the old hours back.</p>` },
   undo: { title: "Undo", body: `<p>Takes back the last change to the crew or the piece counts on this screen (also Ctrl+Z). It goes back up to 60 steps, until you leave the Plan.</p>
     <p>It doesn't undo time off, call-outs or publishing.</p>` },
   print: { title: "Print", body: `<p>Prints the plan on one page: crew with times, each person's moves and breaks, and when each shuttle's pieces should be ready. Choose "Save as PDF" in the print window to keep a copy.</p>` },
@@ -183,23 +173,19 @@ export async function render(main, ctx) {
   function drawPage() {
     const P = makeP();
     main.innerHTML = html`<div id="pl-root">
-      <div class="page-head plan-head">
-        <div><h1>Plan</h1><p>${longDay(pick)}${P.isToday ? "" : P.dp.expected ? " · pieces include what usually still comes in" : ""}</p></div>
-        <div class="head-actions">
-          <span class="saved-note" id="pl-save" aria-live="polite"></span>
-          ${can ? raw(html`<button class="btn ghost small" id="pl-undo" title="Undo (Ctrl+Z)" disabled><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 14 4 9l5-5"/><path d="M4 9h10a6 6 0 0 1 0 12h-3"/></svg>Undo</button>
-            <span class="hbtn"><button class="btn small" id="pl-suggest" title="Who usually works this weekday, on their usual stations">Suggest from history</button>${raw(helpBtn("suggest"))}</span>
-            <span class="hbtn"><button class="btn small" id="pl-auto" title="Pick who's working; the planner places them">Auto-assign</button>${raw(helpBtn("auto"))}</span>
-            <span class="hbtn"><button class="btn small" id="pl-full" title="Everyone on the crew: a full day from their usual clock-in, no hard stops">All full day</button>${raw(helpBtn("full"))}</span>`) : ""}
-          <span class="hbtn"><button class="btn small" id="pl-print" title="Print the plan, or save it as a PDF"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 9V3h10v6"/><rect x="3" y="9" width="18" height="8" rx="2"/><path d="M7 14h10v7H7z"/></svg>Print</button>${raw(helpBtn("print"))}</span>
-          ${can ? raw(html`<span class="hbtn"><button class="btn primary small" id="pl-pub"></button>${raw(helpBtn("publish"))}</span>`) : ""}
-        </div>
-      </div>
-      <div class="plan-bar">
+      <div class="plan-bar plan-head">
+        <h1 class="sr">Plan</h1>
         <div class="seg" role="tablist" aria-label="Day">${days().map(d => raw(html`<button role="tab" aria-selected="${d === pick}" data-day="${d}">${fmtDay(d, st.V.today)}</button>`))}
           ${days().includes(pick) ? "" : raw(html`<button role="tab" aria-selected="true" data-day="${pick}" class="custom">${fmtDay(pick, st.V.today)}</button>`)}</div>
         <label class="date-pick" title="Plan another day"><span class="sr">Plan another day</span><input class="input" type="date" id="pl-date" value="${pick}"></label>
         <span id="pl-pill"></span>
+        <div class="head-actions">
+          <span class="saved-note" id="pl-save" aria-live="polite"></span>
+          ${can ? raw(html`<button class="btn ghost small" id="pl-undo" title="Undo (Ctrl+Z)" disabled><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 14 4 9l5-5"/><path d="M4 9h10a6 6 0 0 1 0 12h-3"/></svg>Undo</button>
+            <span class="hbtn"><button class="btn small" id="pl-suggest" title="Who usually works this weekday, on their usual stations">Suggest from history</button>${raw(helpBtn("suggest"))}</span>`) : ""}
+          <span class="hbtn"><button class="btn small" id="pl-print" title="Print the plan, or save it as a PDF"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 9V3h10v6"/><rect x="3" y="9" width="18" height="8" rx="2"/><path d="M7 14h10v7H7z"/></svg>Print</button>${raw(helpBtn("print"))}</span>
+          ${can ? raw(html`<span class="hbtn"><button class="btn primary small" id="pl-pub"></button>${raw(helpBtn("publish"))}</span>`) : ""}
+        </div>
       </div>
       ${isPast() ? raw(html`<div class="banner info"><b>This day is over.</b> The plan is shown as it was saved (read-only). <a href="#/review?day=${pick}">See how it went in Review</a>.</div>`) : ""}
       <div id="pl-note"></div>
@@ -252,8 +238,6 @@ export async function render(main, ctx) {
         body: html`<p class="dlg-lead">Replaces the crew for ${longDay(pick)} with the people who usually work ${M.WD[M.weekday(pick)]}s, at their usual clock-in, on the stations they're usually on. You can undo it.</p>`,
         onSubmit: () => edit(() => suggest("button"), { keepNote: true }),
       }));
-      main.querySelector("#pl-auto").addEventListener("click", autoDialog);
-      main.querySelector("#pl-full").addEventListener("click", allFullDay);
       main.querySelector("#pl-pub").addEventListener("click", publishDialog);
     }
     drawHeadPill(); drawOrders(); update({ table: true });
@@ -262,9 +246,9 @@ export async function render(main, ctx) {
   function drawHeadPill() {
     const el = document.getElementById("pl-pill"); if (!el) return;
     const last = st.V.smrt.lastOk, run = st.V.smrt.lastRun;
-    if (!last && !run) { el.innerHTML = html`<span class="pill">SMRT live updates start on the next work day</span>`; return; }
+    if (!last && !run) { el.innerHTML = html`<span class="pill">SMRT updates start next work day</span>`; return; }
     const mins = last ? (Date.now() - Date.parse(last)) / 60000 : Infinity, err = run && run.status === "error", stale = st.V.isWorkDay && mins > 30;
-    el.innerHTML = html`<span class="pill ${err || stale ? "warn" : "ok"}" title="${run?.message || ""}"><i></i>${err ? "SMRT update failed · " : ""}Pieces from SMRT, updated ${last ? ago(last).toLowerCase() : "—"}</span>`;
+    el.innerHTML = html`<span class="pill ${err || stale ? "warn" : "ok"}" title="${run?.message || ""}"><i></i>${err ? "SMRT update failed · " : ""}SMRT · ${last ? ago(last).toLowerCase() : "—"}</span>`;
   }
   function drawNote() {
     const el = document.getElementById("pl-note"); if (!el) return;
@@ -689,15 +673,6 @@ export async function render(main, ctx) {
     });
   }
 
-  // ---- all full day: everyone on the crew works a full day from their usual clock-in (today: when they clocked in)
-  function allFullDay() {
-    const clock = M.clockInOf(makeP());
-    edit(() => {
-      for (const p of POS) { const c = st.crew[p.id]; if (!c.emp) continue; const e = people.find(x => x.id === c.emp);
-        st.crew[p.id] = { ...c, hrs: s.fullDay, stop: "", start: clock[c.emp] || M.notBeforeLate(makeP(), c.emp, e?.start || s.defStart), source: "user" }; }
-    }, { msg: `Everyone on a full day (${fmtH(s.fullDay)})` });
-  }
-
   // ---- washers: each load, by washer
   function drawWash(X) {
     const card = document.getElementById("pl-wash-card"), el = document.getElementById("pl-wash"); if (!el) return;
@@ -755,35 +730,6 @@ export async function render(main, ctx) {
     const done = () => { document.body.classList.remove("printing"); window.removeEventListener("afterprint", done); };
     window.addEventListener("afterprint", done);
     setTimeout(() => { window.print(); setTimeout(done, 1500); }, 50);
-  }
-
-  // ---- who's working: auto-assign
-  function autoDialog() {
-    const P = makeP(), clock = M.clockInOf(P), out = new Set((P.callouts || []).map(c => c.personId));
-    const on = new Set(Object.values(st.crew).map(c => c.emp).filter(Boolean));
-    const pre = Object.keys(clock).length ? new Set(Object.keys(clock)) : on.size ? on : new Set(people.map(p => p.id));
-    const E = M.evaluate(P).E;
-    const top = e => POS.filter(p => E.rankOf(e, p.id)).sort((a, b) => E.rankOf(e, a.id) - E.rankOf(e, b.id)).slice(0, 3).map(p => p.label).join(" · ") || "No trainings yet";
-    openDialog({
-      title: "Who's working?", submitLabel: "Assign stations",
-      body: html`<p class="dlg-lead">Each person goes where they rank highest, busiest stations first. You can change anything afterwards.${Object.keys(clock).length ? " Checked: everyone clocked in today — their clock-in times are used." : ""}</p>
-        <div class="aa-tools"><button type="button" class="linkish" data-all>Everyone</button> · <button type="button" class="linkish" data-none>Nobody</button></div>
-        <div class="aa-list">${people.slice().sort((a, b) => a.name.localeCompare(b.name)).map(e => raw(html`<label class="aa"><input type="checkbox" name="p" value="${e.id}" ${pre.has(e.id) && !out.has(e.id) ? "checked" : ""}>
-          <span><b>${e.name}</b><small>${out.has(e.id) ? "Called out · " : ""}${clock[e.id] ? `In at ${fmtClock(parseTime(clock[e.id]))} · ` : ""}${top(e)}</small></span></label>`))}</div>`,
-      onOpen: (form, dlg) => {
-        dlg.classList.add("wide");
-        dlg.querySelector("[data-all]").addEventListener("click", () => form.querySelectorAll("[name=p]").forEach(x => { x.checked = true; }));
-        dlg.querySelector("[data-none]").addEventListener("click", () => form.querySelectorAll("[name=p]").forEach(x => { x.checked = false; }));
-      },
-      onSubmit: form => {
-        const ids = [...form.querySelectorAll("[name=p]:checked")].map(x => x.value);
-        if (!ids.length) throw new Error("Check at least one person.");
-        let r;
-        edit(() => { r = M.autoAssign(makeP(), E, ids); st.crew = r.crew; });
-        const notFirst = r.placed.filter(x => x.rk > 1).length;
-        toast(`Placed ${r.placed.length} ${r.placed.length === 1 ? "person" : "people"}${notFirst ? ` (${notFirst} on a 2nd-or-later choice)` : ""}.${r.left.length ? ` Not placed: ${r.left.map(e => e.name).join(", ")}.` : ""}`, "ok", 8000);
-      },
-    });
   }
 
   // ---- orders that need attention (from SMRT)

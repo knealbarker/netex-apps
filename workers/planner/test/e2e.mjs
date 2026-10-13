@@ -134,13 +134,11 @@ await t("Settings: summary email card with recipients, preview, Rippling pay-rat
   await p.click('dialog button[type="submit"]');
   ok(await p.isVisible("#notifyLine"), "notification line");
 });
-await t("Plan: suggested crew, keep it, All full day, washers and Changes today", async () => {
+await t("Plan: suggested crew, keep it, washers and Changes today", async () => {
   await p.goto(url + "/#/plan"); await p.waitForSelector("#pl-crew .cr-row");
   await p.click("#pl-keep"); await saved();
   await p.fill("#hrs-dct1", "5"); await p.press("#hrs-dct1", "Tab"); await saved();
-  await p.click("#pl-full"); await saved();
-  const P = (await api("GET", `/plan/${DAY}`)).body;
-  ok(Object.values(P.crew).every(c => c.hours === 7.5 && !c.stop), "everyone full day");
+  ok(!(await p.isVisible("#pl-full")) && !(await p.isVisible("#pl-auto")), "Auto-assign and All full day are gone");
   ok(await p.locator("#pl-wash .wl").count() > 2, "washer loads");
   await p.click("#pl-chg-box summary"); await p.waitForSelector("#pl-chg .chg-list li");
   ok(await p.isVisible('#pl-chg >> text=hours 7h 30m → 5h'), "change logged");
@@ -148,7 +146,7 @@ await t("Plan: suggested crew, keep it, All full day, washers and Changes today"
   await shot(p, "e3-plan.png");
 });
 await t("Plan: each top button has a ? that explains it; today shows Suggestions right now", async () => {
-  for (const id of ["suggest", "auto", "full", "print", "publish"]) {
+  for (const id of ["suggest", "print", "publish"]) {
     await p.click(`.plan-head [data-help="${id}"]`);
     await p.waitForSelector("dialog.help-dlg");
     if (id === "suggest") await p.locator("dialog").screenshot({ path: join(SHOTS, "e3b-help.png") });
@@ -237,7 +235,7 @@ await t("Viewer: no pay rates, no labor money, can't edit", async () => {
   await v.p.goto(url + `/#/review?day=${LAST}`); await v.p.waitForSelector("#rv-nextday .rv-next");
   ok(!(await v.p.isVisible("text=projected labor")), "no money");
   await v.p.goto(url + "/#/plan"); await v.p.waitForSelector("#pl-crew");
-  ok(!(await v.p.isVisible("#pl-full")) && !(await v.p.isVisible("#pl-pub")), "no editing");
+  ok(!(await v.p.isVisible("#pl-suggest")) && !(await v.p.isVisible("#pl-pub")), "no editing");
   await v.ctx.close(); who = NEAL;
 });
 await t("Phone width: plan and settings fit", async () => {
