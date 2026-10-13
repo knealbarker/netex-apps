@@ -71,12 +71,26 @@ async function existingOrders(db, orgId, nos) {
   }
   return out;
 }
+/**
+ * Which stored row is this piece? Tags are reused: a customer's jeans keep the same barcode visit after visit (Neal, Oct 13:
+ * the day's starch bottoms count jumped 324 → 354 → 336 as rows flipped between last week's order and today's). So:
+ *  - a row on the same order is this piece;
+ *  - a row on another order is the same piece moved there (SMRT's Split) only when it was created within a day of this one;
+ *  - otherwise it's an earlier visit with the same tag, and this piece gets its own row.
+ */
+function samePiece(rows, orderId, createdAt) {
+  if (!rows || !rows.length) return null;
+  const same = rows.find(x => x.order_id === orderId); if (same) return same;
+  const t = Date.parse(createdAt);
+  const near = rows.filter(x => isFinite(t) && Math.abs(Date.parse(x.smrt_created_at) - t) < 864e5);
+  return near.length ? near[near.length - 1] : null;
+}
 async function existingItems(db, orgId, barcodes, sinceIso) {
   const out = new Map();
   for (const c of chunks(barcodes, CHUNK)) {
-    const r = await db.prepare(`SELECT i.id, i.barcode, i.order_id, i.row_hash, i.notes, i.removed_at FROM pos_items i JOIN pos_orders o ON o.id=i.order_id
+    const r = await db.prepare(`SELECT i.id, i.barcode, i.order_id, i.row_hash, i.notes, i.removed_at, i.smrt_created_at FROM pos_items i JOIN pos_orders o ON o.id=i.order_id
       WHERE o.org_id=? AND i.smrt_created_at >= ? AND i.barcode IN (${c.map(() => "?").join(",")}) ORDER BY i.smrt_created_at`).bind(orgId, sinceIso, ...c).all();
-    for (const x of r.results) out.set(x.barcode, x); // newest wins
+    for (const x of r.results) (out.get(x.barcode) || out.set(x.barcode, []).get(x.barcode)).push(x); // every row with that tag, oldest first
   }
   return out;
 }
@@ -182,7 +196,7 @@ export async function ingestDay(db, ctx, orders, items) {
       base_cents: int(r["Item base price"]), upcharge_cents: int(r["Up Charge Amount"]), discount_cents: int(r["Discounted amount"]), price_cents: int(r["Price"]),
     };
     const hash = await sha1(JSON.stringify(r));
-    const old = v.barcode ? knownItems.get(v.barcode) : null;
+    const old = v.barcode ? samePiece(knownItems.get(v.barcode), o.id, v.smrt_created_at) : null;
     const cols = Object.keys(v);
     if (old) {
       if (old.row_hash === hash && old.order_id === o.id) continue;
@@ -196,7 +210,7 @@ export async function ingestDay(db, ctx, orders, items) {
       writes.push(db.prepare(`INSERT INTO pos_items(id,${cols.join(",")},row_hash,last_sync_id) VALUES(?,${cols.map(() => "?").join(",")},?,?)`)
         .bind(id, ...cols.map(c => v[c]), hash, ctx.runId));
       if (o.existed && ctx.mode === "live") change(o.id, id, "item_added", null, v.barcode);
-      if (v.barcode) knownItems.set(v.barcode, { id, barcode: v.barcode, order_id: o.id, row_hash: hash, notes: v.notes, removed_at: v.removed_at });
+      if (v.barcode) (knownItems.get(v.barcode) || knownItems.set(v.barcode, []).get(v.barcode)).push({ id, barcode: v.barcode, order_id: o.id, row_hash: hash, notes: v.notes, removed_at: v.removed_at, smrt_created_at: v.smrt_created_at });
     }
     stats.itemsWritten++;
   }

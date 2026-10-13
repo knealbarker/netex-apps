@@ -151,6 +151,18 @@ st = await ingestDay(db, live, ...(await pull()));
 const mv = one(sqlite, "SELECT COUNT(*) n FROM pos_items WHERE barcode=?", bc).n;
 ok("split piece keeps one row and is logged as moved", mv === 1 && one(sqlite, "SELECT COUNT(*) n FROM pos_changes WHERE kind='item_moved'").n === 1);
 
+// 7b. a reused tag: the same jeans barcode on last week's order and on today's is two pieces, and re-reading either day
+//     doesn't move the row back and forth (the 324 → 354 → 336 starch bottoms count, Oct 13)
+const tag = "JEANS-TAG-1";
+fake.addOrder("2026-10-03", "262761777", { status: "pickedUp", pieces: 1, barcodes: [tag] });
+fake.addOrder(TODAY, "262831777", { status: "detailed", pieces: 1, barcodes: [tag] });
+for (const d of ["2026-10-03", TODAY, "2026-10-03", TODAY]) {
+  const pulled = { orders: fake.days.get(d).orders, items: fake.days.get(d).items };
+  await ingestDay(db, { ...live, day: d }, pulled.orders, pulled.items);
+}
+const rowsT = sqlite.prepare("SELECT o.smrt_order_no AS no, i.assembled_at AS a FROM pos_items i JOIN pos_orders o ON o.id=i.order_id WHERE i.barcode=? ORDER BY o.smrt_order_no").all(tag);
+ok("a reused tag keeps one row per visit, each on its own order", rowsT.length === 2 && rowsT[0].no === "262761777" && !!rowsT[0].a && rowsT[1].no === "262831777" && !rowsT[1].a, rowsT);
+
 // 8. status change logged; deleted order logged as deleted
 fake.days.get(TODAY).orders.find(o => o.ID === "262831501")["Status"] = "deleted";
 await ingestDay(db, live, ...(await pull()));
