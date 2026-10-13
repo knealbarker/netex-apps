@@ -262,16 +262,16 @@ export async function render(main, ctx) {
   function update({ table }) {
     if (!alive()) return;
     const X = st.X = M.evaluate(makeP());
-    drawNote(); drawVerdict(X); drawLive(X); drawTiles(X); drawChecks(X); drawWaves(X); drawGantt(X); drawWash(X); if (admin) drawMoney(X);
+    const L = X.P.isToday ? M.liveSuggestions(X, new Set(st.plan.hidden || [])) : null;
+    drawNote(); drawVerdict(X); drawLive(X, L); drawTiles(X, L); drawChecks(X); drawWaves(X); drawGantt(X); drawWash(X); if (admin) drawMoney(X);
     if (table) drawCrew(X); else crewOutcomes(X);
     drawPub(X); saveStatus();
   }
 
   // ---- suggestions during the day (re-planned from now, every minute)
-  function drawLive(X) {
+  function drawLive(X, L) {
     const el = document.getElementById("pl-live"); if (!el) return;
-    if (!X.P.isToday) { el.hidden = true; return; }
-    const L = M.liveSuggestions(X, new Set(st.plan.hidden || []));
+    if (!X.P.isToday || !L) { el.hidden = true; return; }
     // only when there's something to suggest (Neal, Oct 13); open or collapsed is remembered on this PC
     if (!(L.on && L.list.length)) { el.hidden = true; el.innerHTML = ""; return; }
     el.hidden = false;
@@ -314,17 +314,31 @@ export async function render(main, ctx) {
       <div class="v-kpis">${v.kpis.map(k => raw(html`<div class="v-k"><b class="${k.cls || ""}">${k.v}</b><span>${k.l}</span></div>`))}</div>`;
   }
 
-  function drawTiles(X) {
+  // today: "185 done in 6.2 hrs" and "120 left · ETC 2:35 PM" (hours from the plan's station times so far; ETC from the re-plan from now)
+  function tileLive(k, done, L) {
+    const c = L && L.on && L.cats && L.cats[k]; if (!c) return "";
+    const hrs = c.hrsSoFar >= 0.05 ? ` in ${c.hrsSoFar.toFixed(1)} hrs` : "";
+    const left = Math.round(c.left);
+    const etc = left <= 0 ? "" : c.short > 0.5 ? ` · <span class="bad-txt">won't finish</span>` : c.etc != null ? ` · ETC ${hm(c.etc)}` : "";
+    return { done: hrs, left: left > 0 ? `<span class="t-sub t-left">${fmtN(left)} left${etc}</span>` : "" };
+  }
+  function totalHrs(L) { if (!L?.on || !L.cats) return ""; const h = CATS.reduce((t, k) => t + L.cats[k].hrsSoFar, 0); return h >= 0.05 ? ` in ${h.toFixed(1)} hrs` : ""; }
+  function totalLeft(L) {
+    if (!L?.on || !L.fromNow) return ""; const f = L.fromNow, n = Math.round(f.left); if (n <= 0) return "";
+    return html`<span class="t-sub t-left">${fmtN(n)} left${f.short > 0.5 ? raw(' · <span class="bad-txt">won\'t all finish</span>') : f.end != null ? ` · ETC ${hm(f.end)}` : ""}</span>`;
+  }
+  function drawTiles(X, L) {
     const P = X.P, D = P.dp.D, el = document.getElementById("pl-tiles");
     el.innerHTML = CATS.map(k => {
       const over = st.overrides[k] != null, smrt = P.dp.base[k], v = P.q[k];
       const done = P.isToday ? D.done[k] : 0;
-      const sub = over ? `typed · SMRT says ${fmtN(smrt)}` : P.isToday ? `${fmtN(done)} done${P.dp.withOverdue && st.V.overdue.q[k] ? ` · incl. ${fmtN(st.V.overdue.q[k])} overdue` : ""}` : P.dp.expected && D.expected[k] > D.q[k] ? `expected · ${fmtN(D.q[k])} in so far` : "due";
-      return html`<${can ? "button" : "div"} class="tile ${v ? "" : "zero"} ${over ? "typed" : ""}" ${can ? raw(`type="button" data-cat="${k}" title="Change the number to plan with"`) : ""}>
-        <span class="t-label"><i class="sw" style="--c:${CAT_COLOR[k]}"></i>${TILE[k]}</span><b class="t-num">${fmtN(v)}</b><span class="t-sub">${sub}</span>
+      const lv = P.isToday ? tileLive(k, done, L) : "";
+      const sub = over ? `typed · SMRT says ${fmtN(smrt)}` : P.isToday ? `${fmtN(done)} done${lv.done || ""}${P.dp.withOverdue && st.V.overdue.q[k] ? ` · incl. ${fmtN(st.V.overdue.q[k])} overdue` : ""}` : P.dp.expected && D.expected[k] > D.q[k] ? `expected · ${fmtN(D.q[k])} in so far` : "due";
+      return html`<${can ? "button" : "div"} class="tile ${v ? "" : "zero"} ${over ? "typed" : ""}" ${can ? raw(`type="button" data-cat="${k}" title="Change the number to plan with.${P.isToday ? " Hours: time the plan has had people on this work so far today. ETC: when it should be finished, re-planned from now with who's here." : ""}"`) : ""}>
+        <span class="t-label"><i class="sw" style="--c:${CAT_COLOR[k]}"></i>${TILE[k]}</span><b class="t-num">${fmtN(v)}</b><span class="t-sub">${sub}</span>${raw(lv && lv.left || "")}
         ${P.isToday && v ? raw(html`<span class="bar" aria-hidden="true"><i style="width:${Math.min(100, Math.round(done / v * 100))}%"></i></span>`) : ""}</${can ? "button" : "div"}>`;
     }).join("") + html`<div class="tile total"><span class="t-label">All pieces</span><b class="t-num">${P.expected ? "~" : ""}${fmtN(CATS.reduce((t, k) => t + P.q[k], 0))}</b>
-      <span class="t-sub">${P.isToday ? `${fmtN(D.doneTotal)} done · ${fmtN(D.orders)} orders` : `${fmtN(D.orders)} orders so far`}</span></div>`;
+      <span class="t-sub">${P.isToday ? `${fmtN(D.doneTotal)} done${totalHrs(L)} · ${fmtN(D.orders)} orders` : `${fmtN(D.orders)} orders so far`}</span>${raw(P.isToday ? totalLeft(L) : "")}</div>`;
     el.querySelectorAll("[data-cat]").forEach(b => b.addEventListener("click", () => countDialog(b.dataset.cat)));
   }
   function countDialog(k) {

@@ -437,6 +437,12 @@ export function rankingSuggestions(TEAM, trainingOf, H, minDays = 3) {
  * `apply` changes the plan (Q = { crew }); `act` = { out: personId } marks someone out first. `hidden` = keys already
  * accepted or dismissed today.
  */
+/** Which kind of work (dct, dcb, slt, slb, comf, tc) a station's time counts toward; null for assembly and the rest. */
+export function catOfStation(E, stn) {
+  if (stn === "comf") return E.HAS_COMF ? "comf" : null;
+  const t = E.TYPE_OF[stn]; if (!t) return null;
+  const k = E.POOL_OF(t); return CATS.includes(k) ? k : null;
+}
 export function liveSuggestions(X, hidden = new Set()) {
   const { P, E } = X, now = P.now;
   if (!P.isToday || now == null || !P.dp || !P.dp.wavesLeft) return { on: false, why: "Suggestions show on today's plan during the work day." };
@@ -522,6 +528,15 @@ export function liveSuggestions(X, hidden = new Set()) {
   }
   const order = { b: 0, w: 1, i: 2 };
   list.sort((a, b) => order[a.cls] - order[b.cls]);
-  return { on: true, list, fromNow: { left: leftTotal, end: R2.empty ? null : R2.end, short, people: onCrewNow.size, noShow: noShow.length } };
+  // per kind of work: planned hours so far (today's plan, up to now) and when the re-plan from now finishes it
+  const cats = {};
+  for (const k of CATS) cats[k] = { hrsSoFar: 0, left: q2[k], etc: null, short: R2.empty ? 0 : (R2.P.short[k] || 0) };
+  if (X.R && !X.R.empty) for (const rw of X.R.rows) if (rw.staffed) for (const sg of rw.segs) {
+    const k = catOfStation(E, sg.stn); if (k && sg.from < now) cats[k].hrsSoFar += Math.min(sg.to, now) - sg.from;
+  }
+  if (!R2.empty) for (const rw of R2.rows) if (rw.staffed) for (const sg of rw.segs) {
+    const k = catOfStation(E2, sg.stn); if (k && sg.pcs > 0) cats[k].etc = Math.max(cats[k].etc ?? 0, sg.to);
+  }
+  return { on: true, list, cats, fromNow: { left: leftTotal, end: R2.empty ? null : R2.end, short, people: onCrewNow.size, noShow: noShow.length } };
 }
 const posLabel = (E, code) => (E.POS.find(p => p.id === code) || {}).label || code;

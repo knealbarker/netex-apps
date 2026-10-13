@@ -243,6 +243,10 @@ await t("during the day: no-show, clocked in but not planned, then send-home whe
   eq(Q.crew.asm1.emp, ""); ok(Object.values(Q.crew).some(c => c.emp === "f" && c.start === "06:30"), "Fran goes on an open station she's trained on, from her clock-in");
   L = M.liveSuggestions(M.evaluate(P), new Set(["noshow:d"]));
   ok(!L.list.some(x => x.key === "noshow:d"), "dismissed stays hidden");
+  // per kind of work: hours so far (from the plan, up to 9:00) and an ETC after now
+  ok(L.cats.slt.hrsSoFar > 1 && L.cats.slt.hrsSoFar <= 4.01, "SLT: Ana 5:00-9:00 minus breaks/moves " + L.cats.slt.hrsSoFar);
+  ok(L.cats.dct.hrsSoFar > 0 && L.cats.dct.hrsSoFar <= 3.01, "DCT: Cora 6:00-9:00 " + L.cats.dct.hrsSoFar);
+  for (const k of ["slt", "dct"]) ok(L.cats[k].left > 0 && (L.cats[k].etc > 9 || L.cats[k].short > 0.5), k + " ETC after now");
   // before anyone starts: nothing yet
   eq(M.liveSuggestions(M.evaluate(P0({ crew, isToday: true, now: 4, clock: [] }))).on, false);
   // almost everything done: people can go home
