@@ -165,7 +165,7 @@ export async function render(main, ctx) {
       const custom = !days().includes(pick);
       st.V = await api(custom ? `/pieces?day=${pick}` : "/pieces");
       if (!st.V.days[pick]) return openDay(days()[0]);
-      update({ table: false }); drawHeadPill(); drawOrders(); loadChanges();
+      update({ table: false }); drawHeadPill(); loadChanges();
     } catch { /* keep the last counts */ }
   }
 
@@ -205,7 +205,6 @@ export async function render(main, ctx) {
           <section class="card pl-card"><details id="pl-chg-box"><summary class="pl-cardhead"><div><h2>Changes today <span class="count soft" id="pl-chg-n"></span></h2><p>Who changed what, and the shuttle alerts.</p></div></summary><div id="pl-chg"></div></details></section>
         </div>
       </div>
-      <div id="pl-orders"></div>
     </div><div id="pl-print-sheet" class="print-sheet" aria-hidden="true"></div>`;
     main.querySelectorAll("[data-day]").forEach(b => b.addEventListener("click", async () => {
       if (b.dataset.day === pick) return;
@@ -234,7 +233,7 @@ export async function render(main, ctx) {
       }));
       main.querySelector("#pl-pub").addEventListener("click", publishDialog);
     }
-    drawHeadPill(); drawOrders(); update({ table: true });
+    drawHeadPill(); update({ table: true });
   }
 
   function drawHeadPill() {
@@ -257,7 +256,7 @@ export async function render(main, ctx) {
     if (!alive()) return;
     const X = st.X = M.evaluate(makeP());
     const L = X.P.isToday ? M.liveSuggestions(X, new Set(st.plan.hidden || [])) : null;
-    drawNote(); drawVerdict(X); drawLive(X, L); drawTiles(X, L); drawGantt(X);
+    drawNote(); drawVerdict(X, L); drawLive(X, L); drawTiles(X, L); drawGantt(X);
     if (table) drawCrew(X); else crewOutcomes(X);
     drawPub(X); saveStatus();
   }
@@ -301,8 +300,15 @@ export async function render(main, ctx) {
     openDialog({ title: h.title, body: h.body.replace("${FULL}", fmtH(s.fullDay)), submitLabel: "Got it", onOpen: (form, dlg) => { dlg.querySelector("[data-close]").hidden = true; dlg.classList.add("help-dlg"); }, onSubmit: () => {} });
   }
 
-  function drawVerdict(X) {
-    const v = X.verdict, el = document.getElementById("pl-verdict");
+  function drawVerdict(X, L) {
+    let v = X.verdict; const el = document.getElementById("pl-verdict");
+    // today, once the day is running: the same re-plan from now as the tiles, so the bar and the tiles agree (Neal, Oct 13)
+    if (X.P.isToday && L && L.on && L.fromNow) {
+      const f = L.fromNow, ot = f.ot || f.otH > 0.04, left = Math.round(f.left);
+      const kp = v.kpis.map(k => k.l === "everyone done" ? { v: left > 0 && f.etc != null ? hm(f.etc) : "Done", l: "all done, from now" }
+        : k.l === "overtime" ? { v: ot ? fmtH(f.otH) : "None", cls: ot ? "warn" : "", l: "overtime, from now" } : k);
+      v = { cls: ot ? "warn" : "ok", head: left <= 0 ? "Everything's done" : ot ? `Running into overtime · done about ${hm(f.etc)}` : `On plan · done about ${hm(f.etc)}`, kpis: kp };
+    }
     el.className = `verdict ${v.cls}`;
     el.innerHTML = html`<div class="v-head"><span class="v-ico" aria-hidden="true">${v.cls === "ok" ? "✓" : v.cls === "idle" ? "…" : "!"}</span><b>${v.head}</b></div>
       <div class="v-kpis">${v.kpis.map(k => raw(html`<div class="v-k"><b class="${k.cls || ""}">${k.v}</b><span>${k.l}</span></div>`))}</div>`;
