@@ -900,3 +900,4 @@ dialog.sheet .dlg-body { max-height: min(70vh, 640px); overflow: auto; }
 .hr-tbl tfoot td, .hr-tbl tfoot th { border-bottom: 0; color: var(--text); }
 #rv-orders .card { margin-top: 16px; }
 .rv-grid > * { min-width: 0; }
+.f-sw { display: inline-block; width: 18px; height: 18px; border-radius: 5px; }

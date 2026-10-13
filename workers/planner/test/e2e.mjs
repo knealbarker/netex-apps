@@ -132,7 +132,7 @@ await t("Settings: summary email card with recipients, preview, Rippling pay-rat
   ok(await p.isVisible('dialog .sum-preview >> text=Next work day'), "preview content");
   await shot(p, "e2-summary-preview.png", false);
   await p.click('dialog button[type="submit"]');
-  ok(await p.isVisible("#notifyLine"), "notification line");
+  ok(!(await p.isVisible("#notifyLine")), "no shuttle alert settings while shuttles are off");
 });
 await t("Plan: suggested crew, keep it, washers and Changes today", async () => {
   await p.goto(url + "/#/plan"); await p.waitForSelector("#pl-board .sb");

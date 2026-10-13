@@ -3,6 +3,7 @@
 import { api } from "../api.js";
 import { html, raw, toast, RANK, openDialog } from "../ui.js";
 import { notifyState, askNotify } from "../alerts.js";
+import { SHUTTLES } from "../features.js";
 
 const CAT_NAMES = { dct: "DC tops", dcb: "DC bottoms", slt: "Starch tops", slb: "Starch bottoms", comf: "Comforters", tc: "Tablecloths" };
 const CATS = Object.keys(CAT_NAMES);
@@ -43,10 +44,10 @@ const GROUPS = [
     ["dayBefore", "Plan route orders the work day before they're due", "bool", "Turn off to plan them on their due day like store orders."],
     ["readyBy", "Ready by, on the route day", "time", ""],
   ] },
-  { id: "alerts", title: "Shuttle alerts", lead: "Warnings on the floor screen before a shuttle leaves with work still unfinished.", fields: [
-    ["warnFirst", "First warning", "int", "", { min: 0, max: 240, unit: "min before" }],
+  { id: "alerts", title: SHUTTLES ? "Shuttle alerts" : "Work week", lead: SHUTTLES ? "Warnings on the floor screen before a shuttle leaves with work still unfinished." : "", fields: [
+    ...(SHUTTLES ? [["warnFirst", "First warning", "int", "", { min: 0, max: 240, unit: "min before" }],
     ["warnSecond", "Second warning", "int", "", { min: 0, max: 240, unit: "min before" }],
-    ["notify", "Show shuttle alerts", "bool", ""],
+    ["notify", "Show shuttle alerts", "bool", ""]] : []),
     ["weekStart", "Week starts on", "select", "", { options: [[0, "Sunday"], [1, "Monday"], [6, "Saturday"]] }],
   ] },
   { id: "smrt", title: "SMRT mapping", lead: "Which SMRT departments and item types count toward each kind of work. Item types win over departments (a comforter is a comforter whatever its department).", fields: [
@@ -59,7 +60,7 @@ const GROUPS = [
     ["departments", "Rippling departments", "listText", "Comma-separated, as Rippling spells them."],
     ["useTimes", "Use actual clock-in times", "bool", "Updates the plan with when people really clocked in."],
   ] },
-  { id: "summary", title: "Daily summary email", lead: "An end-of-day email: how today went against the plan, each shuttle's ready time, the crew from the time clock, and the next work day's pieces, crew and projection.", fields: [
+  { id: "summary", title: "Daily summary email", lead: "An end-of-day email: how today went against the plan, the crew from the time clock, and the next work day's pieces, crew and projection.", fields: [
     ["on", "Send the daily summary", "bool", "On work days, once, after the time below."],
     ["to", "Send to", "listText", "Comma-separated. Each address must be verified in Cloudflare (Email Routing › Destination addresses) before it can receive mail."],
     ["at", "Send after", "time", "Central time. Pick a time after the plant has gone home."],
@@ -67,7 +68,7 @@ const GROUPS = [
   { id: "business", title: "Business", lead: "", fields: [["name", "Business name", "text", "Printed at the top of the plan."]] },
 ];
 
-const SECTIONS = [["day", "Working day"], ["staffing", "Overtime & moves"], ["money", "Labor & prices"], ["stations", "Stations & speeds"], ["wash", "Washers"], ["runs", "Shuttle runs"], ["route", "Route deliveries"], ["alerts", "Shuttle alerts"], ["summary", "Daily summary email"], ["smrt", "SMRT mapping"], ["rippling", "Rippling"], ["business", "Business"], ["import", "Import"]];
+const SECTIONS = [["day", "Working day"], ["staffing", "Overtime & moves"], ["money", "Labor & prices"], ["stations", "Stations & speeds"], ["wash", "Washers"], ...(SHUTTLES ? [["runs", "Shuttle runs"]] : []), ["route", "Route deliveries"], ["alerts", SHUTTLES ? "Shuttle alerts" : "Work week"], ["summary", "Daily summary email"], ["smrt", "SMRT mapping"], ["rippling", "Rippling"], ["business", "Business"], ["import", "Import"]];
 
 export async function render(main, ctx) {
   const { me } = ctx;
@@ -99,7 +100,7 @@ export async function render(main, ctx) {
   };
 
   const extras = {
-    alerts: () => html`<div class="sum-status" id="notifyLine"></div>`,
+    alerts: () => SHUTTLES ? html`<div class="sum-status" id="notifyLine"></div>` : "",
     summary: () => canEdit ? html`<div class="sum-status" id="sumStatus">${raw(summaryStatus())}</div>
       <div class="set-actions"><button type="button" class="btn small" id="sumPreview">Preview today's email</button><button type="button" class="btn small" id="sumTest">Send a test now</button></div>` : "",
     rippling: () => canEdit ? html`<div class="sum-status">${raw(ripStatus())}</div>` : "",
@@ -208,7 +209,7 @@ export async function render(main, ctx) {
   }
 
   const importCard = () => !isOwner ? "" : html`<section class="card set-card" id="sec-import">
-      <header><h2>Import from the desktop planner</h2><p>Brings over the team, trainings, settings, shuttle runs and plan history. Safe to run again: it updates the same people and days instead of adding copies.</p></header>
+      <header><h2>Import from the desktop planner</h2><p>Brings over the team, trainings, settings and plan history. Safe to run again: it updates the same people and days instead of adding copies.</p></header>
       <form class="set-form" novalidate data-kind="import">
         <label class="field"><span>planner-data.json</span><input class="input" type="file" name="data" accept=".json,application/json"><small>On the office PC: %APPDATA%\\Production Planner\\planner-data.json</small></label>
         <label class="field"><span>Plan History files <em>(optional)</em></span><input class="input" type="file" name="history" accept=".json,application/json" multiple><small>Documents\\Production Planner\\Plan History — select them all.</small></label>
@@ -222,7 +223,7 @@ export async function render(main, ctx) {
       <nav class="set-nav" aria-label="Settings sections">${SECTIONS.filter(([id]) => id !== "import" || isOwner).map(([id, l]) => raw(html`<a href="#/settings" data-jump="sec-${id}">${l}</a>`))}</nav>
       <div class="set-cards">
         ${["day", "staffing", "money"].map(id => raw(groupCard(GROUPS.find(g => g.id === id))))}${raw(stationsCard())}${raw(groupCard(GROUPS.find(g => g.id === "wash")))}
-        ${raw(runsCard())}${["route", "alerts", "summary", "smrt", "rippling", "business"].map(id => raw(groupCard(GROUPS.find(g => g.id === id))))}${raw(importCard())}
+        ${SHUTTLES ? raw(runsCard()) : ""}${["route", "alerts", "summary", "smrt", "rippling", "business"].map(id => raw(groupCard(GROUPS.find(g => g.id === id))))}${raw(importCard())}
       </div>
     </div>`;
 

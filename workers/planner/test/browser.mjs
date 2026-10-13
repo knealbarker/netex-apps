@@ -247,7 +247,10 @@ await t("Settings: a bad value shows the server's message on the card", async ()
   await p.waitForSelector("#sec-day .saved-note.bad");
   ok(/between/.test(await p.textContent("#sec-day .saved-note")));
 });
-await t("Settings: runs editor adds a stop and saves", async () => {
+await t("Settings: shuttle runs are hidden while shuttles are off", async () => {
+  ok(!(await p.$("#sec-runs")), "no shuttle runs section");
+});
+const runsEditorTest = async () => {
   await p.click('#sec-runs .run[data-i="0"] .add-stop');
   await p.fill('#sec-runs .run[data-i="0"] .stop[data-j="2"] input[name="store"]', "Mineola");
   await p.fill('#sec-runs .run[data-i="0"] .stop[data-j="2"] input[name="arrive"]', "12:40");
@@ -255,7 +258,7 @@ await t("Settings: runs editor adds a stop and saves", async () => {
   await p.waitForSelector("#sec-runs .saved-note.ok");
   const s = await (await p.request.get(url + "/api/settings")).json();
   ok(s.runs[0].stops.map(x => x.store).join() === "Winnsboro,Quitman,Mineola", JSON.stringify(s.runs[0].stops));
-});
+}; void runsEditorTest; // for when shuttles are switched back on (features.js)
 await t("Settings: a Viewer sees values but can't edit", async () => {
   who = "maria@example.com";
   const q = await page();
@@ -273,7 +276,7 @@ await t("phone: team grid scrolls inside its card, settings stack", async () => 
   await q.goto(url + "/#/team"); await q.waitForSelector(".team-list");
   ok(!(await q.evaluate(() => document.documentElement.scrollWidth > window.innerWidth)), "no page-level sideways scroll on team");
   await q.screenshot({ path: join(SHOTS, "11-team-phone.png") });
-  await q.goto(url + "/#/settings"); await q.waitForSelector("#sec-runs");
+  await q.goto(url + "/#/settings"); await q.waitForSelector("#sec-day");
   ok(!(await q.evaluate(() => document.documentElement.scrollWidth > window.innerWidth)), "no sideways scroll on settings");
   await q.screenshot({ path: join(SHOTS, "12-settings-phone.png"), fullPage: true });
 });

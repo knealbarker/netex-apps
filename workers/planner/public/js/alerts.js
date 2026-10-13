@@ -3,6 +3,7 @@
 // this PC allowed it, a Windows notification. Each alert shows once per PC; the first PC to notice it also adds it to
 // "Changes today". Checked every 2 minutes on work days while the planner is open.
 import { api } from "./api.js";
+import { SHUTTLES } from "./features.js";
 import { toast } from "./ui.js";
 import { buildWaves, CATS, CAT_LABEL, hm, fmtN } from "./engine/engine.js";
 
@@ -11,7 +12,7 @@ const memo = new Set();
 let SET = null, setAt = 0, timer = null;
 
 export function startAlerts() {
-  if (timer) return;
+  if (timer || !SHUTTLES) return;
   setTimeout(check, 8000); // let the first screen load first
   timer = setInterval(check, 2 * 60 * 1000);
 }

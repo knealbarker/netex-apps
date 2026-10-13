@@ -78,11 +78,12 @@ async function page(viewport = { width: 1440, height: 900 }, scheme = "dark") {
   return p;
 }
 const p = await page();
-await t("opens on the last work day with numbers, chart, deadlines and plan vs actual", async () => {
+await t("opens on the last work day with numbers, chart, by the hour and plan vs actual (no shuttles)", async () => {
   await p.goto(url + "/#/review"); await p.waitForSelector("#rv-root .rv-tiles");
   ok((await p.inputValue("#rv-date")) === DAY, await p.inputValue("#rv-date"));
-  ok(/Counter was late/.test(await p.textContent(".verdict")), await p.textContent(".verdict"));
-  ok(await p.isVisible(".rv-chart .c-done")); ok(await p.isVisible('.rt td:has-text("Quitman run")'));
+  ok(!/late|deadline|shuttle/i.test(await p.textContent(".verdict")), await p.textContent(".verdict"));
+  ok(await p.isVisible(".rv-chart .c-done")); ok(!(await p.isVisible('.rt td:has-text("Quitman run")')), "no deadlines card");
+  ok(await p.isVisible(".hr-tbl"), "by the hour");
   ok(await p.isVisible('.rt td:has-text("Not in the plan")'), "Cora worked but wasn't planned");
   ok(await p.isVisible('.tile:has-text("labor of revenue")'), "Owner sees labor %");
   await p.screenshot({ path: join(SHOTS, "30-review.png"), fullPage: true });

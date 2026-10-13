@@ -104,7 +104,8 @@ await t("shuttle events: stored once per day and key, whoever reports them", asy
   eq((await call("POST", "/events", { body: e })).body.added, true);
   eq((await call("POST", "/events", { as: "mo@example.com", body: e })).body.added, false);
   eq((await call("POST", "/events", { body: { ...e, kind: "boom" } })).status, 400);
-  ok((await call("GET", `/changes/${today}`)).body.list.filter(x => x.tag === "ready").length === 1);
+  // shuttles are switched off (features.js): stored, but not listed in Changes today
+  ok((await call("GET", `/changes/${today}`)).body.list.filter(x => x.tag === "ready").length === 0);
 });
 await t("Floor: the labor streak counts work days at or under target (no money in it)", async () => {
   const f = (await call("GET", `/floor/${today}?streak`)).body;
@@ -127,10 +128,10 @@ await t("summary: builds today vs. plan and the next day, labor with Rippling ra
   eq((await call("POST", `/plan/${DAY}/publish`, { body: { rev: plan.rev, snapshot: M.snapshotOf(X) } })).status, 200);
   const m = await buildSummary(db, env, DAY);
   ok(/^Production summary .*: 52 of 52 due pieces done/.test(m.subject), m.subject);
-  ok(m.html.includes("Quitman run") && m.html.includes("Next work day") && m.html.includes("Dee Test"), "sections");
+  ok(!m.html.includes("Quitman run") && m.html.includes("Next work day") && m.html.includes("Dee Test"), "sections (no shuttles)");
   ok(m.html.includes("In the plan but didn&#39;t clock in") || m.html.includes("didn't clock in"), "Dee didn't clock in");
   ok(/Labor \$<\/b><\/td><td[^>]*>\$\d/.test(m.html), "plan labor $ from the replayed snapshot");
-  ok(m.text.includes("TODAY - SHUTTLES AND DEADLINES") && m.text.includes("NEXT WORK DAY"), "plain text part");
+  ok(!m.text.includes("SHUTTLES") && m.text.includes("NEXT WORK DAY"), "plain text part");
   if (process.env.SHOTS) (await import("node:fs")).writeFileSync(process.env.SHOTS + "/summary.html", m.html);
   const raw = mime({ from: "reports@netexcleaners.com", to: "neal@towncountryclean.com", ...m });
   ok(raw.includes("multipart/alternative") && raw.includes("Subject: =?UTF-8?B?"), "MIME");

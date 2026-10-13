@@ -1,5 +1,5 @@
 // Daily summary email (as the desktop planner sent it): how today went against the plan, and the next work day.
-//  - Today: pieces due and finished by kind of work, each shuttle's ready time, plan vs. actual (finish, hours, labor $, labor %),
+//  - Today: pieces due and finished by kind of work, plan vs. actual (finish, hours, labor $, labor %),
 //    the crew from the time clock, who was planned but didn't clock in, and work done ahead for the next day.
 //  - Next work day: pieces to plan for (with what usually still comes in), the crew (saved, or suggested from history),
 //    and the projection: when everyone's done, hours, labor $ and %, overtime, pieces that wouldn't get done.
@@ -7,6 +7,7 @@
 // Email Routing (send_email binding SEND_EMAIL) from reports@netexcleaners.com. Cloudflare only delivers to addresses
 // verified under Email Routing › Destination addresses. The email always carries labor numbers; an Admin picks who gets it.
 import { reviewDay } from "./review.js";
+import { SHUTTLES } from "./features.js";
 import { piecesView, nextWorkDay, localNow, CATS } from "./pieces.js";
 import { allSettings, loadGroups } from "./settings.js";
 import { listTeam } from "./team.js";
@@ -76,7 +77,7 @@ export async function buildSummary(db, env, day, { now = Date.now() } = {}) {
   T.push(`PRODUCTION SUMMARY - ${longDay(day).toUpperCase()}`, "");
   const lateW = W.filter(w => !(w.readyAt != null && w.readyAt <= w.deadline + 1 / 60));
   H.push(`<table role="presentation" style="width:100%;border-collapse:separate;border-spacing:8px 0;margin:0 -8px 8px"><tr>
-    ${tile("Shuttles", W.length ? `${onTime.length} of ${W.length}` : "—", W.length ? (lateW.length ? `late: ${esc(lateW.map(w => w.name).join(", "))}` : "ready on time") : "no deadlines today", W.length ? (lateW.length ? C.bad : C.good) : C.ink)}
+    ${SHUTTLES ? tile("Shuttles", W.length ? `${onTime.length} of ${W.length}` : "—", W.length ? (lateW.length ? `late: ${esc(lateW.map(w => w.name).join(", "))}` : "ready on time") : "no deadlines today", W.length ? (lateW.length ? C.bad : C.good) : C.ink) : ""}
     ${tile("Due pieces done", R.due.pieces ? `${n0(R.due.finished)}` : "—", R.due.pieces ? `of ${n0(R.due.pieces)} due today` : "nothing due", R.due.pieces && R.due.finished < R.due.pieces ? C.warn : C.ink)}
     ${tile("Assembled", n0(R.done.pieces), `${L.perHour != null ? `${L.perHour.toFixed(1)} per labor hour` : "pieces"}`)}
     ${tile("Labor", pct(L.pct), `${usd(L.cost)} · target ${target}%`, L.pct == null ? C.ink : L.pct <= target ? C.good : C.bad)}
@@ -94,7 +95,7 @@ export async function buildSummary(db, env, day, { now = Date.now() } = {}) {
   if (day === V.today && V.late?.length) { const over = V.late.filter(o => o.overdue).length; const t = `Orders still open past their due time: ${V.late.length}${over ? ` (${over} from earlier days)` : ""}.`; H.push(p(esc(t))); T.push(t, ""); }
 
   // shuttles and deadlines
-  if (R.deadlines.length) {
+  if (SHUTTLES && R.deadlines.length) {
     H.push(h2("Today: shuttles and deadlines"), table([th("Deadline"), th("Run"), th("Ready at"), th("Plan said"), th("Pieces", "right")], R.deadlines.map(w => {
       const sl = w.readyAt != null && w.deadline != null ? Math.round((w.deadline - w.readyAt) * 60) : null;
       const col = w.readyAt == null ? C.bad : sl == null ? C.good : sl < 0 ? C.bad : sl < 15 ? C.warn : C.good;

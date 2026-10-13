@@ -5,6 +5,7 @@ import { api } from "../api.js";
 import { html, raw } from "../ui.js";
 import * as FM from "../plan/floor.js";
 import { CATS } from "../engine/engine.js";
+import { SHUTTLES } from "../features.js";
 
 const COLOR = { slt: "#4f8ff7", slt2: "#7aa9fa", slb: "#8b7cf6", dct: "#f59e4b", dcb: "#e2609b", asm: "#22c38e", ops: "#7c879c", comf: "#14b8a6", tc: "#c084fc" };
 const CAT_COLOR = { dct: COLOR.dct, dcb: COLOR.dcb, slt: COLOR.slt, slb: COLOR.slb, comf: COLOR.comf, tc: COLOR.tc };
@@ -52,17 +53,20 @@ export async function render(main) {
       wire(); return;
     }
     const isToday = V.isWorkDay && day === V.today;
-    const ev = FM.events(F, t), L = FM.liveWaves(pub.snapshot, F, V, now), st = FM.status(L, F, t);
+    const ev = FM.events(F, t), L = SHUTTLES ? FM.liveWaves(pub.snapshot, F, V, now) : [];
+    // without shuttles (Neal, Oct 13): the band shows the day, and the panel shows each kind of work
+    const st = SHUTTLES ? FM.status(L, F, t) : { cls: "", txt: dayName };
+    const Dd = V.days[day] || null, Q = Dd ? (pub.snapshot.input?.q || Dd.q) : null;
     // note when each deadline became ready while this screen was open
     for (const x of L) if (x.ready && !seenReady.has(x.w.id)) seenReady.set(x.w.id, now);
     const live = L.filter(x => x.w.kind !== "overdue");
     const ontime = live.filter(x => x.ready || x.cls !== "bad").length;
-    const done = L.reduce((s, x) => s + x.done, 0), todo = L.reduce((s, x) => s + x.w.todo, 0);
+    const done = SHUTTLES ? L.reduce((s, x) => s + x.done, 0) : (Dd && isToday ? CATS.reduce((s, k) => s + Math.min(Q[k] || 0, Dd.done?.[k] || 0), 0) : 0), todo = SHUTTLES ? L.reduce((s, x) => s + x.w.todo, 0) : (Q ? CATS.reduce((s, k) => s + (Q[k] || 0), 0) : 0);
     const label = x => x.w.kind === "overdue" ? t.overdue : x.w.name;
     const leftTxt = x => x.leftCats.slice(0, 3).map(([k, v]) => `${FM.fmtN(v)} ${t.cats[k] || k}`).join(" · ");
     // alert: the next deadline within 45 minutes that isn't ready, or one that just became ready
     let alert = "";
-    if (isToday) {
+    if (isToday && SHUTTLES) {
       const soon = L.filter(x => !x.ready && x.w.kind === "shuttle" && x.w.deadline - now <= 0.75 && x.w.deadline - now > -0.25).sort((a, b) => a.w.deadline - b.w.deadline)[0];
       const just = L.filter(x => x.ready && x.w.kind === "shuttle" && now <= x.w.deadline + 0.25 && now - (seenReady.get(x.w.id) ?? -9) < 1)[0];
       if (soon) { const mins = Math.round((soon.w.deadline - now) * 60);
@@ -97,21 +101,26 @@ export async function render(main) {
     };
     const people = RN.map(p => html`<div class="f-now ${p.state}"><div class="f-stn"><i style="background:${COLOR[p.type] || COLOR.ops}"></i>${shortLabel(p.label, t) || t.comf}</div><div class="f-who">${p.nm}</div><div class="f-nx">${raw(nextTxt(p))}</div></div>`).join("");
     const CU = isToday ? FM.comingUp(ev, L, now) : [];
+    const work = Q ? CATS.filter(k => (Q[k] || 0) > 0.5).map(k => { const q = Q[k], d = isToday ? Math.min(q, Dd.done?.[k] || 0) : 0, ok = isToday && d >= q - 0.5;
+      return html`<div class="f-wave"><div class="f-when ${ok ? "good" : ""}"><i class="f-sw" style="background:${CAT_COLOR[k]}"></i></div><div class="f-wmid"><div class="f-wn">${t.cats[k]} ${ok ? raw(html`<em class="good">${t.ready}</em>`) : ""}</div>
+        <div class="f-bar"><div class="f-fill" style="width:${isToday ? (d / q * 100).toFixed(1) : 0}%"><i style="width:100%;background:${CAT_COLOR[k]}"></i></div></div>${isToday && !ok ? raw(html`<div class="f-left">${FM.fmtN(q - d)} ${t.left}</div>`) : ""}</div>
+        ${isToday ? raw(html`<div class="f-count ${ok ? "good" : ""}">${FM.fmtN(d)}<small>${t.of} ${FM.fmtN(q)}</small></div>`) : raw(html`<div class="f-count">${FM.fmtN(q)}<small>${t.pieces}</small></div>`)}</div>`; }).join("") : "";
     const evTxt = e => e.kind === "move" ? `${first(e.nm)} ${t.to} ${e.label || t.comf}${e.rot ? ` (${t.rotation})` : ""}` : e.kind === "brk" ? `${first(e.nm)} ${t.brk}` : e.kind === "home" ? `${first(e.nm)} ${t.home}`
       : e.kind === "start" ? `${first(e.nm)} ${t.starts}` : e.kind === "end" || e.kind === "otx" ? `${first(e.nm)} ${t.clock}` : e.kind === "wash" ? e.txt
       : e.kind === "shuttle" ? `${e.w.name} ${t.leaves}${e.ready ? " ✓" : ""}` : e.kind === "back" ? t.back : "";
     main.innerHTML = html`<div id="fl-root" class="floor" lang="${lang === "es" ? "es" : "en"}">
       <div class="f-band ${st.cls}">
         <div class="f-stat">${st.txt}</div>
-        ${isToday && live.length ? raw(html`<div class="f-big"><b>${ontime} <small>${t.of} ${live.length}</small></b><span>${t.ontime}</span></div>`) : ""}
+        ${isToday && live.length && SHUTTLES ? raw(html`<div class="f-big"><b>${ontime} <small>${t.of} ${live.length}</small></b><span>${t.ontime}</span></div>`) : ""}
         ${F.R.empty ? "" : raw(html`<div class="f-big"><b>${FM.hm(F.R.end)}</b><span>${t.doneby}</span></div>`)}
         ${isToday && todo ? raw(html`<div class="f-big"><b>${FM.fmtN(done)} <small>${t.of} ${FM.fmtN(todo)}</small></b><span>${t.done}</span></div>`) : ""}
         <div class="f-sp"></div>${streak && streak.days >= 2 ? raw(html`<div class="f-streak" title="${t.streakTip}">${streak.days} ${t.streakLab} ${streak.target}%</div>`) : ""}<div class="f-clock">${clock}</div>${raw(tools)}
       </div>
       ${raw(alert)}
       <div class="f-main">
-        <section class="f-panel"><h2>${isToday ? t.deadlines : `${t.deadlinesFor} · ${dayName}`}</h2>${L.length ? raw(waves) : raw(html`<p class="f-note">${t.nothing}</p>`)}
-          ${isToday && L.some(x => x.exp != null) ? raw(html`<p class="f-note small">${t.pace}</p>`) : ""}</section>
+        ${SHUTTLES ? raw(html`<section class="f-panel"><h2>${isToday ? t.deadlines : `${t.deadlinesFor} · ${dayName}`}</h2>${L.length ? raw(waves) : raw(html`<p class="f-note">${t.nothing}</p>`)}
+          ${isToday && L.some(x => x.exp != null) ? raw(html`<p class="f-note small">${t.pace}</p>`) : ""}</section>`)
+          : raw(html`<section class="f-panel"><h2>${isToday ? t.work : `${t.workFor} · ${dayName}`}</h2>${work ? raw(work) : raw(html`<p class="f-note">${t.nothing}</p>`)}</section>`)}
         <section class="f-panel"><h2>${t.now}</h2>${raw(people || '<p class="f-note">—</p>')}</section>
       </div>
       ${isToday ? raw(html`<div class="f-ticker"><span class="f-lbl">${t.coming}</span>${CU.length ? CU.map(g => raw(html`<span class="f-ev ${g.sh ? "sh" : ""}"><b>${FM.hm(g.t)}</b>${g.items.map(evTxt).join(" · ")}</span>`)) : raw('<span class="f-note">—</span>')}</div>`) : ""}

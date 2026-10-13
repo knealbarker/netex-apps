@@ -1,9 +1,10 @@
-// Plan: pieces from SMRT, the crew on each station, the day simulated minute by minute, deadlines, checks, and publishing.
+// Plan: pieces from SMRT, the crew on each station, the day simulated minute by minute, and publishing.
 // Changes save on their own (a second PC that saved in between wins and this one is refreshed with its plan).
 import { api } from "../api.js";
 import { html, raw, ago, toast, openDialog, RANK } from "../ui.js";
 import { CATS, CAT_FULL, CAT_LABEL, parseTime, hhmm, fmtClock, hm, fmtH, fmtN, fmt$, stepsOf, outInfo } from "../engine/engine.js";
 import * as M from "../plan/model.js";
+import { SHUTTLES } from "../features.js";
 
 const TILE = { dct: "DC tops", dcb: "DC bottoms", slt: "Starch tops", slb: "Starch bottoms", comf: "Comforters", tc: "Tablecloths" };
 const TYPE_DESC = { slt: "Starch tops press", slt2: "Helps on SLT 1", slb: "Starch bottoms press", dct: "Dry cleaning tops", dcb: "Dry cleaning bottoms", comf: "Comforters, trained people only", tc: "Tablecloths, trained people only", asm: "Inspect, assemble, bag", ops: "Runs the machines" };
@@ -32,15 +33,9 @@ const HELP = {
     <p>Best for starting a day. To change one or two things, edit the crew directly.</p>` },
   undo: { title: "Undo", body: `<p>Takes back the last change to the crew or the piece counts on this screen (also Ctrl+Z). It goes back up to 60 steps, until you leave the Plan.</p>
     <p>It doesn't undo time off, call-outs or publishing.</p>` },
-  print: { title: "Print", body: `<p>Prints the plan on one page: crew with times, each person's moves and breaks, and when each shuttle's pieces should be ready. Choose "Save as PDF" in the print window to keep a copy.</p>` },
+  print: { title: "Print", body: `<p>Prints the plan on one page: crew with times, and each person's moves and breaks. Choose "Save as PDF" in the print window to keep a copy.</p>` },
   publish: { title: "Publish", body: `<p>Sends this plan to the <b>Floor</b> screens. Until you publish, the floor keeps showing the last published plan.</p>
     <p>You can keep changing the plan; a check reminds you when it has changed since it was published, so you can publish again.</p>` },
-  live: { title: "Suggestions right now", body: `<p>On today's plan, the planner re-plans <b>the rest of the day from now</b> every minute, using:</p>
-    <ul><li><b>Pieces still left</b> (SMRT, as pieces are assembled), including overdue work.</li>
-    <li><b>Who's actually here</b> (Rippling clock-ins) and the hours each person has left.</li>
-    <li>Time off and late arrivals from Team.</li></ul>
-    <p>When something should change, it shows a suggestion: someone hasn't clocked in, someone clocked in who isn't planned, pieces that won't get done, or people who can go home early. The card only appears when there's a suggestion; click its title to collapse or open it. Whether each shuttle is on track is on the <b>Deadlines</b> card.</p>
-    <p><b>Accept</b> makes the change to the plan (Undo works). <b>Dismiss</b> hides it for the rest of the day on every PC. Both are listed under Changes today. Publish afterwards so the floor sees it.</p>` },
 };
 
 const helpBtn = id => `<button type="button" class="help-i" data-help="${id}" aria-label="What does this do?" title="What does this do?">?</button>`;
@@ -197,7 +192,7 @@ export async function render(main, ctx) {
         <div class="pv-away" id="pl-away"></div>
       </section>
       <section class="card pl-card"><details id="pl-day-box"><summary class="pl-cardhead"><div><h2>The day, minute by minute</h2><p>Each person's work and moves. ${can ? "On a computer, drag a bar sideways to change when that person starts." : ""}</p></div></summary><div id="pl-gantt"></div></details></section>
-      <section class="card pl-card"><details id="pl-chg-box"><summary class="pl-cardhead"><div><h2>Changes today <span class="count soft" id="pl-chg-n"></span></h2><p>Who changed what, and the shuttle alerts.</p></div></summary><div id="pl-chg"></div></details></section>
+      <section class="card pl-card"><details id="pl-chg-box"><summary class="pl-cardhead"><div><h2>Changes today <span class="count soft" id="pl-chg-n"></span></h2><p>Who changed what.</p></div></summary><div id="pl-chg"></div></details></section>
       ${can ? raw(html`<div class="pv-foot">${P0isToday() ? raw('<button class="btn" id="pl-replan">Re-plan from now</button>') : ""}<button class="btn primary" id="pl-pub"></button>${raw(helpBtn("publish"))}</div>`) : ""}
     </div><div id="pl-print-sheet" class="print-sheet" aria-hidden="true"></div>`;
     main.querySelectorAll("[data-day]").forEach(b => b.addEventListener("click", async () => {
@@ -572,7 +567,7 @@ export async function render(main, ctx) {
     const el = document.getElementById("pl-gantt"), { R, E, P } = X;
     if (R.empty) { AX = null; el.innerHTML = html`<p class="muted pad">${R.noCrew ? "No one is on a station yet. Pick people in the crew above, or use Suggest from history." : "Nothing to plan yet."}</p>`; return; }
     const OI = E.opsInfo().filter(x => x.on), sr = R.rows.filter(r => r.staffed);
-    const W = X.waves.filter(w => w.kind === "shuttle" || w.kind === "counter").filter(w => w.todo > 0 && w.deadline != null && w.deadline < 24);
+    const W = SHUTTLES ? X.waves.filter(w => w.kind === "shuttle" || w.kind === "counter").filter(w => w.todo > 0 && w.deadline != null && w.deadline < 24) : [];
     let a = Math.floor(Math.min(...sr.map(r => r.x.start), ...OI.map(x => x.start), R.firstStart));
     let b = Math.ceil(Math.max(R.end, ...sr.map(r => Math.max(r.x.schedEnd, r.clockOut || 0)), ...OI.map(x => x.end), ...W.map(w => w.deadline)));
     if (b - a < 6) b = a + 6; AX = { a, b };
@@ -615,7 +610,7 @@ export async function render(main, ctx) {
     if (fins.length > 1) { const lo = Math.min(...fins.filter(f => f >= R.end - s.spread / 60 - 1e-6)), hi = R.end; if (hi - lo > 0.02) lines += html`<div class="g-win" style="--x:${((lo - a) / (b - a)).toFixed(4)};--w:${((hi - lo) / (b - a)).toFixed(4)}" title="Everyone finishes between ${fmtClock(lo)} and ${fmtClock(hi)}"></div>`; }
     if (P.isToday && P.now > a && P.now < b) lines += html`<div class="g-now" style="--x:${((P.now - a) / (b - a)).toFixed(4)}" title="Now"></div>`;
     el.innerHTML = html`<div class="g-scroll"><div class="gantt"><div class="g-axis"><div></div><div class="g-ticks">${raw(ticks.join(""))}</div></div><div class="g-body">${raw(lines)}${raw(rows)}</div></div></div>
-      <div class="g-legend"><span><i class="k-dl"></i>shuttle must be ready</span><span><i class="k-win"></i>finish window (${s.spread} min)</span><span><i class="k-brk"></i>break</span><span><i class="k-ot"></i>overtime</span>${P.isToday ? raw('<span><i class="k-noshow"></i>planned, not clocked in</span>') : ""}</div>`;
+      <div class="g-legend">${SHUTTLES ? raw('<span><i class="k-dl"></i>shuttle must be ready</span>') : ""}<span><i class="k-win"></i>finish window (${s.spread} min)</span><span><i class="k-brk"></i>break</span><span><i class="k-ot"></i>overtime</span>${P.isToday ? raw('<span><i class="k-noshow"></i>planned, not clocked in</span>') : ""}</div>`;
   }
   // drag a bar to move that person's planned start, in 5-minute steps
   main.addEventListener("pointerdown", ev => {
@@ -699,12 +694,12 @@ export async function render(main, ctx) {
       rows.push({ name: M.nameOf(P, st.crew[row.st.id].emp), start: row.x.start, steps: stepsOf(row).map(x => ({ stn: x.stn, from: x.from, to: x.to, rot: !!x.rotFrom })),
         brk: row.brkTaken > 0 ? [row.brkS, row.brkS + row.brkTaken] : null, done: row.clockOut, cls: o.cls, ot: row.ot }); }
     for (const x of E.opsInfo()) if (x.on) rows.push({ name: M.nameOf(P, st.crew[x.o.id].emp), start: x.start, steps: [{ stn: x.o.id, from: x.start, to: x.end }], brk: x.b ? [x.brkS, x.brkS + x.b] : null, done: x.end, cls: "norm", ot: 0 });
-    const a = Math.floor(Math.min(...rows.map(r => r.start))), b = Math.ceil(Math.max(...rows.map(r => r.done), ...X.waves.filter(w => w.deadline != null && w.deadline < 24).map(w => w.deadline)));
+    const a = Math.floor(Math.min(...rows.map(r => r.start))), b = Math.ceil(Math.max(...rows.map(r => r.done), ...(SHUTTLES ? X.waves.filter(w => w.deadline != null && w.deadline < 24).map(w => w.deadline) : [])));
     const pct = h => ((h - a) / (b - a) * 100).toFixed(2) + "%", wid = (p, q) => ((q - p) / (b - a) * 100).toFixed(2) + "%";
     const lbl = c => c === "comf" ? "Comforters" : c === "slo" ? "Laundry operator" : c === "dco" ? "DC operator" : POS.find(p => p.id === c)?.label || c;
     const col = c => c === "comf" ? COLOR.comf : COLOR[E.TYPE_OF[c]] || COLOR.ops;
     const ticks = [], hrs = []; for (let t = a; t <= b; t++) { ticks.push(html`<span style="left:${pct(t)}">${hm(t)}</span>`); hrs.push(`<i class="ps-hr" style="left:${pct(t)}"></i>`); }
-    const W = X.waves.filter(w => (w.kind === "shuttle" || w.kind === "counter") && w.todo > 0 && w.deadline != null && w.deadline < 24);
+    const W = SHUTTLES ? X.waves.filter(w => (w.kind === "shuttle" || w.kind === "counter") && w.todo > 0 && w.deadline != null && w.deadline < 24) : [];
     const money = admin && SET.groups.money.pdfMoney && X.M ? html`<span>Labor ${X.M.pct != null ? X.M.pct.toFixed(1) + "%" : "—"} · ${fmt$(X.M.total)} of ${fmt$(X.M.revenue)}</span>` : "";
     const sheet = document.getElementById("pl-print-sheet");
     sheet.innerHTML = html`<header class="ps-head"><div><b>${SET.groups.business.name || "Production plan"}</b><span>Production plan · ${longDay(pick)}</span></div>

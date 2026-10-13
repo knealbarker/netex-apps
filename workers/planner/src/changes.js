@@ -1,7 +1,8 @@
-// "Changes today": what people changed in the planner today, in plain words, plus the shuttle alerts.
+// "Changes today": what people changed in the planner today, in plain words (plus the shuttle alerts when shuttles are on).
 //  - Plan saves record readable lines (who moved where, hours, hard stops, typed piece counts); other changes come from
 //    the audit log's entity and action.
 //  - Shuttle alerts are noticed by whichever PC has the planner open and stored once per day and key (plan_events).
+import { SHUTTLES } from "./features.js";
 import { HttpError, ulid, nowIso } from "./util.js";
 import { localNow } from "./pieces.js";
 
@@ -86,9 +87,10 @@ export async function listChanges(db, env, day) {
     else if (r.entity === "plan_followups") push(r, `Follow-up ${c.status === "resolved" ? "marked done" : "noted"}`, "review");
     else if (r.entity === "core_users") push(r, `Users & access: ${r.action === "create" ? "added someone" : "changed a user"}`, "users");
   }
-  const ev = (await db.prepare(`SELECT e.at, e.kind, e.text, u.display_name AS who FROM plan_events e LEFT JOIN core_users u ON u.id=e.user_id WHERE e.org_id=? AND e.day=? ORDER BY e.at DESC`)
+  const ev = (await db.prepare(`SELECT e.at, e.key, e.kind, e.text, u.display_name AS who FROM plan_events e LEFT JOIN core_users u ON u.id=e.user_id WHERE e.org_id=? AND e.day=? ORDER BY e.at DESC`)
     .bind(env.ORG_ID, day).all()).results;
-  for (const e of ev) out.push({ at: e.at, who: null, text: e.text, tag: e.kind === "ready" ? "ready" : e.kind === "warn" ? "warn" : e.kind });
+  // shuttle alerts are keyed ready:<run> and warn<min>:<run>; hidden while shuttles are off
+  for (const e of ev) if (SHUTTLES || !/^(ready|warn\d+):/.test(e.key || "")) out.push({ at: e.at, who: null, text: e.text, tag: e.kind === "ready" ? "ready" : e.kind === "warn" ? "warn" : e.kind });
   // the time clock: punches edited or removed in Rippling (Production), so a punch that came and went leaves a trace
   const hm = iso => { const m = /T(\d\d:\d\d)/.exec(iso || ""); return m ? clock(m[1]) : "?"; };
   let punches = [];

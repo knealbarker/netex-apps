@@ -1,8 +1,9 @@
-// Review: how a day went against its plan — deadlines, pieces, hours, people, follow-ups, and the trend.
+// Review: how a day went against its plan — pieces, hours, people, follow-ups, and the trend.
 import { api } from "../api.js";
 import { html, raw, toast, RANK } from "../ui.js";
 import { fmtClock, hm, fmtH, fmtN, fmt$ } from "../engine/engine.js";
 import * as M from "../plan/model.js";
+import { SHUTTLES } from "../features.js";
 
 const SMRT_ORDER = (customer, no) => `https://towncountryclean.smrtapp.com/posx/dash/customer/clothestracker/${encodeURIComponent(customer)}/?saleId=${String(no).replace(/\D/g, "")}`;
 const longDay = d => new Date(d + "T12:00:00").toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" });
@@ -34,7 +35,7 @@ export async function render(main, ctx) {
   async function go(day) { main.querySelector("#rv-root")?.classList.add("busy"); pick = day; D = await api(`/review/${day}`); draw(); }
 
   function draw() {
-    const W = D.deadlines.filter(w => w.kind !== "route" && w.deadline != null), nowH = (() => { const d = new Date(); return d.getHours() + d.getMinutes() / 60; })();
+    const W = SHUTTLES ? D.deadlines.filter(w => w.kind !== "route" && w.deadline != null) : [], nowH = (() => { const d = new Date(); return d.getHours() + d.getMinutes() / 60; })();
     const pending = w => D.isToday && w.readyAt == null && nowH < w.deadline;
     const onTime = W.filter(w => w.readyAt != null && w.readyAt <= w.deadline + 1 / 60);
     const late = W.filter(w => !(w.readyAt != null && w.readyAt <= w.deadline + 1 / 60) && !pending(w));
@@ -47,7 +48,7 @@ export async function render(main, ctx) {
     const head = bits.length ? `${D.isToday ? "So far: " : ""}${bits.join(" · ")}` : "No pieces or hours recorded for this day";
     const lastOut = Math.max(-1, ...D.people.filter(p => p.actualOut != null).map(p => p.actualOut)), stillIn = D.people.some(p => p.stillIn);
     const tiles = [
-      { v: W.length ? `${onTime.length} of ${W.length}` : "—", c: W.length && !late.length ? "good" : late.length ? "bad" : "", s: "deadlines ready on time" },
+      ...(SHUTTLES ? [{ v: W.length ? `${onTime.length} of ${W.length}` : "—", c: W.length && !late.length ? "good" : late.length ? "bad" : "", s: "deadlines ready on time" }] : []),
       { v: fmtN(D.done.pieces), s: "pieces assembled" },
       { v: D.due.pieces ? `${fmtN(D.due.finished)}` : "—", s: D.due.pieces ? `of ${fmtN(D.due.pieces)} due, finished` : "pieces due", c: D.due.pieces && D.due.finished < D.due.pieces ? "warn" : "" },
       { v: L.hours ? fmtH(L.hours) : "—", s: `labor · ${L.people} ${L.people === 1 ? "person" : "people"}` },
@@ -68,7 +69,7 @@ export async function render(main, ctx) {
       <div class="rv-grid">
         <section class="card pl-card rv-hours"><header class="pl-cardhead"><div><h2>By the hour</h2><p>Pieces assembled in SMRT each hour${D.isToday ? ", so far" : ""}. Assembly runs behind pressing, so spurts follow batches.</p></div></header>${raw(byHour())}</section>
         <section class="card pl-card"><header class="pl-cardhead"><div><h2>Pieces through the day</h2><p>Assembled in SMRT, counted as they happened${D.planned?.metrics?.end != null ? ", against the published plan's pace" : ""}.</p></div></header>${raw(chart())}</section>
-        <section class="card pl-card"><header class="pl-cardhead"><div><h2>Deadlines</h2><p>When the last piece for each was assembled.</p></div></header>${raw(deadlines())}</section>
+        ${SHUTTLES ? raw(html`<section class="card pl-card"><header class="pl-cardhead"><div><h2>Deadlines</h2><p>When the last piece for each was assembled.</p></div></header>${raw(deadlines())}</section>`) : ""}
         <section class="card pl-card"><header class="pl-cardhead"><div><h2>Plan vs. actual</h2><p>${D.planned ? `${D.planned.source === "published" ? `Published${D.planned.by ? ` by ${D.planned.by}` : ""}` : "Saved, not published"}; actual times from Rippling. Differences of 10 minutes or more are shown.` : "No plan was saved for this day."}</p></div></header>${raw(people())}</section>
         <section class="card pl-card" id="rv-nextday"><header class="pl-cardhead"><div><h2>Next work day · ${shortDay(D.nextWork)}</h2><p>Pieces to plan for, the crew and the projection.</p></div>
           <a class="btn small primary" href="#/plan?day=${D.nextWork}">Open ${new Date(D.nextWork + "T12:00:00").toLocaleDateString(undefined, { weekday: "long" })}'s plan</a></header><div id="rv-nextday-body"><p class="muted pad">Working it out…</p></div></section>
@@ -249,7 +250,7 @@ function notReadyCard(rows) {
       <p>Every piece is assembled, but the order isn't marked ready.${van ? ` ${van} went out on the van and weren't racked at the store.` : ""} These are for the stores, not production.</p></summary>
     <div class="late-list">${rows.slice(0, 60).map(o => raw(html`<div class="late">
       <div class="l-main"><a href="${o.customer ? SMRT_ORDER(o.customer, o.no) : "#"}" target="_blank" rel="noopener" class="l-no" title="Open in SMRT">${o.no}</a>
-        <span class="chip ${o.onVan ? "admin" : ""}">${o.onVan ? "On the van · not checked in" : o.shuttle ? "Assembled · still at the plant, next shuttle" : "Assembled · not racked as ready"}</span></div>
+        <span class="chip ${o.onVan ? "admin" : ""}">${o.onVan ? "On the van · not checked in" : o.shuttle && SHUTTLES ? "Assembled · still at the plant, next shuttle" : "Assembled · not racked as ready"}</span></div>
       <div class="l-meta"><span>${o.loc}</span><span>Due ${new Date(o.due).toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" })}</span><span>${o.pieces} pieces</span><span>${o.status}</span></div>
     </div>`))}</div></details></section>`;
 }
