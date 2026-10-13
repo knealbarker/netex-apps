@@ -247,6 +247,10 @@ await t("during the day: no-show, clocked in but not planned, then send-home whe
   ok(L.cats.slt.hrsSoFar > 1 && L.cats.slt.hrsSoFar <= 4.01, "SLT: Ana 5:00-9:00 minus breaks/moves " + L.cats.slt.hrsSoFar);
   ok(L.cats.dct.hrsSoFar > 0 && L.cats.dct.hrsSoFar <= 3.01, "DCT: Cora 6:00-9:00 " + L.cats.dct.hrsSoFar);
   for (const k of ["slt", "dct"]) ok(L.cats[k].left > 0 && (L.cats[k].etc > 9 || L.cats[k].short > 0.5), k + " ETC after now");
+  // someone who clocked in and went home isn't suggested as "clocked in but not on the plan"
+  const goneP = P0({ crew, isToday: true, now: 15.5, clock: [...clock.slice(0, 2), { personId: "f", clockIn: `${DAY}T06:30:00`, clockOut: `${DAY}T14:00:00` }] });
+  ok(!M.liveSuggestions(M.evaluate(goneP)).list.some(x => x.key === "unplanned:f"), "Fran went home: no suggestion");
+  eq(M.clockState(goneP, "f", 15.5), "gone"); eq(M.clockState(goneP, "f", 14.5), "break"); eq(M.clockState(goneP, "a", 15.5), "in");
   // after every planned shift has ended with pieces still left: an ETC past now, and it's overtime
   const Lx = M.liveSuggestions(M.evaluate(P0({ crew, isToday: true, now: 16, clock })));
   ok(Lx.fromNow.left > 0 && Lx.fromNow.etc > 16 && Lx.fromNow.ot, JSON.stringify(Lx.fromNow));
