@@ -396,7 +396,7 @@ button.tile:hover { background: var(--hover); }
 .tile.typed .t-sub { color: var(--info); }
 .plan-tiles .t-num { font-size: 26px; }
 
-.plan-grid { display: grid; grid-template-columns: minmax(0, 1fr) 360px; gap: 16px; align-items: start; margin-bottom: 16px; }
+.plan-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; align-items: start; margin-bottom: 16px; }
 .pg-main, .pg-side { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
 .pl-card { padding: 16px 18px; }
 .pl-cardhead { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; flex-wrap: wrap; margin-bottom: 10px; }

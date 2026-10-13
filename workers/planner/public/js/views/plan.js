@@ -165,7 +165,7 @@ export async function render(main, ctx) {
       const custom = !days().includes(pick);
       st.V = await api(custom ? `/pieces?day=${pick}` : "/pieces");
       if (!st.V.days[pick]) return openDay(days()[0]);
-      update({ table: false }); drawHeadPill(); loadChanges();
+      update({ table: false }); drawHeadPill(); drawOrders(); loadChanges();
     } catch { /* keep the last counts */ }
   }
 
@@ -202,14 +202,8 @@ export async function render(main, ctx) {
             <header class="pl-cardhead"><div><h2>The day</h2><p>Each person's work, minute by minute. ${can ? "Drag a bar sideways to change when that person starts." : ""}</p></div></header>
             <div id="pl-gantt"></div>
           </section>
-        </div>
-        <aside class="pg-side">
-          <section class="card pl-card"><header class="pl-cardhead"><div><h2>Check before you publish</h2></div></header><div id="pl-checks" class="checks-list"></div></section>
-          <section class="card pl-card"><header class="pl-cardhead"><div><h2>Deadlines</h2><p>When each shuttle's pieces will be ready, in the order they're due.</p></div></header><div id="pl-waves"></div></section>
-          ${admin ? raw('<section class="card pl-card"><header class="pl-cardhead"><div><h2>Labor and revenue</h2><p>Admins and the Owner see this.</p></div></header><div id="pl-money"></div></section>') : ""}
-          <section class="card pl-card" id="pl-wash-card"><header class="pl-cardhead"><div><h2>Washers</h2><p>Each load in order, on whichever washer frees up first.</p></div></header><div id="pl-wash"></div></section>
           <section class="card pl-card"><details id="pl-chg-box"><summary class="pl-cardhead"><div><h2>Changes today <span class="count soft" id="pl-chg-n"></span></h2><p>Who changed what, and the shuttle alerts.</p></div></summary><div id="pl-chg"></div></details></section>
-        </aside>
+        </div>
       </div>
       <div id="pl-orders"></div>
     </div><div id="pl-print-sheet" class="print-sheet" aria-hidden="true"></div>`;
@@ -263,7 +257,7 @@ export async function render(main, ctx) {
     if (!alive()) return;
     const X = st.X = M.evaluate(makeP());
     const L = X.P.isToday ? M.liveSuggestions(X, new Set(st.plan.hidden || [])) : null;
-    drawNote(); drawVerdict(X); drawLive(X, L); drawTiles(X, L); drawChecks(X); drawWaves(X); drawGantt(X); drawWash(X); if (admin) drawMoney(X);
+    drawNote(); drawVerdict(X); drawLive(X, L); drawTiles(X, L); drawGantt(X);
     if (table) drawCrew(X); else crewOutcomes(X);
     drawPub(X); saveStatus();
   }
@@ -660,8 +654,8 @@ export async function render(main, ctx) {
   function drawPub(X) {
     const b = document.getElementById("pl-pub"); if (!b) return;
     const pub = st.plan.published, sig = M.sigOf(X.P);
-    if (!pub) { b.textContent = "Publish"; b.className = "btn primary small"; b.title = "Show this plan on the Floor screens"; }
-    else if (pub.sig !== sig) { b.textContent = "Publish changes"; b.className = "btn primary small"; b.title = `Published ${ago(pub.at).toLowerCase()} by ${pub.by}; changed since`; }
+    if (!pub) { b.textContent = "Not published · Publish"; b.className = "btn primary small"; b.title = "The floor isn't showing this plan yet. Click to show it on the Floor screens."; }
+    else if (pub.sig !== sig) { b.textContent = "Changed · Publish again"; b.className = "btn primary small"; b.title = `Published ${ago(pub.at).toLowerCase()} by ${pub.by}; changed since`; }
     else { b.textContent = `Published ${new Date(pub.at).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })}`; b.className = "btn small published"; b.title = `Published by ${pub.by}. The floor shows this plan.`; }
     b.disabled = X.R.empty;
   }
@@ -751,16 +745,18 @@ export async function render(main, ctx) {
   function drawOrders() {
     const el = document.getElementById("pl-orders"), P = makeP();
     if (!P.dp.withOverdue) { el.innerHTML = ""; return; }
-    el.innerHTML = lateCard(st.V.late) + (st.V.notReady?.length ? notReadyCard(st.V.notReady) : "");
+    // only orders whose due time has passed (Neal, Oct 13: orders still due later today aren't late)
+    const late = (st.V.late || []).filter(o => o.overdue || Date.parse(o.due) <= Date.now());
+    el.innerHTML = lateCard(late) + (st.V.notReady?.length ? notReadyCard(st.V.notReady) : "");
     const k = "pl-orders-open";
     el.querySelectorAll("details").forEach(d => { d.open = store.get(k + d.dataset.k) !== "0"; d.addEventListener("toggle", () => store.set(k + d.dataset.k, d.open ? "1" : "0")); });
   }
 }
 
 function lateCard(rows) {
-  if (!rows.length) return html`<section class="card set-card"><header><h2>Late &amp; overdue orders</h2><p>None right now.</p></header></section>`;
-  return html`<section class="card set-card"><details data-k="late"><summary><h2>Late &amp; overdue orders <span class="count">${rows.length}</span></h2>
-      <p>Orders due today or earlier that aren't finished. Where the pieces are comes from SMRT's item and lot status.</p></summary>
+  if (!rows.length) return html`<section class="card set-card"><header><h2>Late orders</h2><p>None right now — nothing is past its due time.</p></header></section>`;
+  return html`<section class="card set-card"><details data-k="late"><summary><h2>Late orders <span class="count">${rows.length}</span></h2>
+      <p>Orders past their due time that aren't finished. Where the pieces are comes from SMRT's item and lot status.</p></summary>
     <div class="late-list">${rows.slice(0, 60).map(o => raw(html`<div class="late ${o.overdue ? "over" : ""}">
       <div class="l-main"><a href="${o.customer ? SMRT_ORDER(o.customer, o.no) : "#"}" target="_blank" rel="noopener" class="l-no" title="Open in SMRT">${o.no}</a>
         <span class="chip ${o.overdue ? "off" : "manager"}">${o.overdue ? `Overdue · due ${new Date(o.due).toLocaleDateString(undefined, { month: "short", day: "numeric" })}` : `Due ${new Date(o.due).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })}`}</span>

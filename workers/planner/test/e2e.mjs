@@ -139,7 +139,7 @@ await t("Plan: suggested crew, keep it, washers and Changes today", async () => 
   await p.click("#pl-keep"); await saved();
   await p.fill("#hrs-dct1", "5"); await p.press("#hrs-dct1", "Tab"); await saved();
   ok(!(await p.isVisible("#pl-full")) && !(await p.isVisible("#pl-auto")), "Auto-assign and All full day are gone");
-  ok(await p.locator("#pl-wash .wl").count() > 2, "washer loads");
+  for (const id of ["#pl-checks", "#pl-waves", "#pl-money", "#pl-wash"]) ok(!(await p.$(id)), id + " is off the Plan");
   await p.click("#pl-chg-box summary"); await p.waitForSelector("#pl-chg .chg-list li");
   ok(await p.isVisible('#pl-chg >> text=hours 7h 30m → 5h'), "change logged");
   ok(await p.isVisible('#pl-chg >> text=Neal Barker'), "who");
@@ -154,7 +154,7 @@ await t("Plan: each top button has a ? that explains it; today shows Suggestions
     await p.click('dialog.help-dlg button[type="submit"]');
     await p.waitForSelector("dialog", { state: "detached" });
   }
-  if (isWorkDay) { await p.locator("#pl-waves").screenshot({ path: join(SHOTS, "e3d-waves.png") }); ok(await p.locator("#pl-waves .wv-prog").count() > 0, "assembled / left on each deadline");
+  if (isWorkDay) {
     const n = await p.locator("#pl-live .sugg li").count();
     ok((await p.isVisible("#pl-live")) === n > 0, "suggestions card only when there are suggestions");
     if (n) { ok(/Suggestions right now/.test(await p.textContent("#pl-live")));
