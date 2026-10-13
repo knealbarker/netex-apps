@@ -747,6 +747,8 @@ dialog.help-dlg .dlg-body p { margin: 0 0 10px; line-height: 1.5; }
 
 /* suggestions during the day */
 .live-card { margin-bottom: 16px; }
+.live-card.quiet { margin-bottom: 10px; }
+.live-card.quiet .pl-cardhead { padding-top: 10px; padding-bottom: 10px; }
 .sugg { list-style: none; margin: 0; padding: 0 16px 16px; display: grid; gap: 8px; }
 .bad-txt { color: var(--bad); font-weight: 600; }
 

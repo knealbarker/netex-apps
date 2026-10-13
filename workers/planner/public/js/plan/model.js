@@ -162,7 +162,9 @@ export function buildChecks(X) {
     return C;
   }
   const tol = P.s.spread / 60, used = onCrew(P), out = calledOut(P);
-  for (const w of waves) {
+  // once today's plan is published the day is running: each store's status is on the Deadlines card, not a check
+  const running = P.isToday && !!P.published;
+  for (const w of running ? [] : waves) {
     if (!w.todo || w.kind === "overdue" || !live(X, w)) continue;
     const st = states[w.id], eta = st.eta; if (eta == null) continue;
     if (P.isToday && w.leftTodo === 0) continue;
@@ -266,10 +268,12 @@ const clockOf = iso => { const d = new Date(iso); return d.getHours() + d.getMin
 export function verdict(X) {
   const { P, R, M, waves, states, E } = X;
   if (R.empty) return { cls: "idle", head: R.noCrew ? "Pick the crew" : "Nothing to plan yet", kpis: [] };
-  const W = waves.filter(w => w.todo > 0 && w.kind !== "overdue" && live(X, w) && !(P.isToday && w.leftTodo === 0));
+  // once today's plan is published, deadlines don't drive the headline (Neal: nothing to act on; the Deadlines card shows each store)
+  const running = P.isToday && !!P.published;
+  const W = running ? [] : waves.filter(w => w.todo > 0 && w.kind !== "overdue" && live(X, w) && !(P.isToday && w.leftTodo === 0));
   const late = W.filter(w => states[w.id].late), tight = W.filter(w => states[w.id].tight);
   const short = R.P.shortTotal > 0.5, ot = R.otTotal > 0.04;
-  let cls = "ok", head = "This plan works";
+  let cls = "ok", head = running ? "On plan" : "This plan works";
   if (W.length) head = late.length ? `${late.map(w => w.name).join(", ")} won't make it` : tight.length ? `${tight.map(w => w.name).join(", ")} ${tight.length === 1 ? "is" : "are"} tight` : `${W.length === 1 ? "The deadline makes" : `All ${W.length} deadlines make`} it`;
   if (late.length || short) { cls = "bad"; if (!late.length) head = `${fmtN(R.P.shortTotal)} pieces won't get done`; }
   else if (tight.length || ot) { cls = "warn"; if (!tight.length && ot) head = `Needs ${fmtH(R.otTotal)} overtime`; }
@@ -492,10 +496,7 @@ export function liveSuggestions(X, hidden = new Set()) {
     const eta = etas[w.id]; if (eta === undefined) continue;
     const stt = waveState(w, eta); if (!stt.late && !stt.tight) continue;
     risk = risk || !!stt.late;
-    const fix = bottleneckFix(X2, w, eta), what = w.kind === "shuttle" ? `${hm(w.deadline)} shuttle` : "counter";
-    add({ key: `risk:${w.id}:${shortHash(fix && fix.label || "none")}`, cls: stt.late ? "b" : "w", title: `${w.name}: ${stt.late ? "won't be ready" : "tight"} for the ${what}`,
-      text: `${fmtN(w.leftTodo ?? w.todo)} pieces left · ${isFinite(eta) ? `ready about ${hm(eta)}` : "not enough hours left"}${fix && fix.why ? ` — ${fix.why}` : ""}.`,
-      ...(fix && fix.apply ? { accept: fix.label, apply: fix.apply } : {}) });
+    // not shown as a suggestion (Neal, Oct 13): the Deadlines card shows each store's status; this only holds back "send home"
   }
   // 4) pieces that won't get done by the end of the shifts: keep the person on the slowest station longer (when overtime is off)
   const short = R2.empty ? 0 : R2.P.shortTotal;
@@ -523,5 +524,4 @@ export function liveSuggestions(X, hidden = new Set()) {
   list.sort((a, b) => order[a.cls] - order[b.cls]);
   return { on: true, list, fromNow: { left: leftTotal, end: R2.empty ? null : R2.end, short, people: onCrewNow.size, noShow: noShow.length } };
 }
-const shortHash = t => { let h = 2166136261; for (let i = 0; i < t.length; i++) { h ^= t.charCodeAt(i); h = Math.imul(h, 16777619); } return (h >>> 0).toString(36); };
 const posLabel = (E, code) => (E.POS.find(p => p.id === code) || {}).label || code;

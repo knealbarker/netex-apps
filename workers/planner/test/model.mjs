@@ -113,6 +113,17 @@ await t("a late shuttle offers a fix that makes it earlier", async () => {
   const before = X.etas.r1; c.fixes[0].apply(P);
   ok(M.evaluate(P).etas.r1 < before, "earlier after the fix");
 });
+await t("today's published plan: a late shuttle isn't a check, the headline or a suggestion (it's on the Deadlines card)", async () => {
+  const P = staffed(); P.crew.slt1.start = "09:00"; P.crew.slt2.start = "09:00";
+  P.q.dcb = 0; P.waves = P.waves.map(w => ({ ...w, q: { ...w.q, dcb: 0 } }));
+  ok(M.evaluate(P).verdict.head.includes("Quitman"), "before publish it still leads");
+  Object.assign(P, { isToday: true, now: 5, published: { at: new Date().toISOString(), sig: "x" } });
+  const X = M.evaluate(P);
+  ok(!X.checks.some(c => /won't be ready|is tight/.test(c.title)), X.checks.map(c => c.title).join(" | "));
+  ok(!/Quitman/.test(X.verdict.head), X.verdict.head);
+  ok(!X.verdict.kpis.some(k => /shuttle ready/.test(k.l)));
+  ok(!M.liveSuggestions(X).list.some(x => /shuttle|counter/.test(x.title)));
+});
 await t("call-out check offers trained people who aren't scheduled", async () => {
   const P = staffed(); P.crew.dct1.emp = ""; P.callouts = [{ id: "x", personId: "c", station: "dct1" }];
   const c = M.evaluate(P).checks.find(x => /called out/.test(x.title));
