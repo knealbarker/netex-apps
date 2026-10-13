@@ -748,8 +748,11 @@ dialog.help-dlg .dlg-body p { margin: 0 0 10px; line-height: 1.5; }
 
 /* suggestions during the day */
 .live-card { margin-bottom: 16px; }
-.live-card.quiet { margin-bottom: 10px; }
-.live-card.quiet .pl-cardhead { padding-top: 10px; padding-bottom: 10px; }
+#pl-live-box > summary { list-style: none; cursor: pointer; }
+#pl-live-box > summary::-webkit-details-marker { display: none; }
+#pl-live-box > summary h2::after { content: "▸"; color: var(--faint); font-size: 12px; margin-left: 8px; display: inline-block; transition: transform .15s; }
+#pl-live-box[open] > summary h2::after { transform: rotate(90deg); }
+#pl-live-box:not([open]) > summary { margin-bottom: 0; }
 .sugg { list-style: none; margin: 0; padding: 0 16px 16px; display: grid; gap: 8px; }
 .bad-txt { color: var(--bad); font-weight: 600; }
 

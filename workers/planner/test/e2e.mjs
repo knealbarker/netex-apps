@@ -155,8 +155,12 @@ await t("Plan: each top button has a ? that explains it; today shows Suggestions
     await p.waitForSelector("dialog", { state: "detached" });
   }
   if (isWorkDay) { await p.locator("#pl-waves").screenshot({ path: join(SHOTS, "e3d-waves.png") }); ok(await p.locator("#pl-waves .wv-prog").count() > 0, "assembled / left on each deadline");
-    ok(await p.isVisible("#pl-live"), "suggestions card on today's plan"); ok(/Suggestions right now/.test(await p.textContent("#pl-live")));
-    await p.locator("#pl-live").screenshot({ path: join(SHOTS, "e3c-live.png") }); }
+    const n = await p.locator("#pl-live .sugg li").count();
+    ok((await p.isVisible("#pl-live")) === n > 0, "suggestions card only when there are suggestions");
+    if (n) { ok(/Suggestions right now/.test(await p.textContent("#pl-live")));
+      await p.locator("#pl-live").screenshot({ path: join(SHOTS, "e3c-live.png") });
+      await p.click("#pl-live-box > summary"); ok(!(await p.isVisible("#pl-live .sugg")), "collapses");
+      await p.click("#pl-live-box > summary"); ok(await p.isVisible("#pl-live .sugg"), "opens again"); } }
 });
 await t("Plan: Print builds a one-page timeline", async () => {
   await p.evaluate(() => { window.print = () => { window.__printed = true; }; });

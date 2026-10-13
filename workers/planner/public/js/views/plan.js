@@ -37,7 +37,7 @@ const HELP = {
     <ul><li><b>Pieces still left</b> (SMRT, as pieces are assembled), including overdue work.</li>
     <li><b>Who's actually here</b> (Rippling clock-ins) and the hours each person has left.</li>
     <li>Time off and late arrivals from Team.</li></ul>
-    <p>When something should change, it shows a suggestion: someone hasn't clocked in, someone clocked in who isn't planned, pieces that won't get done, or people who can go home early. Whether each shuttle is on track is on the <b>Deadlines</b> card.</p>
+    <p>When something should change, it shows a suggestion: someone hasn't clocked in, someone clocked in who isn't planned, pieces that won't get done, or people who can go home early. The card only appears when there's a suggestion; click its title to collapse or open it. Whether each shuttle is on track is on the <b>Deadlines</b> card.</p>
     <p><b>Accept</b> makes the change to the plan (Undo works). <b>Dismiss</b> hides it for the rest of the day on every PC. Both are listed under Changes today. Publish afterwards so the floor sees it.</p>` },
 };
 
@@ -272,15 +272,17 @@ export async function render(main, ctx) {
     const el = document.getElementById("pl-live"); if (!el) return;
     if (!X.P.isToday) { el.hidden = true; return; }
     const L = M.liveSuggestions(X, new Set(st.plan.hidden || []));
+    // only when there's something to suggest (Neal, Oct 13); open or collapsed is remembered on this PC
+    if (!(L.on && L.list.length)) { el.hidden = true; el.innerHTML = ""; return; }
     el.hidden = false;
-    const f = L.fromNow, nowTxt = fmtClock(X.P.now);
-    el.innerHTML = html`<header class="pl-cardhead"><div><h2>Suggestions right now ${raw(helpBtn("live"))}</h2>
-        <p>${L.on ? raw(html`From ${nowTxt}: <b>${fmtN(f.left)}</b> pieces left, ${f.people} ${f.people === 1 ? "person" : "people"} working${f.end != null && f.left ? raw(html`, done about <b>${hm(f.end)}</b>`) : ""}${f.short > 0.5 ? raw(html` · <span class="bad-txt">${fmtN(f.short)} won't get done</span>`) : ""}.`) : L.why}</p></div></header>
-      ${L.on ? raw(L.list.length ? html`<ul class="sugg">${L.list.map((x, i) => raw(html`<li class="chk ${x.cls}"><i aria-hidden="true"></i><div><b>${x.title}</b><p>${x.text}</p>
-          ${can ? raw(html`<div class="fx">${x.accept && (x.apply || x.act) ? raw(html`<button class="btn small primary" data-acc="${i}">${x.accept}</button>`) : ""}<button class="btn small ghost" data-dis="${i}">Dismiss</button></div>`) : ""}</div></li>`))}</ul>`
-        : "") : ""}`;
-    el.classList.toggle("quiet", !(L.on && L.list.length));
-    el.querySelector("[data-help]")?.addEventListener("click", () => showHelp("live"));
+    const f = L.fromNow, nowTxt = fmtClock(X.P.now), open = store.get("pl-live-open") !== "0";
+    el.innerHTML = html`<details id="pl-live-box" ${open ? "open" : ""}><summary class="pl-cardhead"><div><h2>Suggestions right now <span class="count soft">${L.list.length}</span> ${raw(helpBtn("live"))}</h2>
+        <p>From ${nowTxt}: <b>${fmtN(f.left)}</b> pieces left, ${f.people} ${f.people === 1 ? "person" : "people"} working${f.end != null && f.left ? raw(html`, done about <b>${hm(f.end)}</b>`) : ""}${f.short > 0.5 ? raw(html` · <span class="bad-txt">${fmtN(f.short)} won't get done</span>`) : ""}.</p></div></summary>
+      <ul class="sugg">${L.list.map((x, i) => raw(html`<li class="chk ${x.cls}"><i aria-hidden="true"></i><div><b>${x.title}</b><p>${x.text}</p>
+          ${can ? raw(html`<div class="fx">${x.accept && (x.apply || x.act) ? raw(html`<button class="btn small primary" data-acc="${i}">${x.accept}</button>`) : ""}<button class="btn small ghost" data-dis="${i}">Dismiss</button></div>`) : ""}</div></li>`))}</ul></details>`;
+    const box = el.querySelector("#pl-live-box");
+    box.addEventListener("toggle", () => store.set("pl-live-open", box.open ? "1" : "0"));
+    el.querySelector("[data-help]")?.addEventListener("click", ev => { ev.preventDefault(); ev.stopPropagation(); showHelp("live"); });
     el.querySelectorAll("[data-acc]").forEach(b => b.addEventListener("click", async () => {
       const x = L.list[+b.dataset.acc]; b.disabled = true;
       try {
