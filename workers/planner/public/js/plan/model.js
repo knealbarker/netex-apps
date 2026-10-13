@@ -683,7 +683,8 @@ export function bottleneck(X, L) {
   const on = R.rows.filter(rw => rw.staffed && groupOf(E.TYPE_OF[stationAt(P.crew[rw.st.id], rw.st.id, t0)]) === k);
   const shiftEnd = on.length ? Math.max(...on.map(r => r.x.schedEnd)) : null;
   const perPress = k === "slt" ? P.s.rates.sltSolo : P.s.rates[k] || 0;
-  const hoursLeft = shiftEnd != null ? Math.max(0.25, shiftEnd - t0) : null;
+  // the shifts on it are already over (people staying late): no "needed" rate to show
+  const hoursLeft = shiftEnd != null && shiftEnd > t0 + 0.1 ? shiftEnd - t0 : null;
   return { k, total, done, left, etc, ot, presses: on.length, perPress, expected: on.length * perPress, shiftEnd,
     needed: hoursLeft && left > 0.5 ? left / hoursLeft : 0 };
 }

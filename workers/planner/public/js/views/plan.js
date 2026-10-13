@@ -289,13 +289,13 @@ export async function render(main, ctx) {
     const B = M.bottleneck(X, L);
     if (!B) { el.hidden = true; el.innerHTML = ""; return; }
     el.hidden = false;
-    const done = B.left < 0.5, behind = !done && B.expected > 0 && B.needed > B.expected + 0.5;
+    const done = B.left < 0.5, behind = !done && B.expected > 0 && B.needed > 0 && B.needed > B.expected + 0.5;
     el.className = `pv-neck ${done ? "good" : B.ot || behind ? "warn" : ""}`;
     const live = X.P.isToday && L && L.on;
     el.innerHTML = html`<div class="nk-head"><i class="sw" style="--c:${CAT_COLOR[B.k]}"></i><h2>${TILE[B.k]}</h2><span class="nk-tag">${B.k === "slb" ? "The bottleneck" : "Finishes last"}</span></div>
       <div class="nk-nums">
         <div><b>${fmtN(B.left)}</b><span>${live ? "left" : "to do"}${live && B.done ? ` · ${fmtN(B.done)} done` : ""}</span></div>
-        <div><b>${done || !B.presses ? "—" : `${Math.round(B.needed)}/hr`}</b><span>${B.shiftEnd != null && !done && B.presses ? `needed by ${hm(B.shiftEnd)}` : "needed"}</span></div>
+        <div><b>${done || !B.presses || !B.needed ? "—" : `${Math.round(B.needed)}/hr`}</b><span>${!done && B.presses && B.needed ? `needed by ${hm(B.shiftEnd)}` : !done && B.presses ? "shifts are over" : "needed"}</span></div>
         <div><b class="${behind || (!B.presses && !done) ? "warn-txt" : ""}">${B.presses ? `${Math.round(B.expected)}/hr` : "No one"}</b><span>${B.presses ? `${B.presses} ${B.presses === 1 ? "press" : "presses"} at ${Math.round(B.perPress)}` : "on it right now"}</span></div>
       </div>
       <p class="nk-line">${done ? "All done." : raw(html`At this pace ${TILE[B.k].toLowerCase()} finish about <b class="${B.ot ? "warn-txt" : ""}">${B.etc != null ? hm(B.etc) : "—"}</b>${B.ot ? " — past the end of the shifts" : ""}.`)}</p>
