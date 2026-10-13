@@ -143,7 +143,9 @@ export function createEngine(S) {
     const avl = k => (WP && WASHED[k]) ? Math.max(0, Math.min(pool[k], WP.ready(k, tNow) - (init[k] - pool[k]))) : pool[k];
     const emps = STATIONS.filter(st => I[st.id].a > EPS).map(st => {
       const x = I[st.id]; const brkS = x.b > 0 ? x.brkS : null;
-      return { pos: st.id, home: st.id, empId: s.crew[st.id].emp, x, brkS, brkE: brkS != null ? brkS + x.b : null, segs: [], work: {}, pcs: {}, last: null, otUsed: 0, rotated: false };
+      // a manager's moves: from each move's time the person works the station they were moved to (Neal, Oct 13)
+      const moves = (s.crew[st.id].moves || []).map(m => ({ at: parseTime(m.at), to: m.to })).filter(m => m.at != null && TYPE_OF[m.to]).sort((a, b) => a.at - b.at);
+      return { pos: st.id, pos0: st.id, home: st.id, empId: s.crew[st.id].emp, x, brkS, brkE: brkS != null ? brkS + x.b : null, segs: [], work: {}, pcs: {}, last: null, otUsed: 0, rotated: false, moves, mv: -1 };
     });
     if (!emps.length) return null;
     const mx = id => { const v = +((s.stationMax || {})[id]); return v > 0 ? v : Infinity; };
@@ -177,6 +179,11 @@ export function createEngine(S) {
       const left = Object.keys(pool).some(k => pool[k] > 1e-4);
       if (!left) break;
       tNow = t;
+      for (const e of emps) {
+        if (!e.moves.length) continue;
+        let i = -1; for (let j = 0; j < e.moves.length; j++) if (e.moves[j].at <= t + EPS) i = j;
+        if (i !== e.mv && i >= 0) { e.mv = i; e.pos = e.moves[i].to; e.home = e.pos; e.swapped = false; }
+      }
       const occ = {}, asg = new Map(), many = {};   // many: how many people are on tablecloths / comforters this minute
       const avAll = emps.filter(e => avail(e, t));
       if (!avAll.length) { t += dt; continue; }
@@ -275,7 +282,7 @@ export function createEngine(S) {
     for (const k in short) if (short[k] < 0.5) short[k] = 0;
     const shortTotal = CATS.reduce((a, k) => a + short[k], 0);
     const firstStart = Math.min(...staffed.map(x => x.start));
-    const byPos = Object.fromEntries(sim.emps.map(e => [e.pos, e]));
+    const byPos = Object.fromEntries(sim.emps.map(e => [e.pos0, e]));
     const rows = STATIONS.map(st => {
       const x = I[st.id], e = byPos[st.id];
       if (!e) return { st, x, staffed: false, segs: [], tasks: [], work: 0, comf: 0, active: 0, finish: null, clockOut: null, ot: 0, idle: 0, regPaid: 0, early: 0, moved: false };

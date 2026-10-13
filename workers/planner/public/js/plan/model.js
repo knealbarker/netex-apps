@@ -44,17 +44,19 @@ export function positions(SET) {
 }
 
 /** Active people for the engine. `rate` (Rippling's hourly pay) is only there for Admins and the Owner; the engine uses the average without it. */
-export const peopleFrom = TEAM => TEAM.people.filter(p => p.status === "active").map(p => ({ id: p.id, name: p.name, trainings: p.trainings || [], start: p.usualStart || null, ...(p.rate > 0 ? { rate: p.rate } : {}) }));
+export const peopleFrom = TEAM => TEAM.people.filter(p => p.status === "active").map(p => ({ id: p.id, name: p.name, trainings: p.trainings || [], start: p.usualStart || null,
+  hours: p.usualHours > 0 ? +p.usualHours : null, days: p.usualDays || null, leaveBy: p.leaveBy || null, leaveNote: p.leaveNote || null, ...(p.rate > 0 ? { rate: p.rate } : {}) }));
 
 export function blankCrew(POS, s) { return Object.fromEntries(POS.map(p => [p.id, { emp: "", start: s.defStart, hrs: s.fullDay, stop: "", source: "" }])); }
 export function crewFromServer(serverCrew, POS, s) {
   const crew = blankCrew(POS, s);
-  for (const [code, c] of Object.entries(serverCrew || {})) if (crew[code]) crew[code] = { emp: c.personId, start: c.start, hrs: c.hours, stop: c.stop || "", source: c.source || "user" };
+  for (const [code, c] of Object.entries(serverCrew || {})) if (crew[code]) crew[code] = { emp: c.personId, start: c.start, hrs: c.hours, stop: c.stop || "", source: c.source || "user", moves: c.moves || [] };
   return crew;
 }
 export function crewToServer(crew) {
   const out = {};
-  for (const [code, c] of Object.entries(crew)) if (c.emp) out[code] = { personId: c.emp, start: c.start, hours: +c.hrs || 0, stop: c.stop || "", source: c.source === "suggested" ? "suggested" : c.source === "clock" ? "clock" : "user" };
+  for (const [code, c] of Object.entries(crew)) if (c.emp) out[code] = { personId: c.emp, start: c.start, hours: +c.hrs || 0, stop: c.stop || "", source: c.source === "suggested" ? "suggested" : c.source === "clock" ? "clock" : "user",
+    ...(c.moves && c.moves.length ? { moves: c.moves } : {}) };
   return out;
 }
 
@@ -81,7 +83,17 @@ export const effectiveQ = (base, overrides) => Object.fromEntries(CATS.map(k => 
  * Everything the screen shows for one state of the plan.
  * P = { s, stations, ops, trainingOf, people, crew, q, waves, day, isToday, now, callouts, history, published, admin }
  */
-export function evaluate(P) {
+/** The crew the engine sees: a standing "must leave by" on Team is a hard stop unless the plan sets one for the day. */
+export function effectiveCrew(P) {
+  const out = {};
+  for (const [code, c] of Object.entries(P.crew)) {
+    const e = c.emp && P.people.find(p => p.id === c.emp);
+    out[code] = e && e.leaveBy && !c.stop ? { ...c, stop: e.leaveBy, standingStop: true } : c;
+  }
+  return out;
+}
+export function evaluate(P0) {
+  const P = { ...P0, crew: effectiveCrew(P0) };
   const E = createEngine({ ...P.s, q: P.q, crew: P.crew, stations: P.stations, ops: P.ops, people: P.people, trainingOf: P.trainingOf });
   const R = E.buildPlan(P.q);
   const M = R.empty ? null : E.money(R);
@@ -316,13 +328,15 @@ export function suggestCrew(P, E) {
     for (const e of P.people) if (!ids || ids.has(e.id)) { out.push(e); startOf.set(e.id, e.start || P.s.defStart); }
     basis = lastDay ? `the plan for ${new Date(lastDay + "T12:00:00").toLocaleDateString(undefined, { weekday: "long", month: "short", day: "numeric" })}` : "the whole team";
   }
-  const out2 = calledOut(P), people = out.filter(e => !out2.has(e.id));
+  // Team's usual days decide when they're set (Neal, Oct 13): add people who usually work this weekday, drop those who don't
+  for (const e of P.people) if (e.days && e.days.includes(String(wd)) && !out.includes(e)) { out.push(e); startOf.set(e.id, e.start || P.s.defStart); }
+  const out2 = calledOut(P), people = out.filter(e => !out2.has(e.id) && !(e.days && !e.days.includes(String(wd))));
   // how often each person was planned on each station (same weekday counts double)
   const cnt = {};
   for (const p of H.planned) { const w = weekday(p.day) === wd ? 2 : 1; const m = cnt[p.personId] = cnt[p.personId] || { _t: 0 }; m[p.station] = (m[p.station] || 0) + w; m._t += w; }
   const share = (e, st) => { const m = cnt[e.id]; return m && m._t ? (m[st] || 0) / m._t : 0; };
   const r = E.assign(people, { q: P.q, share, startOf: e => notBeforeLate(P, e.id, startOf.get(e.id)) });
-  for (const c of Object.values(r.crew)) { c.source = c.emp ? "suggested" : ""; }
+  for (const c of Object.values(r.crew)) { c.source = c.emp ? "suggested" : ""; const e = c.emp && P.people.find(x => x.id === c.emp); if (e && e.hours) c.hrs = e.hours; }
   return { crew: r.crew, left: r.left, basis, days: days.length };
 }
 

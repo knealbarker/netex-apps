@@ -43,6 +43,19 @@ await t("Manager saves crew and piece overrides; they load back", async () => {
   eq(r.crew.slt1, { personId: p1, start: "05:00", hours: 7.5, stop: "", source: "user" });
   eq(r.crew.dct1.stop, "13:00"); eq(r.overrides, { comf: 12 }); eq(r.rev, 1); eq(r.status, "draft"); eq(r.updatedBy, "Mo");
 });
+await t("moves save and load back; Team's standing schedule can be set by a manager", async () => {
+  const { call, p1, p2 } = await setup();
+  const s = await call("PUT", `/api/plan/${DAY}`, { as: "mo@example.com", body: { rev: 0, crew: { dct1: { personId: p1, start: "06:00", hours: 7.5, moves: [{ at: "10:30", to: "slb1" }] } } } });
+  eq(s.status, 200);
+  eq((await call("GET", `/api/plan/${DAY}`)).body.crew.dct1.moves, [{ at: "10:30", to: "slb1" }]);
+  const bad = await call("PUT", `/api/plan/${DAY}`, { as: "mo@example.com", body: { rev: 1, crew: { dct1: { personId: p1, start: "06:00", hours: 7.5, moves: [{ at: "10:30", to: "nope" }] } } } });
+  eq(bad.status, 400);
+  const u = await call("PATCH", `/api/team/${p2}`, { as: "mo@example.com", body: { usualHours: 7, usualDays: "12345", leaveBy: "14:45", leaveNote: "School pickup" } });
+  eq(u.status, 200, JSON.stringify(u.body));
+  const me = (await call("GET", "/api/team")).body.people.find(x => x.id === p2);
+  eq([me.usualHours, me.usualDays, me.leaveBy, me.leaveNote], [7, "12345", "14:45", "School pickup"]);
+  eq((await call("PATCH", `/api/team/${p2}`, { as: "mo@example.com", body: { firstName: "X" } })).status, 403, "names stay with Admins");
+});
 await t("a save based on an old revision is refused with the newer plan", async () => {
   const { call, p1, p2 } = await setup();
   await call("PUT", `/api/plan/${DAY}`, { body: { rev: 0, crew: { slt1: { personId: p1, start: "05:00", hours: 7.5 } } } });

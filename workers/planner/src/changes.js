@@ -30,6 +30,10 @@ export function planDiff(before, after, ovBefore, ovAfter, labels, names) {
     if (a.start !== b.start) out.push(`${N(pid)}: planned start ${clock(b.start)} → ${clock(a.start)}`);
     if (+a.hours !== +b.hours) out.push(`${N(pid)}: hours ${hrs(b.hours)} → ${hrs(a.hours)}`);
     if ((a.stop || "") !== (b.stop || "")) out.push(a.stop ? `${N(pid)}: hard stop at ${clock(a.stop)}` : `${N(pid)}: hard stop removed`);
+    const mv = c => { try { return JSON.parse(c.moves || "[]"); } catch { return []; } };
+    const ma = mv(a), mb = mv(b), key = m => `${m.at}>${m.to}`;
+    for (const m of ma) if (!mb.some(x => key(x) === key(m))) out.push(`${N(pid)} moves to ${L(m.to)} at ${clock(m.at)}`);
+    for (const m of mb) if (!ma.some(x => key(x) === key(m))) out.push(`${N(pid)}: move to ${L(m.to)} at ${clock(m.at)} taken out`);
   }
   for (const k of Object.keys(CAT)) {
     const x = ovBefore[k], y = ovAfter[k];

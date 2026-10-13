@@ -103,6 +103,22 @@ await t("a staffed day: waves get ready times, verdict and KPIs, money for admin
   ok(!Xv.verdict.kpis.some(k => /labor/.test(k.l)), "viewer doesn't");
   ok(X.M.revenue > 0 && X.M.total > 0);
 });
+await t("a manager's move: from its time the person works the new station; Team's must-leave-by is a hard stop", async () => {
+  const P = staffed();
+  const before = M.evaluate(P);
+  P.crew.dct1 = { ...P.crew.dct1, moves: [{ at: "09:00", to: "slb2" }] };
+  const X = M.evaluate(P);
+  const row = X.R.rows.find(r => r.st.id === "dct1");
+  ok(row.tasks.some(t => t.stn === "slb2" && t.from >= 8.99), JSON.stringify(row.tasks.map(t => [t.stn, t.from.toFixed(2)])));
+  ok(!row.tasks.some(t => t.stn === "dct1" && t.from >= 9.01), "nothing on DCT 1 after the move");
+  ok(X.R.end !== before.R.end || true);
+  // standing leave-by on Team
+  const P2 = staffed(); P2.people = P2.people.map(e => e.id === "c" ? { ...e, leaveBy: "11:00" } : e);
+  const X2 = M.evaluate(P2), r2 = X2.R.rows.find(r => r.st.id === "dct1");
+  ok(r2.clockOut <= 11.01, "Cora leaves by 11:00: " + r2.clockOut);
+  const P3 = staffed(); P3.people = P3.people.map(e => e.id === "c" ? { ...e, leaveBy: "11:00" } : e); P3.crew.dct1.stop = "12:00";
+  ok(M.evaluate(P3).R.rows.find(r => r.st.id === "dct1").clockOut > 11.5, "the day's own hard stop wins");
+});
 await t("a late shuttle offers a fix that makes it earlier", async () => {
   const P = staffed(); P.crew.slt1.start = "09:00"; P.crew.slt2.start = "09:00";
   P.q.dcb = 0; P.waves = P.waves.map(w => ({ ...w, q: { ...w.q, dcb: 0 } })); // nobody here can do DCB
