@@ -25,18 +25,19 @@ async function assembled(db, orgId, day, cat, prices) {
       LEFT JOIN pos_item_types t ON t.id=i.item_type_id LEFT JOIN pos_departments d ON d.id=i.department_id
       WHERE o.org_id=? AND s.is_void=0 AND i.removed_at IS NULL AND substr(i.assembled_at,1,10)=?`).bind(orgId, day).all()).results;
   const q = Object.fromEntries(CATS.map(k => [k, 0])); let rev = 0, n = 0;
-  const times = [], byHour = {}; // byHour: { "7": {slb: 12, ...} } pieces assembled in each clock hour, by kind of work
+  const times = [], byHour = {}, byCat = {}; // byCat: minute of the day each piece was assembled, by kind of work // byHour: { "7": {slb: 12, ...} } pieces assembled in each clock hour, by kind of work
   for (const r of rows) {
     const k = cat(r.type, r.dep); if (!k) continue;
     q[k]++; n++;
     rev += r.base != null ? cents(r) / 100 : (+prices[k] || 0);
-    const h = hmOf(r.asm); if (h != null) { times.push(h); const hr = Math.floor(h); (byHour[hr] = byHour[hr] || {})[k] = (byHour[hr][k] || 0) + 1; }
+    const h = hmOf(r.asm); if (h != null) { times.push(h); const hr = Math.floor(h); (byHour[hr] = byHour[hr] || {})[k] = (byHour[hr][k] || 0) + 1; (byCat[k] = byCat[k] || []).push(Math.round(h * 60)); }
   }
   times.sort((a, b) => a - b);
   // running count, one point per 15 minutes that had any pieces
   const curve = []; let c = 0;
   for (const t of times) { c++; const slot = Math.ceil(t * 4) / 4; const last = curve[curve.length - 1]; if (last && last[0] === slot) last[1] = c; else curve.push([slot, c]); }
-  return { q, pieces: n, revenue: rev, curve, byHour };
+  for (const k in byCat) byCat[k].sort((a, b) => a - b);
+  return { q, pieces: n, revenue: rev, curve, byHour, byCat };
 }
 
 /** Hours worked in Production on a day: finished days from Rippling's daily totals; today from the punches so far. */
