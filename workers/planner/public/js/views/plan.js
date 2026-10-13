@@ -304,10 +304,10 @@ export async function render(main, ctx) {
     let v = X.verdict; const el = document.getElementById("pl-verdict");
     // today, once the day is running: the same re-plan from now as the tiles, so the bar and the tiles agree (Neal, Oct 13)
     if (X.P.isToday && L && L.on && L.fromNow) {
-      const f = L.fromNow, ot = f.ot || f.otH > 0.04, left = Math.round(f.left);
+      const f = L.fromNow, left = Math.round(f.left), ot = left > 0 && (f.ot || f.otH > 0.04);
       const kp = v.kpis.map(k => k.l === "everyone done" ? { v: left > 0 && f.etc != null ? hm(f.etc) : "Done", l: "all done, from now" }
         : k.l === "overtime" ? { v: ot ? fmtH(f.otH) : "None", cls: ot ? "warn" : "", l: "overtime, from now" } : k);
-      v = { cls: ot ? "warn" : "ok", head: left <= 0 ? "Everything's done" : ot ? `Running into overtime · done about ${hm(f.etc)}` : `On plan · done about ${hm(f.etc)}`, kpis: kp };
+      v = { cls: ot ? "warn" : "ok", head: left <= 0 ? "Everything's done" : f.etc == null ? `${fmtN(left)} pieces left` : ot ? `Running into overtime · done about ${hm(f.etc)}` : `On plan · done about ${hm(f.etc)}`, kpis: kp };
     }
     el.className = `verdict ${v.cls}`;
     el.innerHTML = html`<div class="v-head"><span class="v-ico" aria-hidden="true">${v.cls === "ok" ? "✓" : v.cls === "idle" ? "…" : "!"}</span><b>${v.head}</b></div>

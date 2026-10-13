@@ -540,6 +540,8 @@ export function liveSuggestions(X, hidden = new Set()) {
     cats[k].etc = Math.max(cats[k].etc ?? 0, sg.to); pcsH[k].pcs += sg.pcs; pcsH[k].h += sg.to - sg.from;
     if (sg.to > rw.x.schedEnd + 0.02) cats[k].ot = true;
   }
+  // pieces left that nobody in the re-plan works on (e.g. everyone's planned hours are used up): all of it is past the shifts
+  for (const k of CATS) { const c = cats[k]; if (c.left > 0.5 && c.etc == null && !(c.short > 0.5)) c.short = c.left; }
   let extraH = 0;
   // more than fits in the shifts: we always finish, so the ETC runs on at the same pace (Neal, Oct 13)
   for (const k of CATS) {
