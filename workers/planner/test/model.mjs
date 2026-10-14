@@ -133,6 +133,35 @@ await t("station board: groups, starch bottoms card, moving someone, and a move 
   const mv = M.bottleneckMoves(X, null);
   ok(mv.length && mv[0].kAfter < mv[0].kBefore - 1 / 6, JSON.stringify(mv.map(m => [m.name, m.at, m.kBefore, m.kAfter])));
 });
+await t("station timeline: rows in the saved order, a lane per person, a move shows in both rows, breaks are gaps", async () => {
+  const POS = pos.stations.concat(pos.ops);
+  eq(M.boardGroups(POS, ["asm", "slb"]).map(g => g.key), ["asm", "slb", "slt", "dct", "dcb", "tc", "comf", "ops"]);
+  eq(M.boardGroups(POS, ["nope"]).map(g => g.key)[0], "slb", "unknown keys are ignored");
+  const P = staffed(); P.crew.dct1 = { ...P.crew.dct1, moves: [{ at: "09:00", to: "slb2" }] };
+  const X = M.evaluate(P), rows = M.stationTimeline(X, M.boardGroups(POS));
+  const row = k => rows.find(g => g.key === k);
+  const coraDct = row("dct").lanes.find(l => l.empId === "c"), coraSlb = row("slb").lanes.find(l => l.empId === "c");
+  ok(coraDct && coraSlb, "Cora is on DC tops, then starch bottoms");
+  ok(Math.max(...coraDct.bars.filter(b => !b.brk).map(b => b.to)) <= 9.01, "DC tops until 9:00");
+  ok(Math.min(...coraSlb.bars.filter(b => !b.brk).map(b => b.from)) >= 8.99, "starch bottoms from 9:00");
+  ok(rows.flatMap(g => g.lanes).some(l => l.bars.some(b => b.brk)), "breaks are marked");
+  ok(row("ops").lanes.length >= 1, "operators have a row");
+  for (const g of rows) for (const l of g.lanes) for (let i = 1; i < l.bars.length; i++) ok(l.bars[i].from >= l.bars[i - 1].from, "bars in time order");
+});
+await t("production day complete: everyone clocked out, or nothing assembled for 30 minutes (a break holds it open)", async () => {
+  const at = h => `${DAY}T${String(Math.floor(h)).padStart(2, "0")}:${String(Math.round((h % 1) * 60)).padStart(2, "0")}:00`;
+  const local = h => { const d = new Date(`${DAY}T00:00:00`); d.setMinutes(Math.round(h * 60)); return d.toISOString(); };
+  const out = [{ personId: "a", clockIn: at(5), clockOut: at(13.5) }, { personId: "c", clockIn: at(6), clockOut: at(14.5) }];
+  eq(M.productionDone(P0({ isToday: true, now: 15, clock: out }), null), { why: "out", at: 14.5 });
+  eq(M.productionDone(P0({ isToday: false, now: null, clock: out }), null), null, "only today");
+  eq(M.productionDone(P0({ isToday: true, now: 4, clock: [] }), null), null, "no one has clocked in yet");
+  const open = [...out, { personId: "d", clockIn: at(7), clockOut: null }];
+  eq(M.productionDone(P0({ isToday: true, now: 15, clock: open }), local(14.75)), null, "assembled 15 minutes ago");
+  eq(M.productionDone(P0({ isToday: true, now: 15.5, clock: open }), local(14.75)).why, "quiet");
+  eq(M.productionDone(P0({ isToday: true, now: 15.5, clock: open }), null), null, "nothing assembled yet today");
+  // Cora clocked out at 2:30 for her planned break: not over while she's on it
+  eq(M.productionDone(P0({ isToday: true, now: 15.25, clock: open }), local(14.6), { c: { s: 14.5, e: 15 } }), null);
+});
 await t("the Floor replays a published move: it shows the person moving at that time", async () => {
   const F = await import("../public/js/plan/floor.js");
   const P = staffed(); P.crew.dct1 = { ...P.crew.dct1, moves: [{ at: "09:00", to: "slb2" }] };

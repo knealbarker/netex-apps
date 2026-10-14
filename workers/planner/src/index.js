@@ -4,7 +4,7 @@ import { currentUser, verifyAccessJwt } from "./auth.js";
 import { listUsers, createUser, updateUser, syncAccessGroup } from "./users.js";
 import { requireRole } from "./auth.js";
 import { HttpError, json, readJson } from "./util.js";
-import { allSettings, saveGroup, saveProduction, saveRuns } from "./settings.js";
+import { allSettings, saveGroup, saveProduction, saveRuns, saveBoardOrder } from "./settings.js";
 import { listTeam, addPerson, updatePerson, setTrainings, teamHistory } from "./team.js";
 import { importDesktop } from "./import.js";
 import { piecesView } from "./pieces.js";
@@ -43,6 +43,7 @@ const routes = [
   }],
   ["GET", /^\/api\/settings$/, async (req, env, me) => json(await allSettings(env.DB, env, me))],
   ["PUT", /^\/api\/settings\/production$/, async (req, env, me) => json(await saveProduction(env.DB, env, me, await readJson(req)))],
+  ["PUT", /^\/api\/settings\/board-order$/, async (req, env, me) => json({ boardOrder: await saveBoardOrder(env.DB, env, me, await readJson(req)) })],
   ["PUT", /^\/api\/settings\/runs$/, async (req, env, me) => json({ runs: await saveRuns(env.DB, env, me, (await readJson(req)).runs) })],
   ["PUT", /^\/api\/settings\/(\w+)$/, async (req, env, me, m) => json({ [m[1]]: await saveGroup(env.DB, env, me, m[1], await readJson(req)) })],
   ["GET", /^\/api\/team$/, async (req, env, me) => json(await listTeam(env.DB, env, me))],

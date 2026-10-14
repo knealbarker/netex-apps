@@ -235,9 +235,28 @@ export async function saveRuns(db, env, me, runs) {
   return loadRuns(db, env.ORG_ID);
 }
 
+// The order of the station rows on the Plan (Neal, Oct 13: "configurable which station is on top").
+// Only the screen order: the engine's station order (stations.sort) isn't touched. Managers change it.
+export const BOARD_KEYS = ["slb", "slt", "dct", "dcb", "tc", "comf", "asm", "ops"];
+async function loadBoardOrder(db, orgId) {
+  const r = await db.prepare("SELECT value_json FROM core_settings WHERE org_id=? AND app_id='planner' AND key='board_order' AND deleted_at IS NULL").bind(orgId).first();
+  const saved = r ? JSON.parse(r.value_json) : [];
+  const list = (Array.isArray(saved) ? saved : []).filter(k => BOARD_KEYS.includes(k));
+  return [...new Set([...list, ...BOARD_KEYS])];
+}
+export async function saveBoardOrder(db, env, me, body) {
+  requireRole(me, "manager");
+  const list = body && Array.isArray(body.order) ? body.order : null;
+  if (!list || list.some(k => !BOARD_KEYS.includes(k))) throw new HttpError(400, "Send the stations in order.");
+  const order = [...new Set([...list, ...BOARD_KEYS])];
+  await putGroupStmt(db, env.ORG_ID, "board_order", order, me.id).run();
+  await audit(db, { orgId: env.ORG_ID, userId: me.id, appId: env.APP_ID, entity: "core_settings", entityId: "planner.board_order", action: "update", changes: { order } });
+  return order;
+}
+
 export async function allSettings(db, env, me = null) {
-  const [groups, production, runs] = await Promise.all([loadGroups(db, env.ORG_ID), loadProduction(db, env.ORG_ID), loadRuns(db, env.ORG_ID)]);
-  return { groups, ...production, runs, ...(me && rank(me.role) >= rank("admin") ? { status: await adminStatus(db, env) } : {}) };
+  const [groups, production, runs, boardOrder] = await Promise.all([loadGroups(db, env.ORG_ID), loadProduction(db, env.ORG_ID), loadRuns(db, env.ORG_ID), loadBoardOrder(db, env.ORG_ID)]);
+  return { groups, ...production, runs, boardOrder, ...(me && rank(me.role) >= rank("admin") ? { status: await adminStatus(db, env) } : {}) };
 }
 
 /** For the Settings screen (Admins): what Rippling last sent (and whether it carries pay rates), and the last summary email. */

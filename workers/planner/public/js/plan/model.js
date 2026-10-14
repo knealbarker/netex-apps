@@ -610,8 +610,10 @@ const posLabel = (E, code) => (E.POS.find(p => p.id === code) || {}).label || co
 /** Station groups in board order, starch bottoms first: [{key, label, codes, cat}] — key is the kind of work (slt covers SLT 1 and the helper). */
 export const GROUP_LABEL = { slb: "Starch bottoms", slt: "Starch tops", dct: "Dry cleaning tops", dcb: "Dry cleaning bottoms", comf: "Comforters", tc: "Tablecloths", asm: "Inspect, assemble, bag", ops: "Machine operators" };
 export const groupOf = type => (type === "slt2" ? "slt" : type);
-export function boardGroups(POS) {
-  const order = ["slb", "slt", "dct", "dcb", "tc", "comf", "asm", "ops"], out = [];
+export const BOARD_ORDER = ["slb", "slt", "dct", "dcb", "tc", "comf", "asm", "ops"];
+/** `order`: the saved screen order (Settings › boardOrder); kinds it leaves out follow in the usual order. */
+export function boardGroups(POS, saved) {
+  const order = [...new Set([...(saved || []).filter(k => BOARD_ORDER.includes(k)), ...BOARD_ORDER])], out = [];
   for (const key of order) {
     const codes = POS.filter(p => groupOf(p.type) === key).map(p => p.id);
     if (codes.length) out.push({ key, label: GROUP_LABEL[key], codes, cat: CATS.includes(key) ? key : null });
@@ -724,4 +726,65 @@ export function bottleneckMoves(X, L, { max = 2, times } = {}) {
   const seen = new Set(), best = [];
   for (const m of out) { if (seen.has(m.empId)) continue; seen.add(m.empId); best.push(m); if (best.length >= max) break; }
   return best;
+}
+
+/**
+ * The station timeline (Neal, Oct 13): one row per kind of work, top to bottom in `groups` order, and in each row a lane
+ * per person who works there at some point of the day, with bars for when. Moves show as the person's bar leaving one
+ * row and starting in another. Breaks are gaps (with a "brk" bar). Only the plan: who's clocked in is added by the screen.
+ *   [{ key, label, codes, cat, lanes: [{ empId, code, bars: [{ from, to, ot?, idle?, brk? }] }] }]
+ */
+export function stationTimeline(X, groups) {
+  const { P, E, R } = X;
+  const rows = groups.map(g => ({ ...g, lanes: [] })), byKey = new Map(rows.map(g => [g.key, g]));
+  const laneOf = (key, empId, code) => {
+    const g = byKey.get(key); if (!g || !empId) return null;
+    let l = g.lanes.find(x => x.empId === empId); if (!l) g.lanes.push(l = { empId, code, bars: [] });
+    return l;
+  };
+  const keyOf = stn => (stn === "comf" ? "comf" : groupOf(E.TYPE_OF[stn]));
+  if (!R.empty) for (const row of R.rows) {
+    if (!row.staffed) continue;
+    const code = row.st.id, empId = (P.crew[code] || {}).emp || row.emp?.empId, steps = stepsOf(row);
+    const b0 = row.brkTaken > 0 ? row.brkS : null, b1 = b0 != null ? b0 + row.brkTaken : null;
+    if (!steps.length) { laneOf(keyOf(code), empId, code)?.bars.push({ from: row.x.start, to: Math.max(row.clockOut || 0, row.x.start + 0.5), idle: true }); continue; }
+    let brkDone = b0 == null;
+    for (const sp of steps) {
+      const l = laneOf(keyOf(sp.stn), empId, code); if (!l) continue;
+      let parts = [[sp.from, sp.to]];
+      if (!brkDone && b1 > sp.from + 0.01 && b0 < sp.to - 0.01) { parts = [[sp.from, b0], [b1, sp.to]].filter(x => x[1] - x[0] > 0.01); l.bars.push({ from: b0, to: b1, brk: true }); brkDone = true; }
+      for (const [from, to] of parts) l.bars.push({ from, to, ot: to > row.x.schedEnd + 0.02 });
+    }
+    if (!brkDone) { // between two steps (or after the last): on the row they were working just before it
+      const prev = steps.filter(sp => sp.from < b0 + 0.01).pop() || steps[0];
+      laneOf(keyOf(prev.stn), empId, code)?.bars.push({ from: b0, to: b1, brk: true });
+    }
+  }
+  for (const x of E.opsInfo()) {
+    if (!x.on) continue;
+    const l = laneOf("ops", (P.crew[x.o.id] || {}).emp, x.o.id); if (!l) continue;
+    if (x.b) { l.bars.push({ from: x.start, to: x.brkS }, { from: x.brkS, to: x.brkS + x.b, brk: true }, { from: x.brkS + x.b, to: x.end }); }
+    else l.bars.push({ from: x.start, to: x.end });
+  }
+  for (const g of rows) for (const l of g.lanes) l.bars.sort((a, b) => a.from - b.from);
+  return rows;
+}
+
+/**
+ * Is today's production over? (Neal, Oct 13: "Once all production employees clock out or we have not seen an item assembled
+ * for 30 minutes it is clear the production day is complete." Anything still left is waiting for later or for a manager.)
+ *   { why: "out" | "quiet", at }  or null
+ * Someone out on their break (clocked out near their planned break, under an hour ago) holds it open either way, so a
+ * lunch gap doesn't end the day. `lastAsm` is the latest assembly today (ISO time from SMRT).
+ */
+export function productionDone(P, lastAsm, brks = {}) {
+  if (!P.isToday || P.now == null) return null;
+  const ids = [...new Set((P.clock || []).map(c => c.personId))]; if (!ids.length) return null;
+  const states = ids.map(id => clockState(P, id, P.now, brks[id]));
+  if (states.includes("break")) return null;
+  if (!states.includes("in")) return { why: "out", at: Math.max(...ids.map(id => lastOutOf(P, id) ?? 0)) };
+  if (!lastAsm) return null;
+  const d = new Date(lastAsm); if (isNaN(d)) return null;
+  const at = d.getHours() + d.getMinutes() / 60;
+  return P.now - at >= 0.5 ? { why: "quiet", at } : null;
 }

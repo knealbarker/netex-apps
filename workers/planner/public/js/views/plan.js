@@ -9,6 +9,7 @@ import { SHUTTLES } from "../features.js";
 const TILE = { dct: "DC tops", dcb: "DC bottoms", slt: "Starch tops", slb: "Starch bottoms", comf: "Comforters", tc: "Tablecloths" };
 const TYPE_DESC = { slt: "Starch tops press", slt2: "Helps on SLT 1", slb: "Starch bottoms press", dct: "Dry cleaning tops", dcb: "Dry cleaning bottoms", comf: "Comforters, trained people only", tc: "Tablecloths, trained people only", asm: "Inspect, assemble, bag", ops: "Runs the machines" };
 const COLOR = { slt: "#4f8ff7", slt2: "#7aa9fa", slb: "#8b7cf6", dct: "#f59e4b", dcb: "#e2609b", asm: "#22c38e", ops: "#7c879c", comf: "#14b8a6", tc: "#c084fc", wash: "#5b6b84" };
+const ROW_LABEL = { slb: "Starch bottoms", slt: "Starch tops", dct: "DC tops", dcb: "DC bottoms", tc: "Tablecloths", comf: "Comforters", asm: "Assembly", ops: "Operators" };
 const CAT_COLOR = { dct: COLOR.dct, dcb: COLOR.dcb, slt: COLOR.slt, slb: COLOR.slb, comf: COLOR.comf, tc: COLOR.tc };
 const SMRT_ORDER = (customer, no) => `https://towncountryclean.smrtapp.com/posx/dash/customer/clothestracker/${encodeURIComponent(customer)}/?saleId=${String(no).replace(/\D/g, "")}`;
 const ORD = n => ["", "1st", "2nd", "3rd"][n] || `${n}th`;
@@ -53,7 +54,8 @@ export async function render(main, ctx) {
   let people = M.peopleFrom(TEAM);
   const days = () => [st.V.isWorkDay ? st.V.today : null, st.V.next].filter(Boolean);
   if (!pick || (!days().includes(pick) && !st.V.days[pick])) pick = days()[0];
-  let AX = null, D = null, saveT = null, chgBusy = false; // timeline axis, the bar being dragged, the pending save, the changes list loading
+  let saveT = null, chgBusy = false, reorder = false; // the pending save, the changes list loading, moving station rows up and down
+  const order = () => SET.boardOrder || M.BOARD_ORDER;
   const root = Symbol("plan"); main._plan = root;
   const alive = () => main._plan === root && document.getElementById("pl-root");
 
@@ -187,11 +189,11 @@ export async function render(main, ctx) {
       <section class="pv-neck" id="pl-neck" aria-label="The bottleneck"></section>
       <section class="pv-work" id="pl-work" aria-label="The rest of the work"></section>
       <section class="pv-board" aria-label="Stations">
-        <div class="pv-board-head"><h2>Stations</h2><span class="muted small">${can ? "Tap a person to move them" : ""}</span></div>
-        <div class="sb-grid" id="pl-board"></div>
+        <div class="pv-board-head"><h2>Stations</h2><span class="muted small" id="pl-board-hint">${can ? "Tap a person to move them · tap a station to add someone" : ""}</span>
+          ${canRole ? raw('<button type="button" class="btn ghost small" id="pl-reorder" aria-pressed="false">Reorder</button>') : ""}</div>
+        <div class="tl-scroll" id="pl-board"></div>
         <div class="pv-away" id="pl-away"></div>
       </section>
-      <section class="card pl-card"><details id="pl-day-box"><summary class="pl-cardhead"><div><h2>The day, minute by minute</h2><p>Each person's work and moves. ${can ? "On a computer, drag a bar sideways to change when that person starts." : ""}</p></div></summary><div id="pl-gantt"></div></details></section>
       <section class="card pl-card"><details id="pl-chg-box"><summary class="pl-cardhead"><div><h2>Changes today <span class="count soft" id="pl-chg-n"></span></h2><p>Who changed what.</p></div></summary><div id="pl-chg"></div></details></section>
       ${can ? raw(html`<div class="pv-foot">${P0isToday() ? raw('<button class="btn" id="pl-replan">Re-plan from now</button>') : ""}<button class="btn primary" id="pl-pub"></button>${raw(helpBtn("publish"))}</div>`) : ""}
     </div><div id="pl-print-sheet" class="print-sheet" aria-hidden="true"></div>`;
@@ -210,11 +212,9 @@ export async function render(main, ctx) {
     });
     main.querySelector("#pl-print").addEventListener("click", printPlan);
     main.querySelectorAll("[data-help]").forEach(b => b.addEventListener("click", () => showHelp(b.dataset.help)));
-    for (const [id, key, load] of [["pl-chg-box", "pl-chg-open", true], ["pl-day-box", "pl-day-open", false]]) {
-      const box = main.querySelector("#" + id);
-      box.open = store.get(key) === "1";
-      box.addEventListener("toggle", () => { store.set(key, box.open ? "1" : "0"); if (box.open && load) loadChanges(); if (box.open && !load && st.X) drawGantt(st.X); });
-    }
+    const chg = main.querySelector("#pl-chg-box");
+    chg.open = store.get("pl-chg-open") === "1";
+    chg.addEventListener("toggle", () => { store.set("pl-chg-open", chg.open ? "1" : "0"); if (chg.open) loadChanges(); });
     if (can) {
       main.querySelector("#pl-undo").addEventListener("click", undo);
       main.querySelector("#pl-suggest").addEventListener("click", () => openDialog({
@@ -226,8 +226,15 @@ export async function render(main, ctx) {
       main.querySelector("#pl-replan")?.addEventListener("click", replanSheet);
     }
     main.querySelector("#pl-board").addEventListener("click", ev => {
-      const b = ev.target.closest("[data-emp],[data-add]"); if (!b || !can) return;
+      const up = ev.target.closest("[data-up],[data-down]");
+      if (up) return moveRow(up.dataset.up || up.dataset.down, up.dataset.up ? -1 : 1);
+      const b = ev.target.closest("[data-emp],[data-add]"); if (!b || !can || reorder) return;
       if (b.dataset.add) addSheet(b.dataset.add); else personSheet(b.dataset.emp);
+    });
+    main.querySelector("#pl-reorder")?.addEventListener("click", e => {
+      reorder = !reorder; e.currentTarget.setAttribute("aria-pressed", String(reorder)); e.currentTarget.textContent = reorder ? "Done" : "Reorder";
+      const h = document.getElementById("pl-board-hint"); if (h) h.textContent = reorder ? "Move a station up or down. Everyone sees the same order." : can ? "Tap a person to move them · tap a station to add someone" : "";
+      if (st.X) drawBoard(st.X, st.L);
     });
     drawHeadPill(); update({ table: true });
   }
@@ -253,8 +260,10 @@ export async function render(main, ctx) {
     if (!alive()) return;
     const X = st.X = M.evaluate(makeP());
     const L = st.L = X.P.isToday ? M.liveSuggestions(X, new Set(st.plan.hidden || [])) : null;
+    // the production day is over: what's left waits for later or for a manager, so nothing more is planned (Neal, Oct 13)
+    st.over = M.productionDone(X.P, X.P.dp?.D?.lastAsm, M.breaksOf(X.R));
     drawNote(); drawStatus(X, L); drawNeck(X, L); drawWork(X, L); drawBoard(X, L); drawAway(X.P);
-    if (document.getElementById("pl-day-box")?.open) drawGantt(X);
+    const rp = document.getElementById("pl-replan"); if (rp) rp.hidden = !!st.over;
     drawPub(X); saveStatus();
   }
 
@@ -263,7 +272,11 @@ export async function render(main, ctx) {
     const el = document.getElementById("pl-status"); if (!el) return;
     const P = X.P, tot = CATS.reduce((t, k) => t + (P.q[k] || 0), 0);
     let txt, cls = "";
-    if (X.R.empty) txt = X.R.noCrew ? "No one is on a station yet — tap + Add on a station, or Suggest." : "Nothing to plan yet.";
+    if (st.over) {
+      const left = leftovers(P), n = left.reduce((t, x) => t + x.n, 0);
+      cls = "good done";
+      txt = raw(html`<b>Production day complete</b> · ${st.over.why === "out" ? `everyone clocked out by ${hm(st.over.at)}` : `nothing assembled since ${hm(st.over.at)}`}${n ? ` · ${left.map(x => `${fmtN(x.n)} ${TILE[x.k].toLowerCase()}`).join(", ")} left for later` : ""}`);
+    } else if (X.R.empty) txt = X.R.noCrew ? "No one is on a station yet — tap + Add on a station, or Suggest." : "Nothing to plan yet.";
     else if (L && L.on && L.fromNow) {
       const f = L.fromNow, left = Math.round(f.left), ot = left > 0 && (f.ot || f.otH > 0.04);
       cls = left <= 0 ? "good" : ot ? "warn" : "good";
@@ -278,10 +291,16 @@ export async function render(main, ctx) {
     drawHeadPill();
   }
 
+  /** Pieces still not finished today, by kind of work (biggest first). */
+  function leftovers(P) {
+    const D = P.dp?.D || { done: {} };
+    return CATS.map(k => ({ k, n: Math.max(0, Math.round((P.q[k] || 0) - (D.done?.[k] || 0))) })).filter(x => x.n > 0).sort((a, b) => b.n - a.n);
+  }
+
   // ---- the bottleneck: starch bottoms (Neal: the main reason for the planner)
   function drawNeck(X, L) {
     const el = document.getElementById("pl-neck"); if (!el) return;
-    const B = M.bottleneck(X, L);
+    const B = st.over ? null : M.bottleneck(X, L);
     if (!B) { el.hidden = true; el.innerHTML = ""; return; }
     el.hidden = false;
     const done = B.left < 0.5, behind = !done && B.expected > 0 && B.needed > 0 && B.needed > B.expected + 0.5;
@@ -310,11 +329,12 @@ export async function render(main, ctx) {
   // ---- the rest of the work, small: left (or due) and when it's done
   function drawWork(X, L) {
     const el = document.getElementById("pl-work"); if (!el) return;
-    const P = X.P, D = P.dp.D, live = P.isToday && L && L.on && L.cats, ends = M.catEnds(X.E, X.R), neck = M.bottleneck(X, L)?.k;
+    const P = X.P, D = P.dp.D, live = P.isToday && L && L.on && L.cats, ends = M.catEnds(X.E, X.R), neck = st.over ? null : M.bottleneck(X, L)?.k;
     const cells = CATS.filter(k => k !== neck && (P.q[k] || 0) > 0.5).map(k => {
       const left = live ? Math.round(L.cats[k].left) : Math.round(P.q[k]), etc = live ? L.cats[k].etc : ends[k], ot = live ? L.cats[k].ot : M.catOvertime(X.E, X.R, k);
       const over = st.overrides[k] != null;
-      const line = left <= 0 ? raw('<span class="good-txt">done</span>') : raw(html`<span class="${ot ? "bad-txt" : live ? "warn-txt" : ""}">${fmtN(left)}${etc != null ? ` by ${hmShort(etc)}` : ""}</span>`);
+      const line = left <= 0 ? raw('<span class="good-txt">done</span>') : st.over ? raw(html`<span class="muted">${fmtN(left)} for later</span>`)
+        : raw(html`<span class="${ot ? "bad-txt" : live ? "warn-txt" : ""}">${fmtN(left)}${etc != null ? ` by ${hmShort(etc)}` : ""}</span>`);
       return html`<${can ? "button" : "div"} class="wk ${over ? "typed" : ""}" ${can ? raw(`type="button" data-cat="${k}" title="Change the number to plan with"`) : ""}><span class="wk-l"><i class="sw" style="--c:${CAT_COLOR[k]}"></i>${TILE[k]}</span>
         <span class="wk-n">${live ? `${fmtN(D.done[k] || 0)} of ${fmtN(P.q[k])}` : `${P.expected ? "~" : ""}${fmtN(P.q[k])}`}${over ? " · typed" : ""}</span><span class="wk-t">${line}</span></${can ? "button" : "div"}>`;
     });
@@ -333,35 +353,73 @@ export async function render(main, ctx) {
     const state = cs === "gone" ? "gone" : cs === "break" ? "break" : att?.state === "missing" ? "missing" : cs === "in" ? "in" : "";
     return { id, code, name: M.nameOf(P, id), first: first(M.nameOf(P, id)), startH, end, state, outAt: M.lastOutOf(P, id), moves: (c.moves || []).slice().sort((a, b) => a.at.localeCompare(b.at)), standing: !c.stop && P.people.find(p => p.id === id)?.leaveBy };
   }
+  // ---- stations, top to bottom (order set with Reorder), and the whole day across in 15-minute steps (Neal, Oct 13)
   function drawBoard(X, L) {
     const el = document.getElementById("pl-board"); if (!el) return;
-    const P = X.P, groups = M.boardGroups(POS), ends = M.catEnds(X.E, X.R), live = P.isToday && L && L.on && L.cats;
-    const typeOf = code => groupOf(POS.find(p => p.id === code)?.type);
-    const html2 = groups.map(g => {
-      const mine = g.codes.map(code => personInfo(X, code)).filter(Boolean);
-      const incoming = Object.keys(st.crew).filter(code => !g.codes.includes(code)).map(code => personInfo(X, code)).filter(Boolean)
-        .flatMap(pi => pi.moves.filter(m => typeOf(m.to) === g.key).map(m => ({ ...pi, at: m.at })));
-      const k = g.cat || (g.key === "asm" ? "asm" : null);
-      let status = "";
-      if (k && k !== "asm" && (P.q[k] || 0) > 0.5) {
+    const P = X.P, groups = M.boardGroups(POS, order()), rows = M.stationTimeline(X, groups), ends = M.catEnds(X.E, X.R), live = P.isToday && L && L.on && L.cats;
+    const now = P.isToday && P.now != null ? P.now : null;
+    // people: clocked out (gray from then on), not clocked in yet, on break
+    const info = {}; for (const code of Object.keys(st.crew)) { const pi = personInfo(X, code); if (pi) info[pi.id] = pi; }
+    const all = rows.flatMap(g => g.lanes.flatMap(l => l.bars));
+    let a = all.length ? Math.floor(Math.min(...all.map(b => b.from))) : (parseTime(s.defStart) ?? 7), b = all.length ? Math.ceil(Math.max(...all.map(b => b.to))) : a + 9;
+    if (now != null) { a = Math.min(a, Math.floor(now)); b = Math.max(b, Math.ceil(now + 0.01)); }
+    if (b - a < 6) b = a + 6;
+    const q = h => Math.round(h * 4) / 4; // bars land on the 15-minute grid
+    const pct = h => ((h - a) / (b - a) * 100).toFixed(3) + "%", wid = (f, t) => ((t - f) / (b - a) * 100).toFixed(3) + "%";
+    const ticks = []; for (let t = a; t < b; t++) ticks.push(html`<span style="left:${pct(t)}">${(t % 12) || 12}${t === 12 ? raw("<small>PM</small>") : t === a ? raw(`<small>${t < 12 ? "AM" : "PM"}</small>`) : ""}</span>`);
+    const nowLine = now != null && now > a && now < b ? html`<i class="tl-now" style="left:${pct(now)}" aria-hidden="true"></i>` : "";
+    const statusOf = g => {
+      const k = g.cat;
+      if (k && (P.q[k] || 0) > 0.5) {
         const left = live ? Math.round(L.cats[k].left) : Math.round(P.q[k]), etc = live ? L.cats[k].etc : ends[k], ot = live ? L.cats[k].ot : M.catOvertime(X.E, X.R, k);
-        status = left <= 0 ? html`<span class="good-txt">done</span>` : html`<span class="${ot ? "bad-txt" : "good-txt"}">${fmtN(left)} · ${etc != null ? `done ${hm(etc)}` : "no one on it"}</span>`;
-      } else if (k === "asm" && ends.asm) status = html`<span class="muted">done ${hm(ends.asm)}</span>`;
-      const chip = pi => {
-        const times = pi.state === "gone" ? `out ${fmtClock(pi.outAt)}` : pi.state === "break" ? "on break" : pi.state === "missing" ? "not clocked in" : `${hmShort(pi.startH)}–${hmShort(pi.end)}`;
-        return html`<button type="button" class="pchip ${pi.state}" data-emp="${pi.id}" aria-label="${pi.name}, ${times}"><i class="pc-dot" aria-hidden="true"></i><b>${pi.first}</b><span>${times}</span>${pi.standing ? raw('<em title="Standing must-leave-by on Team">⏱</em>') : ""}</button>`;
-      };
-      const moveLines = mine.flatMap(pi => pi.moves.filter(m => typeOf(m.to) !== g.key).map(m => html`<li><time>${hmShort(parseTime(m.at))}</time> ${pi.first} → ${M.GROUP_LABEL[typeOf(m.to)] || m.to}</li>`));
-      const free = g.codes.some(code => !st.crew[code].emp);
-      return html`<article class="sb ${g.key === "slb" ? "neck" : ""}" data-g="${g.key}">
-        <header><i class="sw" style="--c:${COLOR[g.key] || COLOR.ops}"></i><h3>${g.label}</h3><span class="sb-st">${raw(status)}</span></header>
-        <div class="sb-people">${mine.map(pi => raw(chip(pi)))}${incoming.map(pi => raw(html`<button type="button" class="pchip incoming" data-emp="${pi.id}"><b>${pi.first}</b><span>from ${hmShort(parseTime(pi.at))}</span></button>`))}
-          ${can && free ? raw(html`<button type="button" class="pchip add" data-add="${g.key}" aria-label="Add someone to ${g.label}">+ Add</button>`) : ""}
-          ${!mine.length && !incoming.length && !can ? raw('<span class="muted small">No one</span>') : ""}</div>
-        ${moveLines.length ? raw(html`<ul class="sb-moves">${moveLines.map(x => raw(x))}</ul>`) : ""}
-      </article>`;
-    });
-    el.innerHTML = html2.join("");
+        if (left <= 0) return html`<span class="good-txt">done</span>`;
+        if (st.over) return html`<span class="muted">${fmtN(left)} for later</span>`;
+        return html`<span class="${ot ? "bad-txt" : ""}">${fmtN(left)}${etc != null ? ` · ${hmShort(etc)}` : " · no one"}</span>`;
+      }
+      if (g.key === "asm" && ends.asm) return html`<span class="muted">until ${hmShort(ends.asm)}</span>`;
+      return "";
+    };
+    const barHtml = (g, l, lane) => {
+      const pi = info[l.empId], nm = pi ? pi.first : first(M.nameOf(P, l.empId));
+      const cut = pi && pi.state === "gone" && pi.outAt != null ? pi.outAt : null, noshow = pi && pi.state === "missing";
+      const out = [];
+      l.bars.forEach((x, i) => {
+        let f = q(x.from), t = Math.max(q(x.to), f + 0.25);
+        const parts = cut == null || t <= cut ? [[f, t, false]] : f >= cut ? [[f, t, true]] : [[f, q(cut), false], [q(cut), t, true]].filter(p => p[1] > p[0]);
+        for (const [pf, pt, gone] of parts) {
+          if (x.brk) { out.push(html`<i class="tl-brk" style="left:${pct(pf)};width:${wid(pf, pt)};top:${lane * 32 + 6}px" title="${nm}: break ${fmtClock(x.from)}–${fmtClock(x.to)}"></i>`); continue; }
+          const label = nm;
+          const tip = `${pi?.name || nm}: ${g.label} ${fmtClock(x.from)}–${fmtClock(x.to)}${x.ot ? " (overtime)" : ""}${gone ? ` — clocked out ${fmtClock(cut)}` : noshow ? " — not clocked in" : x.idle ? " — nothing to do" : ""}`;
+          out.push(html`<button type="button" class="tl-bar ${x.ot ? "ot" : ""} ${gone ? "gone" : ""} ${noshow ? "noshow" : ""} ${x.idle ? "idle" : ""}" data-emp="${l.empId}" style="left:${pct(pf)};width:${wid(pf, pt)};top:${lane * 32 + 6}px;--c:${COLOR[g.key] || COLOR.ops}" title="${tip}" aria-label="${tip}">${label ? raw(html`<b>${label}</b>`) : ""}</button>`);
+        }
+      });
+      return out.join("");
+    };
+    const last = rows.length - 1;
+    el.innerHTML = html`<div class="tl" style="--hrs:${b - a}">
+      <div class="tl-axis"><div class="tl-lab"></div><div class="tl-track">${raw(ticks.join(""))}</div></div>
+      ${rows.map((g, gi) => {
+        const free = g.codes.some(code => !st.crew[code].emp), lanes = Math.max(1, g.lanes.length), add = can && free && !reorder;
+        const lab = html`<i class="sw" style="--c:${COLOR[g.key] || COLOR.ops}"></i><span class="tl-name"><b>${ROW_LABEL[g.key] || g.label}</b><small>${raw(statusOf(g))}</small></span>${add ? raw('<span class="tl-plus" aria-hidden="true">+</span>') : ""}`;
+        return raw(html`<div class="tl-row ${g.key === "slb" ? "neck" : ""}" data-g="${g.key}">
+          ${reorder ? raw(html`<div class="tl-lab">${raw(lab)}<span class="tl-ord"><button type="button" class="btn ghost small" data-up="${g.key}" aria-label="Move ${g.label} up" ${gi === 0 ? "disabled" : ""}>↑</button><button type="button" class="btn ghost small" data-down="${g.key}" aria-label="Move ${g.label} down" ${gi === last ? "disabled" : ""}>↓</button></span></div>`)
+            : add ? raw(html`<button type="button" class="tl-lab" data-add="${g.key}" aria-label="Add someone to ${g.label}">${raw(lab)}</button>`) : raw(html`<div class="tl-lab">${raw(lab)}</div>`)}
+          <div class="tl-track" style="height:${lanes * 32}px">${g.lanes.length ? raw(g.lanes.map((l, i) => barHtml(g, l, i)).join("")) : raw('<span class="tl-none">No one</span>')}${raw(nowLine)}</div>
+        </div>`);
+      })}
+    </div>`;
+    // start scrolled so "now" is in view on a phone
+    if (now != null && !el.dataset.scrolled) { el.dataset.scrolled = "1"; const tr = el.querySelector(".tl-track"); if (tr) el.scrollLeft = Math.max(0, (now - a) / (b - a) * tr.offsetWidth - el.clientWidth / 3); }
+  }
+  async function moveRow(key, dir) {
+    const cur = M.boardGroups(POS, order()).map(g => g.key), i = cur.indexOf(key), j = i + dir;
+    if (i < 0 || j < 0 || j >= cur.length) return;
+    [cur[i], cur[j]] = [cur[j], cur[i]];
+    const before = SET.boardOrder; SET.boardOrder = [...cur, ...M.BOARD_ORDER.filter(k => !cur.includes(k))];
+    if (st.X) drawBoard(st.X, st.L);
+    main.querySelector(`[data-${dir < 0 ? "up" : "down"}="${key}"]:not([disabled])`)?.focus();
+    try { const r = await api("/settings/board-order", { method: "PUT", body: { order: SET.boardOrder } }); SET.boardOrder = r.boardOrder; }
+    catch (e) { SET.boardOrder = before; if (st.X) drawBoard(st.X, st.L); toast(`Not saved: ${e.message}`, "bad"); }
   }
   function drawAway(P) {
     const el = document.getElementById("pl-away"); if (!el) return;
@@ -379,7 +437,7 @@ export async function render(main, ctx) {
   }
   function personSheet(empId) {
     const X = st.X, P = X.P, code = Object.keys(st.crew).find(k => st.crew[k].emp === empId); if (!code) return;
-    const pi = personInfo(X, code), e = people.find(p => p.id === empId), groups = M.boardGroups(POS).filter(g => g.key !== "ops" || g.codes.includes(code));
+    const pi = personInfo(X, code), e = people.find(p => p.id === empId), groups = M.boardGroups(POS, order()).filter(g => g.key !== "ops" || g.codes.includes(code));
     const curKey = groupOf(POS.find(p => p.id === M.stationAt(st.crew[code], code, P.isToday && P.now != null ? P.now : pi.startH))?.type);
     const rankIn = g => Math.min(...g.codes.map(c => X.E.rankOf(e, c) || 99));
     const opts = groups.filter(g => g.key !== curKey).sort((a, b) => rankIn(a) - rankIn(b));
@@ -444,7 +502,7 @@ export async function render(main, ctx) {
   }
   // ---- add someone to a station: people not on the plan first, then people moving over
   function addSheet(key) {
-    const X = st.X, P = X.P, g = M.boardGroups(POS).find(x => x.key === key); if (!g) return;
+    const X = st.X, P = X.P, g = M.boardGroups(POS, order()).find(x => x.key === key); if (!g) return;
     const out = new Set((P.callouts || []).map(c => c.personId)), onCrew = new Map(Object.entries(st.crew).filter(([, c]) => c.emp).map(([code, c]) => [c.emp, code]));
     const rk = e => Math.min(...g.codes.map(c => X.E.rankOf(e, c) || 99));
     const brks = M.breaksOf(X.R);
@@ -561,82 +619,6 @@ export async function render(main, ctx) {
       },
     });
   }
-
-  // ---- the day, minute by minute
-  function drawGantt(X) {
-    const el = document.getElementById("pl-gantt"), { R, E, P } = X;
-    if (R.empty) { AX = null; el.innerHTML = html`<p class="muted pad">${R.noCrew ? "No one is on a station yet. Pick people in the crew above, or use Suggest from history." : "Nothing to plan yet."}</p>`; return; }
-    const OI = E.opsInfo().filter(x => x.on), sr = R.rows.filter(r => r.staffed);
-    const W = SHUTTLES ? X.waves.filter(w => w.kind === "shuttle" || w.kind === "counter").filter(w => w.todo > 0 && w.deadline != null && w.deadline < 24) : [];
-    let a = Math.floor(Math.min(...sr.map(r => r.x.start), ...OI.map(x => x.start), R.firstStart));
-    let b = Math.ceil(Math.max(R.end, ...sr.map(r => Math.max(r.x.schedEnd, r.clockOut || 0)), ...OI.map(x => x.end), ...W.map(w => w.deadline)));
-    if (b - a < 6) b = a + 6; AX = { a, b };
-    const pct = h => ((h - a) / (b - a) * 100).toFixed(2) + "%", wid = (p, q) => ((q - p) / (b - a) * 100).toFixed(2) + "%";
-    const ticks = []; for (let t = a; t <= b; t++) ticks.push(html`<span style="left:${pct(t)}">${t === a || t === 12 ? hm(t) : hm(t).replace(/ [AP]M/, "")}</span>`);
-    const lbl = c => c === "comf" ? "Comforters" : POS.find(p => p.id === c)?.label || c;
-    let rows = "";
-    for (const row of R.rows) {
-      const p = row.st, name = row.staffed ? M.nameOf(P, st.crew[p.id].emp) : "";
-      const att = row.staffed ? M.attendanceOf(P, st.crew[p.id].emp, st.crew[p.id].start) : null, gone = att && att.state === "missing";
-      let bars = "";
-      if (row.staffed) {
-        const steps = stepsOf(row), b0 = row.brkTaken > 0 ? row.brkS : null, b1 = b0 != null ? row.brkS + row.brkTaken : null;
-        if (!steps.length) bars += html`<div class="gb idle" data-code="${p.id}" style="left:${pct(row.x.start)};width:${wid(row.x.start, Math.max(row.clockOut, row.x.start + 0.5))}" title="${name}: not needed">${first(name)} <small>not needed</small></div>`;
-        steps.forEach((sp, i) => {
-          const ot = sp.to > row.x.schedEnd + 0.02, col = COLOR[sp.stn === "comf" ? "comf" : E.TYPE_OF[sp.stn]] || COLOR.ops;
-          const label = i === 0 ? html`${first(name)} <small>${gone ? "not clocked in" : `${hm(row.x.start)}–${hm(row.clockOut)}`}</small>` : html`→ ${lbl(sp.stn)}`;
-          let parts = [[sp.from, sp.to]];
-          if (b0 != null && b1 > sp.from + 0.01 && b0 < sp.to - 0.01) parts = [[sp.from, b0], [b1, sp.to]].filter(x => x[1] - x[0] > 0.01);
-          const big = parts.reduce((m, x, j) => x[1] - x[0] > parts[m][1] - parts[m][0] ? j : m, 0);
-          parts.forEach((x, j) => { bars += html`<div class="gb ${ot ? "ot" : ""} ${gone ? "noshow" : ""}" data-code="${p.id}" style="left:${pct(x[0])};width:${wid(x[0], x[1])};--c:${col}" title="${name}: ${lbl(sp.stn)} ${fmtClock(sp.from)}–${fmtClock(sp.to)}${ot ? " (overtime)" : ""}${gone ? " — planned; not clocked in" : ""}">${j === big ? raw(label) : ""}</div>`; });
-        });
-        if (row.brkTaken > 0) bars += html`<div class="gb brk" style="left:${pct(row.brkS)};width:${wid(row.brkS, row.brkS + row.brkTaken)}" title="Break ${fmtClock(row.brkS)}–${fmtClock(row.brkS + row.brkTaken)}"></div>`;
-      }
-      rows += html`<div class="g-row"><div class="g-st"><i class="sw" style="--c:${COLOR[p.type]}"></i>${p.label}</div><div class="g-tr">${raw(bars || '<span class="g-none">Not staffed</span>')}</div></div>`;
-    }
-    for (const x of OI) {
-      const name = M.nameOf(P, st.crew[x.o.id].emp);
-      rows += html`<div class="g-row"><div class="g-st"><i class="sw" style="--c:${COLOR.ops}"></i>${x.o.label.replace("Starch Laundry Operator", "Laundry operator").replace("Dry Cleaning Operator", "DC operator")}</div><div class="g-tr">
-        <div class="gb" data-code="${x.o.id}" style="left:${pct(x.start)};width:${wid(x.start, x.end)};--c:${COLOR.ops}" title="${name}: ${fmtClock(x.start)}–${fmtClock(x.end)}">${first(name)} <small>${hm(x.start)}–${hm(x.end)}</small></div>
-        ${x.b ? raw(html`<div class="gb brk" style="left:${pct(x.brkS)};width:${wid(x.brkS, x.brkS + x.b)}"></div>`) : ""}</div></div>`;
-    }
-    if (R.W && R.W.loads.length) {
-      const lo = Math.min(...R.W.loads.map(l => l.from)), hi = Math.max(...R.W.loads.map(l => l.to));
-      rows += html`<div class="g-row"><div class="g-st"><i class="sw" style="--c:${COLOR.wash}"></i>Washers</div><div class="g-tr"><div class="gb wash" style="left:${pct(lo)};width:${wid(lo, hi)};--c:${COLOR.wash}" title="${R.W.loads.length} loads on ${s.washers} washers">Wash <small>${R.W.loads.length} loads · ${hm(lo)}–${hm(hi)}</small></div></div></div>`;
-    }
-    let lines = "";
-    for (const w of W) { const ok = (X.states[w.id] || {}).cls === "good"; lines += html`<div class="g-dl ${ok ? "ok" : ""}" style="--x:${((w.deadline - a) / (b - a)).toFixed(4)}" title="${w.name}: ready by ${fmtClock(w.deadline)}"><span>${hm(w.deadline).replace(/ [AP]M/, "")}</span></div>`; }
-    const fins = sr.filter(r => r.finish != null).map(r => r.finish);
-    if (fins.length > 1) { const lo = Math.min(...fins.filter(f => f >= R.end - s.spread / 60 - 1e-6)), hi = R.end; if (hi - lo > 0.02) lines += html`<div class="g-win" style="--x:${((lo - a) / (b - a)).toFixed(4)};--w:${((hi - lo) / (b - a)).toFixed(4)}" title="Everyone finishes between ${fmtClock(lo)} and ${fmtClock(hi)}"></div>`; }
-    if (P.isToday && P.now > a && P.now < b) lines += html`<div class="g-now" style="--x:${((P.now - a) / (b - a)).toFixed(4)}" title="Now"></div>`;
-    el.innerHTML = html`<div class="g-scroll"><div class="gantt"><div class="g-axis"><div></div><div class="g-ticks">${raw(ticks.join(""))}</div></div><div class="g-body">${raw(lines)}${raw(rows)}</div></div></div>
-      <div class="g-legend">${SHUTTLES ? raw('<span><i class="k-dl"></i>shuttle must be ready</span>') : ""}<span><i class="k-win"></i>finish window (${s.spread} min)</span><span><i class="k-brk"></i>break</span><span><i class="k-ot"></i>overtime</span>${P.isToday ? raw('<span><i class="k-noshow"></i>planned, not clocked in</span>') : ""}</div>`;
-  }
-  // drag a bar to move that person's planned start, in 5-minute steps
-  main.addEventListener("pointerdown", ev => {
-    if (!alive()) return;
-    const b = ev.target.closest?.(".gb[data-code]"); if (!b || !AX || !can) return;
-    const c = st.crew[b.dataset.code]; if (!c || !c.emp) return;
-    const tr = b.parentElement.getBoundingClientRect();
-    D = { b, code: b.dataset.code, x0: ev.clientX, w: tr.width, start: parseTime(c.start) ?? 7, step: 0, moved: false };
-    b.classList.add("drag"); try { b.setPointerCapture(ev.pointerId); } catch {}
-  }, on);
-  main.addEventListener("pointermove", ev => {
-    if (!D) return;
-    const dh = (ev.clientX - D.x0) / D.w * (AX.b - AX.a), step = Math.round(dh * 12) / 12;
-    if (Math.abs(ev.clientX - D.x0) > 3) D.moved = true;
-    D.step = step;
-    main.querySelectorAll(`.gb[data-code="${D.code}"]`).forEach(x => { x.style.transform = `translateX(${(step / (AX.b - AX.a)) * D.w}px)`; });
-    D.b.title = `Clock-in ${fmtClock(D.start + step)}`;
-  }, on);
-  const dragEnd = () => {
-    if (!D) return; const d = D; D = null; d.b.classList.remove("drag");
-    if (d.moved && d.step) {
-      const t = Math.max(0, Math.min(23.9, d.start + d.step));
-      edit(() => { st.crew[d.code] = { ...st.crew[d.code], start: hhmm(t), source: "user" }; }, { msg: `${first(M.nameOf(makeP(), st.crew[d.code].emp))} starts at ${fmtClock(t)}` });
-    } else main.querySelectorAll(`.gb[data-code="${d.code}"]`).forEach(x => { x.style.transform = ""; });
-  };
-  main.addEventListener("pointerup", dragEnd, on); main.addEventListener("pointercancel", dragEnd, on);
 
   // ---- publishing
   function drawPub(X) {

@@ -56,6 +56,16 @@ await t("moves save and load back; Team's standing schedule can be set by a mana
   eq([me.usualHours, me.usualDays, me.leaveBy, me.leaveNote], [7, "12345", "14:45", "School pickup"]);
   eq((await call("PATCH", `/api/team/${p2}`, { as: "mo@example.com", body: { firstName: "X" } })).status, 403, "names stay with Admins");
 });
+await t("station order on the Plan: a manager sets it, everyone reads it, viewers can't", async () => {
+  const { call } = await setup();
+  eq((await call("GET", "/api/settings")).body.boardOrder[0], "slb", "starch bottoms on top by default");
+  const r = await call("PUT", "/api/settings/board-order", { as: "mo@example.com", body: { order: ["dct", "slb"] } });
+  eq(r.status, 200); eq(r.body.boardOrder.slice(0, 3), ["dct", "slb", "slt"]); eq(r.body.boardOrder.length, 8);
+  eq((await call("GET", "/api/settings", { as: "vi@example.com" })).body.boardOrder[0], "dct");
+  eq((await call("PUT", "/api/settings/board-order", { as: "vi@example.com", body: { order: ["slb"] } })).status, 403);
+  eq((await call("PUT", "/api/settings/board-order", { body: { order: ["bogus"] } })).status, 400);
+  eq((await call("PUT", "/api/settings/board-order", { body: { order: ["slb"] } })).body.boardOrder[0], "slb");
+});
 await t("a save based on an old revision is refused with the newer plan", async () => {
   const { call, p1, p2 } = await setup();
   await call("PUT", `/api/plan/${DAY}`, { body: { rev: 0, crew: { slt1: { personId: p1, start: "05:00", hours: 7.5 } } } });
