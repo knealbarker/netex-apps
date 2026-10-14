@@ -1,0 +1,14 @@
+{
+  "name": "SLB Station",
+  "short_name": "SLB Station",
+  "description": "Starch bottoms press counts for the Production Planner.",
+  "start_url": "/station/",
+  "scope": "/station/",
+  "display": "fullscreen",
+  "background_color": "#0b0f17",
+  "theme_color": "#0b0f17",
+  "icons": [
+    { "src": "/station/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any maskable" },
+    { "src": "/station/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
+  ]
+}

@@ -68,6 +68,11 @@ await t("pairing: the code from Settings pairs the tablet as SLB 1", async () =>
   ok((await p1.textContent(".st-chip")) === "SLB 1");
   ok((await p1.textContent(".who b")) === "Maria Lopez", "the plan moved Maria onto SLB 1 an hour ago");
 });
+await t("installable as a full-screen app (manifest + service worker)", async () => {
+  const m = await p1.evaluate(async () => { const r = await fetch("/station/manifest.webmanifest"); return r.ok ? r.json() : null; });
+  ok(m && m.display === "fullscreen" && m.start_url === "/station/" && m.icons.length === 2, JSON.stringify(m));
+  ok(await p1.evaluate(async () => !!(await navigator.serviceWorker.getRegistration("/station/"))), "service worker registered");
+});
 await t("locked until clocked in; the camera turns on", async () => {
   await p1.waitForSelector(".lock");
   await p1.waitForSelector("#cam.on", { timeout: 5000 });

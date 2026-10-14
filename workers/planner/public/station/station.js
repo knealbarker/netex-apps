@@ -191,6 +191,16 @@ async function photo(id) {
   } catch { /* the count is saved either way */ }
 }
 
+// ------------------------------------------------------------ installed as a full-screen app; screen stays on
+if ("serviceWorker" in navigator) navigator.serviceWorker.register("/station/sw.js", { scope: "/station/" }).catch(() => {});
+let wake = null;
+async function keepAwake() {
+  try { if (!wake && navigator.wakeLock && document.visibilityState === "visible") { wake = await navigator.wakeLock.request("screen"); wake.addEventListener("release", () => { wake = null; }); } } catch { wake = null; }
+}
+keepAwake();
+document.addEventListener("visibilitychange", keepAwake);
+document.addEventListener("pointerdown", keepAwake, { passive: true });
+
 // ------------------------------------------------------------ keep it current
 refresh();
 setInterval(refresh, 20000);

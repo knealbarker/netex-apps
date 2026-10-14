@@ -54,7 +54,7 @@ export async function fakeAccess() {
   return { fetchImpl, token, otherKey: other.privateKey, certCalls: () => certCalls };
 }
 
-const TYPES = { ".html": "text/html; charset=utf-8", ".css": "text/css", ".js": "text/javascript", ".svg": "image/svg+xml", ".json": "application/json" };
+const TYPES = { ".html": "text/html; charset=utf-8", ".css": "text/css", ".js": "text/javascript", ".svg": "image/svg+xml", ".json": "application/json", ".webmanifest": "application/manifest+json", ".png": "image/png" };
 export const assets = {
   async fetch(req) {
     let p = new URL(req.url).pathname;
