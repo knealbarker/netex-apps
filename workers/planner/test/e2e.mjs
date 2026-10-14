@@ -154,6 +154,12 @@ await t("Plan: suggested crew, keep it, washers and Changes today", async () => 
   await p.click('#pl-board [data-up="slb"]'); await p.click("#pl-reorder");
   for (let i = 0; i < 40 && (await api("GET", "/settings")).body.boardOrder[0] !== "slb"; i++) await p.waitForTimeout(100);
   ok(await p.locator("#pl-board .tl-axis span").count() >= 6, "hours across");
+  // Out, late or hard stop: a hard stop for today sets that person's stop time on the plan
+  await p.click("#pl-away-btn"); await p.waitForSelector('dialog input[value="stop"]');
+  const who = await p.$eval('dialog select[name="who"]', s => [...s.options].find(o => / · on /.test(o.textContent)).value);
+  await p.selectOption('dialog select[name="who"]', who); await p.check('dialog input[value="stop"]'); await p.fill('dialog input[name="at"]', "12:30");
+  await p.click('dialog button[type="submit"]'); await p.waitForSelector("dialog", { state: "detached" }); await saved();
+  ok(Object.values((await api("GET", `/plan/${DAY}`)).body.crew).some(c => c.personId === who && c.stop === "12:30"), "hard stop saved");
   await p.click("#pl-chg-box summary"); await p.waitForSelector("#pl-chg .chg-list li");
   ok(await p.isVisible('#pl-chg >> text=/moved from|moves to/'), "change logged");
   ok(await p.isVisible('#pl-chg >> text=Neal Barker'), "who");

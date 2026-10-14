@@ -430,7 +430,7 @@ export async function render(main, ctx) {
     const out = P.callouts || [], late = P.late || [];
     el.innerHTML = html`${out.length ? raw(html`<span>Out: ${out.map(c => M.nameOf(P, c.personId)).join(", ")}</span>`) : ""}
       ${late.length ? raw(html`<span>In late: ${late.map(l => `${M.nameOf(P, l.personId)} ${fmtClock(parseTime(l.at))}`).join(", ")}</span>`) : ""}
-      ${can ? raw('<button class="linkish" id="pl-away-btn">Out or late…</button>') : ""}<a class="linkish" href="#/team">Team</a>`;
+      ${can ? raw('<button class="linkish" id="pl-away-btn">Out, late or hard stop…</button>') : ""}<a class="linkish" href="#/team">Team</a>`;
     el.querySelector("#pl-away-btn")?.addEventListener("click", () => awayDialog(makeP()));
   }
 
@@ -458,7 +458,7 @@ export async function render(main, ctx) {
         <div class="ms-impact" id="ms-impact" aria-live="polite"></div>
         <div class="ms-more"><span class="muted small">Today only:</span>
           <button type="button" class="btn small ghost" data-act="home">Send home…</button><button type="button" class="btn small ghost" data-act="longer">Stay 1 hour longer</button>
-          <button type="button" class="btn small ghost" data-act="off">Off the plan</button><button type="button" class="btn small ghost" data-act="away">Out or late…</button></div>`,
+          <button type="button" class="btn small ghost" data-act="off">Off the plan</button><button type="button" class="btn small ghost" data-act="away">Out, late or hard stop…</button></div>`,
       onOpen: (form, d) => {
         d.classList.add("sheet");
         const read = () => { state.to = form.to?.value || state.to; state.at = form.atx.value || form.at.value; };
@@ -595,18 +595,24 @@ export async function render(main, ctx) {
     const list = people.filter(e => !out.has(e.id) || e.id === fixedId).sort((a, b) => (!stOf[a.id]) - (!stOf[b.id]) || a.name.localeCompare(b.name));
     if (!list.length) return toast("Everyone on the team is already marked out.", "warn");
     openDialog({
-      title: fixedId ? `${M.nameOf(P, fixedId)}: out or late?` : "Who's out or late?", submitLabel: "Save",
-      body: html`<p class="dlg-lead">For ${longDay(pick)}. Out takes them off the plan; late keeps them on but they don't start before their time. For other days or several days, use Team › Time off.</p>
+      title: fixedId ? `${M.nameOf(P, fixedId)}: out, late or hard stop?` : "Out, late or hard stop", submitLabel: "Save",
+      body: html`<p class="dlg-lead">For ${longDay(pick)}. Out takes them off the plan; late keeps them on but they don't start before their time; a hard stop means they leave at that time no matter what's left. For other days, use Team (time off, or must leave by).</p>
         <label class="field"><span>Person</span><select class="input" name="who" required ${fixedId ? "disabled" : ""}><option value="">— Pick someone —</option>
           ${list.map(e => raw(html`<option value="${e.id}" ${e.id === fixedId ? "selected" : ""}>${e.name}${stOf[e.id] ? ` · on ${label(stOf[e.id])}` : ""}</option>`))}</select></label>
-        <div class="field"><span>What</span><div class="kindrow"><label><input type="radio" name="kind" value="out" checked> Out today</label><label><input type="radio" name="kind" value="late"> In late at</label>
-          <input class="input" type="time" step="300" name="at" aria-label="Arrival time"></div></div>
+        <div class="field"><span>What</span><div class="kindrow"><label><input type="radio" name="kind" value="out" checked> Out today</label><label><input type="radio" name="kind" value="late"> In late at</label><label><input type="radio" name="kind" value="stop"> Hard stop at</label>
+          <input class="input" type="time" step="300" name="at" aria-label="Time"></div></div>
         <label class="field"><span>Note <em>(optional)</em></span><input class="input" name="note" maxlength="300" placeholder="Sick, appointment, no call…"></label>`,
       onSubmit: async form => {
         const id = fixedId || form.who.value; if (!id) throw new Error("Pick who it is.");
         const kind = form.kind.value, at = form.at.value;
         if (kind === "late" && !at) throw new Error("Pick the time they'll come in.");
         const code = stOf[id] || null, name = M.nameOf(makeP(), id), note = form.note.value || null;
+        if (kind === "stop") {
+          if (!at) throw new Error("Pick the time they have to leave.");
+          if (!code) throw new Error(`${name} isn't on the plan for ${longDay(pick)}. Add them to a station first.`);
+          edit(() => { st.crew[code] = { ...st.crew[code], stop: at, source: "user" }; }, { msg: `${name} leaves at ${fmtClock(parseTime(at))} (hard stop).` });
+          return;
+        }
         if (st.dirty) await save();
         const r = await api("/timeoff", { method: "POST", body: { personId: id, kind, fromDay: pick, toDay: pick, at, note } });
         const gone = new Set(r.replaced || []);
