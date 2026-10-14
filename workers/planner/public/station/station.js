@@ -14,6 +14,7 @@ const goal = v => (v == null ? "—" : Number.isInteger(+v) ? String(v) : (+v).t
 let S = null;            // the server's view of this station
 let typed = "";          // digits on the display
 let confirmBig = false;  // a count over 40 needs a second tap
+let padOpen = false, padT = null;   // the number pad shows only while entering a count (Neal: more room for the numbers)
 let busy = false, holding = false, offline = false, lastOk = Date.now();
 let pairCode = "", pairErr = "";
 
@@ -60,38 +61,39 @@ function draw() {
     </header>
     <main class="main">
       ${offline ? `<div class="banner bad">No connection — counts can't be saved right now. They'll work again as soon as the internet is back.</div>` : ""}
-      <section class="left">
-        <div class="tile ${T.color} ${T.boost > 0 ? "boost" : ""}" style="${boostVars(T.boost)}" aria-label="Station today">
-          <div class="lbl"><span>${esc(S.station.label)} today</span><span>Goal ${esc(goal(T.goal))}/hr</span></div>
-          <div class="nums">
-            <div class="big">${T.count}</div>
-            <div class="rate">${esc(rate(T.perHour))}<em>/hr</em></div>
-            <div class="big-sub">pairs</div>
-            <div class="rate-sub">${T.pct != null ? `${Math.round(T.pct * 100)}% of goal` : "per hour"}</div>
-          </div>
-          <div class="foot">
-            ${T.lastHour ? `<span class="hour"><i class="${T.lastHour.color}"></i>Last hour ${esc(rate(T.lastHour.perHour))}/hr</span>` : ""}
-            <span class="stale">${T.lastMin == null ? "Starts with the first batch to IAB" : `Last count ${clock(T.lastMin)}${sinceLast > 1 ? ` · ${sinceLast} min ago` : ""}`}</span>
-          </div>
+      <div class="tile ${T.color} ${T.boost > 0 ? "boost" : ""}" style="${boostVars(T.boost)}" aria-label="Station today">
+        <div class="lbl"><span>${esc(S.station.label)} today</span><span>Goal ${esc(goal(T.goal))}/hr</span></div>
+        <div class="nums">
+          <div class="big">${T.count}</div>
+          <div class="rate">${esc(rate(T.perHour))}<em>/hr</em></div>
+          <div class="big-sub">pairs</div>
+          <div class="rate-sub">${T.pct != null ? `${Math.round(T.pct * 100)}% of goal` : "per hour"}</div>
         </div>
+        <div class="foot">
+          ${T.lastHour ? `<span class="hour"><i class="${T.lastHour.color}"></i>Last hour ${esc(rate(T.lastHour.perHour))}/hr</span>` : ""}
+          <span class="stale">${T.lastMin == null ? "Starts with the first batch to IAB" : `Last count ${clock(T.lastMin)}${sinceLast > 1 ? ` · ${sinceLast} min ago` : ""}`}</span>
+        </div>
+      </div>
+      <div class="bar">
         ${M ? `<div class="mine ${M.color} ${M.boost > 0 ? "boost" : ""}" style="${boostVars(M.boost)}">
             <div class="m-name">${esc(first(P.name))}'s own<small>since moving here · ${M.ownGoal ? "own goal" : "goal"} ${esc(goal(M.goal))}/hr</small></div>
             <div class="m-num">${M.count}<em>pairs</em></div>
             <div class="m-rate ${M.color}">${esc(rate(M.perHour))}<small>/hr</small></div>
           </div>` : ""}
-      </section>
-      <section class="right" aria-label="Enter a count">
-        <div class="entry-lbl"><span>Pairs going to IAB</span><span>${P ? `for ${esc(first(P.name))}` : ""}</span></div>
+        <div class="recent">${S.entries.slice(0, M ? 1 : 2).map(e => `<div><span>${esc(clock(e.minute))}</span><b>${e.count}</b><span>${esc(e.name ? first(e.name) : "")}</span>${e.undo ? `<button class="undo" data-undo="${esc(e.id)}">Undo</button>` : "<span></span>"}</div>`).join("")}</div>
+        ${S.locked ? `<div class="lockbar"><div><b>${P ? `Waiting for ${esc(first(P.name))} to clock in` : "No one on this station in the plan"}</b>
+            <small>${P ? `Counts open when the time clock shows them in${S.clockAsOf ? ` (as of ${esc(clock(new Date(S.clockAsOf).getHours() * 60 + new Date(S.clockAsOf).getMinutes()))})` : ""}` : "Put someone on it in the Plan, or count anyway"}</small></div>
+            <button class="hold" id="hold"><i></i><span>${P ? "Hold: they're clocked in" : "Hold: count anyway"}</span></button></div>`
+          : `<button class="enter" data-open="1"><span class="plus">+</span>Enter pairs${P ? `<small>for ${esc(first(P.name))}</small>` : ""}</button>`}
+      </div>
+    </main>
+    ${padOpen && !S.locked ? `<div class="pad-wrap" data-close="1"><section class="pad" aria-label="Enter a count">
+        <div class="entry-lbl"><span>Pairs going to IAB${P ? ` · ${esc(first(P.name))}` : ""}</span><button class="pad-x" data-close="1" aria-label="Close">✕</button></div>
         <div class="display ${typed ? "" : "empty"} ${confirmBig ? "warn" : ""}" id="disp">${typed || "0"}</div>
         <div class="keys">${[1, 2, 3, 4, 5, 6, 7, 8, 9].map(n => `<button class="key" data-k="${n}">${n}</button>`).join("")}
           <button class="key back" data-k="back" aria-label="Backspace">⌫</button><button class="key" data-k="0">0</button>
           <button class="key save ${confirmBig ? "confirm" : ""}" data-k="save" ${typed && +typed > 0 && !busy ? "" : "disabled"}>${confirmBig ? `Yes, ${esc(typed)}` : "Save"}</button></div>
-        <div class="recent">${S.entries.slice(0, 3).map(e => `<div><span>${esc(clock(e.minute))}</span><b>${e.count}</b><span>${esc(e.name ? first(e.name) : "")}</span>${e.undo ? `<button class="undo" data-undo="${esc(e.id)}">Undo</button>` : "<span></span>"}</div>`).join("")}</div>
-        ${S.locked ? `<div class="lock"><h2>${P ? `Waiting for ${esc(first(P.name))} to clock in` : "No one is on this station in the plan"}</h2>
-          <p>${P ? `Counts open when the time clock shows ${esc(first(P.name))} clocked in${S.clockAsOf ? ` (time clock as of ${esc(clock(new Date(S.clockAsOf).getHours() * 60 + new Date(S.clockAsOf).getMinutes()))})` : ""}.` : "Put someone on this station in the Plan, or open counting anyway."}</p>
-          <button class="hold" id="hold"><i></i><span>${P ? "Hold: they're clocked in" : "Hold: count anyway"}</span></button></div>` : ""}
-      </section>
-    </main>`;
+      </section></div>` : ""}`;
 }
 function drawPair() {
   app.innerHTML = `<div class="pair">
@@ -111,9 +113,11 @@ app.addEventListener("click", async e => {
   const k = e.target.closest("[data-k]")?.dataset.k, p = e.target.closest("[data-p]")?.dataset.p, u = e.target.closest("[data-undo]")?.dataset.undo;
   if (p) return pairKey(p);
   if (u) return undo(u);
+  if (e.target.closest("[data-open]") && S && !S.locked) return openPad();
+  if (e.target.closest(".pad-x") || e.target.matches(".pad-wrap")) return closePad();
   if (!k || !S || S.locked) return;
   if (k === "save") return save();
-  confirmBig = false;
+  confirmBig = false; idlePad();
   if (k === "back") typed = typed.slice(0, -1);
   else if (typed.length < 3) typed = (typed + k).replace(/^0+(?=\d)/, "");
   draw();
@@ -130,13 +134,17 @@ async function pairKey(p) {
   } else if (pairCode.length < 6) pairCode += p;
   drawPair();
 }
+function openPad() { padOpen = true; typed = ""; confirmBig = false; idlePad(); draw(); }
+function closePad() { padOpen = false; typed = ""; confirmBig = false; clearTimeout(padT); draw(); }
+// an open pad nobody is using closes itself after 45 seconds
+function idlePad() { clearTimeout(padT); padT = setTimeout(() => { if (padOpen && !busy) closePad(); }, 45000); }
 async function save() {
   const n = +typed; if (!(n > 0) || busy) return;
   if (n > 40 && !confirmBig) { confirmBig = true; draw(); return; } // a big batch: one more tap to be sure
   busy = true; draw();
   try {
     const r = await call("/count", { method: "POST", body: { count: n } });
-    S = r.state; typed = ""; confirmBig = false; offline = false;
+    S = r.state; typed = ""; confirmBig = false; offline = false; padOpen = false; clearTimeout(padT);
     toast(`Saved ${n} ${n === 1 ? "pair" : "pairs"}${S.person ? ` · ${first(S.person.name)}` : ""}`);
     if (S.photos) photo(r.id);
   } catch (x) { toast(x.status ? x.message : "Not saved — no connection. Try again.", true, 4000); if (!x.status) offline = true; }
@@ -163,7 +171,9 @@ window.addEventListener("keydown", e => {
   if (!S) return;
   if (!S.paired) { if (/^\d$/.test(e.key)) pairKey(e.key); else if (e.key === "Backspace") pairKey("back"); else if (e.key === "Enter" && pairCode.length === 6) pairKey("go"); return; }
   if (S.locked) return;
-  if (/^\d$/.test(e.key) && typed.length < 3) { confirmBig = false; typed = (typed + e.key).replace(/^0+(?=\d)/, ""); draw(); }
+  if (/^\d$/.test(e.key) && !padOpen) { padOpen = true; typed = ""; }
+  if (e.key === "Escape" && padOpen) return closePad();
+  if (/^\d$/.test(e.key) && typed.length < 3) { idlePad(); confirmBig = false; typed = (typed + e.key).replace(/^0+(?=\d)/, ""); draw(); }
   else if (e.key === "Backspace") { confirmBig = false; typed = typed.slice(0, -1); draw(); }
   else if (e.key === "Enter") save();
 });

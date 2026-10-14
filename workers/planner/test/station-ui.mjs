@@ -51,7 +51,8 @@ async function tablet(viewport = { width: 1280, height: 800 }) {
   p.on("console", m => { if (m.type() === "error" && !/status of 4\d\d/.test(m.text())) errors.push("console: " + m.text()); });
   return p;
 }
-const tap = async (p, keys) => { for (const k of String(keys)) await p.click(`[data-k="${k}"]`); };
+// the pad hides behind "Enter pairs" (Neal, Oct 14): open it, then tap the digits
+const tap = async (p, keys) => { if (!(await p.$(".pad"))) await p.click("[data-open]"); for (const k of String(keys)) await p.click(`[data-k="${k}"]`); };
 
 if (process.env.DEBUG) console.log("browser up", url);
 const p1 = await tablet();
@@ -74,17 +75,20 @@ await t("installable as a full-screen app (manifest + service worker)", async ()
   ok(await p1.evaluate(async () => !!(await navigator.serviceWorker.getRegistration("/station/"))), "service worker registered");
 });
 await t("locked until clocked in; the camera turns on", async () => {
-  await p1.waitForSelector(".lock");
+  await p1.waitForSelector(".lockbar");
   await p1.waitForSelector("#cam.on", { timeout: 5000 });
   await p1.screenshot({ path: join(SHOTS, "station-2-locked.png") });
   clockIn(carnell, NOW - 182); clockIn(maria, NOW - 178);
   await p1.reload(); await p1.waitForSelector(".st-chip");
-  ok(!(await p1.$(".lock")), "opens once Maria is clocked in");
+  ok(!(await p1.$(".lockbar")) && await p1.$("[data-open]"), "opens once Maria is clocked in");
 });
 await t("a count saves with a photo; the person's own line shows next to the station's", async () => {
   await add("slb1", 41, NOW - 61); // Carnell's batch before the move
-  await tap(p1, "21"); await p1.click('[data-k="save"]');
+  await tap(p1, "21");
+  await p1.screenshot({ path: join(SHOTS, "station-3a-pad.png") });
+  await p1.click('[data-k="save"]');
   await p1.waitForFunction(() => document.querySelector(".big")?.textContent === "62");
+  ok(!(await p1.$(".pad")), "the pad closes after saving");
   ok(await p1.$(".mine"), "Maria's own line");
   await p1.waitForTimeout(800);
   const d = await api("GET", `/tally/${L.day}`);
