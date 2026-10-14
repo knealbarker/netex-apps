@@ -151,7 +151,7 @@ await t("Plan: suggested crew, keep it, washers and Changes today", async () => 
   await p.click("#pl-reorder"); await p.click('#pl-board [data-down="slb"]');
   for (let i = 0; i < 40 && (await api("GET", "/settings")).body.boardOrder[1] !== "slb"; i++) await p.waitForTimeout(100);
   ok((await api("GET", "/settings")).body.boardOrder[1] === "slb", "saved order");
-  ok((await p.locator("#pl-board .tl-row").nth(1).getAttribute("data-g")) === "slb", "second row now");
+  ok((await p.locator("#pl-board .tl-row.first").nth(1).getAttribute("data-g")) === "slb", "second kind of work now");
   await p.click('#pl-board [data-up="slb"]'); await p.click("#pl-reorder");
   for (let i = 0; i < 40 && (await api("GET", "/settings")).body.boardOrder[0] !== "slb"; i++) await p.waitForTimeout(100);
   ok(await p.locator("#pl-board .tl-axis span").count() >= 6, "hours across");

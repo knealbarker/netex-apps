@@ -105,5 +105,19 @@ await t("an SLB press starting from empty loses its start-up minutes; a full han
   ok(slbDone(X0) >= slbDone(X) - 0.5, "start-up never adds pieces");
 });
 
+await t("board: one row per station, Maria then Diana on one SLB 2 line, Betty in Carnell's break gap", () => {
+  const rows = M.stationRows(X, M.boardGroups(POS));
+  const codes = rows.map(r => r.code);
+  ok(["slb1", "slb2", "slt1", "slt2", "dct1", "dct2", "dct3", "dcb1", "asm1", "asm2", "slo", "dco"].every(c => codes.includes(c)), codes.join(","));
+  ok(codes.indexOf("slb1") === 0 && codes.indexOf("slb2") === 1, "starch bottoms on top");
+  ok(rows.filter(r => r.first).map(r => r.key).join() === "slb,slt,dct,dcb,tc,comf,asm,ops", "first row of each kind");
+  const r = c => rows.find(x => x.code === c);
+  ok(r("slb2").nLanes === 1 && r("slb2").lanes.map(l => l.empId).join() === "diana,maria", `SLB 2: ${r("slb2").lanes.map(l => `${l.empId}@${l.lane}`)}`);
+  const s1 = r("slb1"), betty = s1.lanes.find(l => l.empId === "betty"), carn = s1.lanes.find(l => l.empId === "carnell");
+  ok(betty && betty.lane === carn.lane && s1.nLanes === 1, `SLB 1 lanes: ${s1.lanes.map(l => `${l.empId}@${l.lane}`)}`);
+  ok(!carn.bars.some(b => b.brk), "Carnell's break isn't striped under Betty");
+  ok(r("dct3").lanes.length > 0 && r("slo").label === "SL Operator" && r("slt2").label === "SLT 2 helper", `${r("slo").label} / ${r("slt2").label}`);
+});
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

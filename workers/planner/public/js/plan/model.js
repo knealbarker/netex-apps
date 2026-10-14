@@ -778,6 +778,64 @@ export function stationTimeline(X, groups) {
 }
 
 /**
+ * The same board with one row per station (Neal, Oct 14: "I liked it better when I could see the individual stations"):
+ * SLB 1, SLB 2, DCT 1, ... in `groups` order (kinds of work stay together; the first row of each kind has `first`).
+ * People who don't overlap share a lane (Maria on SLB 2 until 7:30, then Diana), so a station is one line most of the day.
+ *   [{ key, code, label, cat, first, codes: [code], lanes: [{ empId, code, lane, bars }], nLanes }]
+ */
+export function stationRows(X, groups) {
+  const { P, E, R } = X;
+  const short = (p) => p.type === "ops" ? p.label.replace(/Starch Laundry/i, "SL").replace(/Dry Cleaning/i, "DC") : p.label.replace(/\s*\(helper\)/i, " helper");
+  const rows = [], byCode = new Map();
+  for (const g of groups) g.codes.forEach((code, i) => {
+    const p = E.POS.find(x => x.id === code) || { id: code, label: code, type: g.key };
+    const r = { key: g.key, code, label: short(p), cat: g.cat, first: i === 0, codes: [code], lanes: [], nLanes: 1 };
+    rows.push(r); byCode.set(code, r);
+  });
+  const laneOf = (code, empId, home) => {
+    const r = byCode.get(code); if (!r || !empId) return null;
+    let l = r.lanes.find(x => x.empId === empId); if (!l) r.lanes.push(l = { empId, code: home, bars: [] });
+    return l;
+  };
+  if (!R.empty) for (const row of R.rows) {
+    if (!row.staffed) continue;
+    const code = row.st.id, empId = (P.crew[code] || {}).emp || row.emp?.empId, steps = stepsOf(row);
+    const b0 = row.brkTaken > 0 ? row.brkS : null, b1 = b0 != null ? b0 + row.brkTaken : null;
+    if (!steps.length) { laneOf(code, empId, code)?.bars.push({ from: row.x.start, to: Math.max(row.clockOut || 0, row.x.start + 0.5), idle: true }); continue; }
+    let brkDone = b0 == null;
+    for (const sp of steps) {
+      const l = laneOf(sp.stn, empId, code); if (!l) continue;
+      let parts = [[sp.from, sp.to]];
+      if (!brkDone && b1 > sp.from + 0.01 && b0 < sp.to - 0.01) { parts = [[sp.from, b0], [b1, sp.to]].filter(x => x[1] - x[0] > 0.01); l.bars.push({ from: b0, to: b1, brk: true }); brkDone = true; }
+      for (const [from, to] of parts) l.bars.push({ from, to, ot: to > row.x.schedEnd + 0.02 });
+    }
+    if (!brkDone) { const prev = steps.filter(sp => sp.from < b0 + 0.01).pop() || steps[0]; laneOf(prev.stn, empId, code)?.bars.push({ from: b0, to: b1, brk: true }); }
+  }
+  for (const x of E.opsInfo()) {
+    if (!x.on) continue;
+    const l = laneOf(x.o.id, (P.crew[x.o.id] || {}).emp, x.o.id); if (!l) continue;
+    if (x.b) l.bars.push({ from: x.start, to: x.brkS }, { from: x.brkS, to: x.brkS + x.b, brk: true }, { from: x.brkS + x.b, to: x.end });
+    else l.bars.push({ from: x.start, to: x.end });
+  }
+  // pack: the station's own person first, then the rest by start; each goes in the first lane they don't overlap
+  for (const r of rows) {
+    for (const l of r.lanes) { l.bars.sort((a, b) => a.from - b.from); l.from = l.bars.length ? l.bars[0].from : 0; l.to = Math.max(0, ...l.bars.map(x => x.to)); }
+    r.lanes.sort((a, b) => ((a.code !== r.code) - (b.code !== r.code)) || a.from - b.from);
+    const ends = [];
+    for (const l of r.lanes) {
+      const free = l.bars.filter(x => !x.brk);
+      let i = ends.findIndex(seg => seg.every(([f, t]) => free.every(x => x.to <= f + 0.01 || x.from >= t - 0.01)));
+      if (i < 0) { i = ends.length; ends.push([]); }
+      ends[i].push(...free.map(x => [x.from, x.to])); l.lane = i;
+    }
+    // someone filling in during the owner's break shows in the gap instead of the break stripes
+    for (const l of r.lanes) l.bars = l.bars.filter(x => !x.brk || !r.lanes.some(o => o !== l && o.lane === l.lane && o.bars.some(y => !y.brk && y.from < x.to - 0.01 && y.to > x.from + 0.01)));
+    r.nLanes = Math.max(1, ends.length);
+  }
+  return rows;
+}
+
+/**
  * Is today's production over? (Neal, Oct 13: "Once all production employees clock out or we have not seen an item assembled
  * for 30 minutes it is clear the production day is complete." Anything still left is waiting for later or for a manager.)
  *   { why: "out" | "quiet", at }  or null

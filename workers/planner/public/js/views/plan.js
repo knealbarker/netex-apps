@@ -239,7 +239,7 @@ export async function render(main, ctx) {
       const up = ev.target.closest("[data-up],[data-down]");
       if (up) return moveRow(up.dataset.up || up.dataset.down, up.dataset.up ? -1 : 1);
       const b = ev.target.closest("[data-emp],[data-add]"); if (!b || !can || reorder) return;
-      if (b.dataset.add) addSheet(b.dataset.add); else personSheet(b.dataset.emp);
+      if (b.dataset.add) addSheet(b.dataset.add, b.dataset.code); else personSheet(b.dataset.emp);
     });
     main.querySelector("#pl-reorder")?.addEventListener("click", e => {
       reorder = !reorder; e.currentTarget.setAttribute("aria-pressed", String(reorder)); e.currentTarget.textContent = reorder ? "Done" : "Reorder";
@@ -384,7 +384,7 @@ export async function render(main, ctx) {
   // ---- stations, top to bottom (order set with Reorder), and the whole day across in 15-minute steps (Neal, Oct 13)
   function drawBoard(X, L) {
     const el = document.getElementById("pl-board"); if (!el) return;
-    const P = X.P, groups = M.boardGroups(POS, order()), rows = M.stationTimeline(X, groups), ends = M.catEnds(X.E, X.R), live = P.isToday && L && L.on && L.cats;
+    const P = X.P, groups = M.boardGroups(POS, order()), rows = M.stationRows(X, groups), ends = M.catEnds(X.E, X.R), live = P.isToday && L && L.on && L.cats;
     const now = P.isToday && P.now != null ? P.now : null;
     // people: clocked out (gray from then on), not clocked in yet, on break
     const info = {}; for (const code of Object.keys(st.crew)) { const pi = personInfo(X, code); if (pi) info[pi.id] = pi; }
@@ -411,7 +411,7 @@ export async function render(main, ctx) {
       if (g.key === "asm" && ends.asm) return html`<span class="muted">until ${hmShort(ends.asm)}</span>`;
       return "";
     };
-    const barHtml = (g, l, lane) => {
+    const barHtml = (g, l, lane = l.lane) => {
       const pi = info[l.empId], nm = pi ? pi.first : first(M.nameOf(P, l.empId));
       const cut = pi && pi.state === "gone" && pi.outAt != null ? pi.outAt : null, noshow = pi && pi.state === "missing";
       const out = [];
@@ -421,22 +421,24 @@ export async function render(main, ctx) {
         for (const [pf, pt, gone] of parts) {
           if (x.brk) { out.push(html`<i class="tl-brk" style="left:${pct(pf)};width:${wid(pf, pt)};top:${lane * 32 + 6}px" title="${nm}: break ${fmtClock(x.from)}–${fmtClock(x.to)}"></i>`); continue; }
           const label = nm;
-          const tip = `${pi?.name || nm}: ${g.label} ${fmtClock(x.from)}–${fmtClock(x.to)}${x.ot ? " (overtime)" : ""}${gone ? ` — clocked out ${fmtClock(cut)}` : noshow ? " — not clocked in" : x.idle ? " — nothing to do" : ""}`;
+          const tip = `${pi?.name || nm}: ${g.label}${l.code !== g.code && g.code ? ` (from ${(POS.find(p => p.id === l.code) || {}).label || l.code})` : ""} ${fmtClock(x.from)}–${fmtClock(x.to)}${x.ot ? " (overtime)" : ""}${gone ? ` — clocked out ${fmtClock(cut)}` : noshow ? " — not clocked in" : x.idle ? " — nothing to do" : ""}`;
           out.push(html`<button type="button" class="tl-bar ${x.ot ? "ot" : ""} ${gone ? "gone" : ""} ${noshow ? "noshow" : ""} ${x.idle ? "idle" : ""}" data-emp="${l.empId}" style="left:${pct(pf)};width:${wid(pf, pt)};top:${lane * 32 + 6}px;--c:${COLOR[g.key] || COLOR.ops}" title="${tip}" aria-label="${tip}">${label ? raw(html`<b>${label}</b>`) : ""}</button>`);
         }
       });
       return out.join("");
     };
-    const last = rows.length - 1;
     el.innerHTML = html`<div class="tl" style="--hrs:${b - a}">
       <div class="tl-axis"><div class="tl-lab"></div><div class="tl-track">${raw(ticks.join(""))}</div></div>
-      ${rows.map((g, gi) => {
-        const free = g.codes.some(code => !st.crew[code].emp), lanes = Math.max(1, g.lanes.length), add = can && free && !reorder;
-        const lab = html`<i class="sw" style="--c:${COLOR[g.key] || COLOR.ops}"></i><span class="tl-name"><b>${ROW_LABEL[g.key] || g.label}</b><small>${raw(statusOf(g))}</small></span>${add ? raw('<span class="tl-plus" aria-hidden="true">+</span>') : ""}`;
-        return raw(html`<div class="tl-row ${g.key === "slb" ? "neck" : ""}" data-g="${g.key}">
-          ${reorder ? raw(html`<div class="tl-lab">${raw(lab)}<span class="tl-ord"><button type="button" class="btn ghost small" data-up="${g.key}" aria-label="Move ${g.label} up" ${gi === 0 ? "disabled" : ""}>↑</button><button type="button" class="btn ghost small" data-down="${g.key}" aria-label="Move ${g.label} down" ${gi === last ? "disabled" : ""}>↓</button></span></div>`)
-            : add ? raw(html`<button type="button" class="tl-lab" data-add="${g.key}" aria-label="Add someone to ${g.label}">${raw(lab)}</button>`) : raw(html`<div class="tl-lab">${raw(lab)}</div>`)}
-          <div class="tl-track" style="height:${lanes * 32}px">${g.lanes.length ? raw(g.lanes.map((l, i) => barHtml(g, l, i)).join("")) : raw('<span class="tl-none">No one</span>')}${raw(nowLine)}</div>
+      ${rows.map(g => {
+        // one row per station (Neal, Oct 14); the kind of work's count and finish show on its first station
+        const gi = groups.findIndex(x => x.key === g.key), lastG = groups.length - 1;
+        const free = !st.crew[g.code].emp, lanes = g.nLanes, add = can && free && !reorder;
+        const lab = html`<i class="sw" style="--c:${COLOR[g.key] || COLOR.ops}"></i><span class="tl-name"><b>${g.label}</b><small>${raw(g.first ? statusOf(g) : "")}</small></span>${add ? raw('<span class="tl-plus" aria-hidden="true">+</span>') : ""}`;
+        const ord = reorder && g.first ? raw(html`<span class="tl-ord"><button type="button" class="btn ghost small" data-up="${g.key}" aria-label="Move ${M.GROUP_LABEL[g.key]} up" ${gi === 0 ? "disabled" : ""}>↑</button><button type="button" class="btn ghost small" data-down="${g.key}" aria-label="Move ${M.GROUP_LABEL[g.key]} down" ${gi === lastG ? "disabled" : ""}>↓</button></span>`) : "";
+        return raw(html`<div class="tl-row ${g.key === "slb" ? "neck" : ""} ${g.first ? "first" : "sub"}" data-g="${g.key}" data-code="${g.code}">
+          ${reorder ? raw(html`<div class="tl-lab">${raw(lab)}${ord}</div>`)
+            : add ? raw(html`<button type="button" class="tl-lab" data-add="${g.key}" data-code="${g.code}" aria-label="Add someone to ${g.label}">${raw(lab)}</button>`) : raw(html`<div class="tl-lab">${raw(lab)}</div>`)}
+          <div class="tl-track" style="height:${lanes * 32}px">${g.lanes.length ? raw(g.lanes.map(l => barHtml(g, l)).join("")) : raw('<span class="tl-none">No one</span>')}${raw(nowLine)}</div>
         </div>`);
       })}
     </div>`;
@@ -533,8 +535,11 @@ export async function render(main, ctx) {
     });
   }
   // ---- add someone to a station: people not on the plan first, then people moving over
-  function addSheet(key) {
-    const X = st.X, P = X.P, g = M.boardGroups(POS, order()).find(x => x.key === key); if (!g) return;
+  function addSheet(key, code = null) {
+    const X = st.X, P = X.P, g0 = M.boardGroups(POS, order()).find(x => x.key === key); if (!g0) return;
+    // one station (a row of the board) or any spot of that kind of work
+    const one = code && g0.codes.includes(code) ? code : null;
+    const g = one ? { ...g0, codes: [one], label: (POS.find(p => p.id === one) || {}).label || g0.label } : g0;
     const out = new Set((P.callouts || []).map(c => c.personId)), onCrew = new Map(Object.entries(st.crew).filter(([, c]) => c.emp).map(([code, c]) => [c.emp, code]));
     const rk = e => Math.min(...g.codes.map(c => X.E.rankOf(e, c) || 99));
     const brks = M.breaksOf(X.R);
@@ -551,7 +556,7 @@ export async function render(main, ctx) {
       onSubmit: form => {
         const id = form.who.value, at = form.at.value; if (!id) throw new Error("Pick someone.");
         const e = people.find(p => p.id === id), name = first(e.name);
-        if (onCrew.has(id)) { edit(() => { st.crew = M.applyMove(st.crew, POS, id, key, at); }, { msg: `${name} → ${g.label} at ${hm(parseTime(at))}.` }); return; }
+        if (onCrew.has(id)) { edit(() => { st.crew = M.applyMove(st.crew, POS, id, key, at, one); }, { msg: `${name} → ${g.label} at ${hm(parseTime(at))}.` }); return; }
         const spot = g.codes.find(c => !st.crew[c].emp); if (!spot) throw new Error(`Every ${g.label.toLowerCase()} spot is taken. Move someone off first.`);
         const usual = M.notBeforeLate(P, id, e.start || s.defStart);
         const start = P.isToday && P.now != null ? (at > usual ? at : usual) : (T[0][1] === at ? usual : at);

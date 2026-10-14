@@ -835,6 +835,9 @@ button.tl-lab { cursor: pointer; } button.tl-lab:hover { background: var(--hover
 .tl-axis span:first-child { transform: translateX(3px); }
 .tl-axis small { font-size: 9.5px; margin-left: 1px; }
 .tl-row { border-top: 1px solid var(--line); }
+.tl-row.first { border-top: 2px solid var(--line); }
+.tl-row.sub { border-top: 1px dashed var(--line); }
+.tl-row.sub .tl-lab { min-height: 38px; }
 .tl-row.neck .tl-lab { box-shadow: inset 3px 0 0 #8b7cf6; }
 .tl-bar { position: absolute; height: 28px; margin-top: 0; box-sizing: border-box; border-radius: 6px; border: 0; border-left: 3px solid var(--c); background: color-mix(in srgb, var(--c) 34%, var(--card)); color: var(--text); font: 600 12px var(--font); padding: 0 6px; text-align: left; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: pointer; z-index: 1; }
 .tl-bar + .tl-bar { margin-left: 1px; }
