@@ -183,6 +183,16 @@ else {
     eq((await a.call("DELETE", `/api/tally/${r2.body.id}`, { as: "mo@example.com" })).status, 200);
     eq((await a.call("GET", `/api/tally/${L.day}`)).body.total, 15);
   });
+  await t("the tablet reports camera and full-screen status to Settings", async () => {
+    const a = await setup();
+    await pairNew(a);
+    await a.tab("GET", "/state?mode=fullscreen&cam=on&wake=on");
+    let d = (await a.call("GET", "/api/station-devices")).body.devices[0];
+    eq(d.client, { cam: "on", mode: "fullscreen", wake: "on" });
+    await a.tab("GET", "/state?mode=browser&cam=denied&wake=off&mode=bogus");
+    d = (await a.call("GET", "/api/station-devices")).body.devices[0];
+    eq([d.client.mode, d.client.cam], ["browser", "denied"]);
+  });
   await t("removing a tablet in Settings cuts it off", async () => {
     const a = await setup();
     const id = await pairNew(a);

@@ -275,14 +275,27 @@ export async function render(main, ctx) {
     const box = main.querySelector("#tabList"); if (!box) return;
     let D;
     try { D = await api("/station-devices"); } catch (x) { box.innerHTML = html`<p class="muted small">${x.message}</p>`; return; }
+    // Ready = paired, checked in within 3 minutes, camera on (when photos are on), opened as the installed full-screen app
+    const tabStatus = d => {
+      if (d.codeUntil) return html`<span class="muted">Waiting for its code (until ${new Date(d.codeUntil).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })})</span>`;
+      if (!d.paired) return html`<span class="muted">Not paired — make a new code</span>`;
+      const c = d.client || {}, fresh = d.lastSeen && Date.now() - Date.parse(d.lastSeen) < 3 * 60000, photos = S.groups.tally?.photos;
+      const bad = [];
+      if (!fresh) bad.push(d.lastSeen ? "not checking in (off, asleep or offline)" : "hasn't opened the page yet");
+      if (fresh && photos && c.cam && c.cam !== "on") bad.push(c.cam === "denied" ? "camera blocked" : "camera off");
+      if (fresh && c.mode === "browser") bad.push("open in a browser tab, not the installed app");
+      const good = [photos && c.cam === "on" ? "camera on" : null, c.mode && c.mode !== "browser" ? "full screen" : null].filter(Boolean);
+      return bad.length ? html`<span class="c-warn">● ${bad.join(" · ")}</span> <span class="muted">· ${seen(d)}</span>`
+        : html`<span class="c-good">● Ready</span> <span class="muted">· ${[...good, seen(d)].join(" · ")}</span>`;
+    };
     const seen = d => d.lastSeen ? `seen ${new Date(d.lastSeen).toLocaleString(undefined, { weekday: "short", hour: "numeric", minute: "2-digit" })}` : "not seen yet";
     box.innerHTML = html`${D.devices.length ? raw(html`<div class="tab-rows">${D.devices.map(d => raw(html`<div class="tab-row">
         <span class="chip">${d.label}</span><b>${d.name}</b>
-        <span class="muted small">${d.codeUntil ? `waiting for its code (until ${new Date(d.codeUntil).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })})` : d.paired ? `paired · ${seen(d)}` : "not paired"}</span>
+        <span class="small">${raw(tabStatus(d))}</span>
         <span class="tab-act"><button type="button" class="btn ghost small" data-tcode="${d.id}">New code</button><button type="button" class="btn ghost small danger" data-tdel="${d.id}">Remove</button></span></div>`))}</div>`)
       : raw('<p class="muted small">No tablets yet.</p>')}
       <div class="set-actions"><button type="button" class="btn small" id="tabAdd">Add a tablet</button></div>
-      <p class="muted small">On the tablet, open <b>prodplanner.netexcleaners.com/station</b> in Fully Kiosk Browser and enter the code. Cloudflare Access must let /station through (a Bypass application); the tablet's own pairing keeps the data private.</p>`;
+      <p class="muted small">On the tablet, open <b>prodplanner.netexcleaners.com/station</b> in Chrome, install it as the SLB Station app, and enter the code there. Cloudflare Access must let /station through (a Bypass application); the tablet's own pairing keeps the data private.</p>`;
     const showCode = (r, label) => openDialog({ title: `Pairing code for ${label}`, submitLabel: "Done",
       body: html`<p class="dlg-lead">Enter this on the tablet within 15 minutes. It works once.</p><div class="pair-code">${r.code.slice(0, 3)} ${r.code.slice(3)}</div>`, onSubmit: () => drawTablets() });
     box.querySelector("#tabAdd").addEventListener("click", () => openDialog({

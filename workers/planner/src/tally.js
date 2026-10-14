@@ -225,10 +225,16 @@ async function pastPunches(db, env, day) {
 /** The paired tablet making this request, or null. Also notes when it was last seen (at most once a minute). */
 export async function deviceOf(db, env, req) {
   const tok = cookieOf(req); if (!tok) return null;
-  const d = await db.prepare(`SELECT id, station_code AS code, name, last_seen_at AS seen FROM plan_station_devices WHERE org_id=? AND token_hash=? AND revoked_at IS NULL`)
+  const d = await db.prepare(`SELECT id, station_code AS code, name, last_seen_at AS seen, client_json AS client FROM plan_station_devices WHERE org_id=? AND token_hash=? AND revoked_at IS NULL`)
     .bind(env.ORG_ID, await sha256(tok)).first();
-  if (d && (!d.seen || Date.now() - Date.parse(d.seen) > 60000)) await db.prepare("UPDATE plan_station_devices SET last_seen_at=? WHERE id=?").bind(nowIso(), d.id).run();
-  return d ? { ...d, token: tok } : null;
+  if (!d) return null;
+  // how the tablet is running, as its page reports it (?cam=&mode=&wake=), for Settings › Station tablets
+  const q = new URL(req.url).searchParams, pick = (k, ok) => (ok.includes(q.get(k)) ? q.get(k) : null);
+  const info = { cam: pick("cam", ["on", "off", "denied", "none"]), mode: pick("mode", ["fullscreen", "standalone", "browser"]), wake: pick("wake", ["on", "off"]) };
+  const client = info.cam || info.mode ? JSON.stringify(info) : d.client;
+  if (!d.seen || Date.now() - Date.parse(d.seen) > 60000 || client !== d.client)
+    await db.prepare("UPDATE plan_station_devices SET last_seen_at=?, client_json=? WHERE id=?").bind(nowIso(), client, d.id).run();
+  return { id: d.id, code: d.code, name: d.name, token: tok };
 }
 
 /** Pairs a tablet with a code from Settings. Returns the new secret (goes into the tablet's cookie). */
@@ -377,11 +383,12 @@ export async function cleanupPhotos(env) {
 export async function listDevices(db, env, me) {
   requireRole(me, "admin");
   const now = nowIso();
-  const rows = (await db.prepare(`SELECT id, station_code AS station, name, paired_at AS pairedAt, last_seen_at AS lastSeen, created_at AS createdAt,
+  const rows = (await db.prepare(`SELECT id, station_code AS station, name, paired_at AS pairedAt, last_seen_at AS lastSeen, created_at AS createdAt, client_json AS client,
       CASE WHEN pair_code_hash IS NOT NULL AND pair_expires_at > ? THEN pair_expires_at END AS codeUntil, token_hash IS NOT NULL AS paired
       FROM plan_station_devices WHERE org_id=? AND revoked_at IS NULL ORDER BY station_code, created_at`).bind(now, env.ORG_ID).all()).results;
   const labels = await stationLabels(db, env.ORG_ID), codes = await slbCodes(db, env.ORG_ID);
-  return { devices: rows.map(r => ({ ...r, paired: !!r.paired, label: labels.get(r.station)?.label || r.station })), stations: codes.map(c => ({ code: c, label: labels.get(c)?.label || c })) };
+  const parse = j => { try { return j ? JSON.parse(j) : null; } catch { return null; } };
+  return { devices: rows.map(r => ({ ...r, client: parse(r.client), paired: !!r.paired, label: labels.get(r.station)?.label || r.station })), stations: codes.map(c => ({ code: c, label: labels.get(c)?.label || c })) };
 }
 async function newCodeStmt(db, env, id) {
   const code = sixDigits(), until = new Date(Date.now() + PAIR_MIN * 60000).toISOString();

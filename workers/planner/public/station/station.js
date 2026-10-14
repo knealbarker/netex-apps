@@ -32,7 +32,7 @@ function toast(msg, bad = false, ms = 2600) {
 async function refresh() {
   try {
     const was = S && S.day;
-    S = await call("/state"); offline = false; lastOk = Date.now();
+    S = await call(`/state?${clientInfo()}`); offline = false; lastOk = Date.now();
     if (was && S.day && S.day !== was) return location.reload(); // a new day: start fresh (and pick up any new version)
   }
   catch (e) { if (e.status !== 401) offline = true; }
@@ -177,7 +177,7 @@ async function startCamera() {
     stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "user", width: { ideal: 640 }, height: { ideal: 480 } }, audio: false });
     cam.srcObject = stream; cam.classList.add("on");
     stream.getVideoTracks()[0]?.addEventListener("ended", () => { stream = null; cam.classList.remove("on"); });
-  } catch { stream = null; cam.classList.remove("on"); }
+  } catch (e) { stream = null; cam.classList.remove("on"); camDenied = e && e.name === "NotAllowedError"; }
   draw();
 }
 function stopCamera() { if (stream) { stream.getTracks().forEach(t => t.stop()); stream = null; cam.classList.remove("on"); } }
@@ -190,6 +190,14 @@ async function photo(id) {
     if (blob) await call(`/count/${id}/photo`, { method: "POST", raw: blob });
   } catch { /* the count is saved either way */ }
 }
+
+// how this tablet is running, sent with each check-in so Settings can show "camera on · full screen"
+function clientInfo() {
+  const mode = matchMedia("(display-mode: fullscreen)").matches ? "fullscreen" : matchMedia("(display-mode: standalone)").matches ? "standalone" : "browser";
+  const cam = !S || !S.photos ? "none" : stream ? "on" : camDenied ? "denied" : "off";
+  return new URLSearchParams({ mode, cam, wake: wake ? "on" : "off" }).toString();
+}
+let camDenied = false;
 
 // ------------------------------------------------------------ installed as a full-screen app; screen stays on
 if ("serviceWorker" in navigator) navigator.serviceWorker.register("/station/sw.js", { scope: "/station/" }).catch(() => {});
