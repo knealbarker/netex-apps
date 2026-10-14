@@ -83,5 +83,27 @@ await t("no 'move to starch bottoms' while both presses are staffed", () => {
   }
 });
 
+await t("each SLB press stays full through its presser's break (someone SLB-trained steps in)", () => {
+  for (const code of ["slb1", "slb2"]) {
+    const o = rowOf(code), b0 = o.brkS, b1 = o.brkS + o.x.b;
+    const cov = R.rows.filter(r => r.staffed && r.st.id !== code).flatMap(r => r.segs.filter(sg => sg.stn === code && sg.from < b1 - 0.01 && sg.to > b0 + 0.01))
+      .reduce((a, sg) => a + Math.min(sg.to, b1) - Math.max(sg.from, b0), 0);
+    ok(cov >= o.x.b - 0.05, `${code}: ${Math.round(cov * 60)} of ${Math.round(o.x.b * 60)} min covered`);
+  }
+});
+await t("an SLB press starting from empty loses its start-up minutes; a full hand-off loses nothing", () => {
+  const slbDone = sX => { let n = 0; for (const r of sX.R.rows) if (r.staffed) for (const sg of r.segs) if (sg.stn.startsWith("slb")) n += sg.pcs; return n; };
+  // starch bottoms done by hour h (all presses), from the simulation's 5-minute timeline
+  const by = (sX, h) => { let v = 0; for (const row of sX.R.TL) if (row[0] <= h + 1e-6) v = row[2]; return v; };
+  const X0 = M.evaluate({ ...P, s: { ...s, slbPrime: 0 } });
+  // Carnell (SLB 1) and Maria (SLB 2) both start at 5:40: 20 min start-up each, then 20/hr
+  ok(Math.abs(by(X, parseTime("06:40")) - 2 * 20 * 40 / 60) < 1, `first hour: ${by(X, parseTime("06:40")).toFixed(1)} pairs on two presses (expected ~26.7)`);
+  ok(Math.abs(by(X0, parseTime("06:40")) - 40) < 1, `no start-up setting: ${by(X0, parseTime("06:40")).toFixed(1)} in the first hour (expected 40)`);
+  // Maria hands SLB 2 to Diana at 7:30 with the press full: no start-up then
+  const d = by(X, parseTime("07:45")) - by(X, parseTime("07:30")), d0 = by(X0, parseTime("07:45")) - by(X0, parseTime("07:30"));
+  ok(Math.abs(d - d0) < 0.5, `7:30–7:45: ${d.toFixed(1)} pairs with start-up vs ${d0.toFixed(1)} without`);
+  ok(slbDone(X0) >= slbDone(X) - 0.5, "start-up never adds pieces");
+});
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

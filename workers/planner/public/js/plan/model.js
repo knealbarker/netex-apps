@@ -21,7 +21,7 @@ export function engineSettings(SET, smrtPrices = {}) {
   return {
     defStart: g.day.defStart, fullDay: g.day.fullDay, breakMin: g.day.breakMin, breakAfter: g.day.breakAfter, spread: g.day.spread, staggerBreaks: g.day.staggerBreaks,
     allowOT: g.staffing.allowOT, otMax: g.staffing.otMax, otMult: g.staffing.otMult, allowMoves: g.staffing.allowMoves, allowClockOut: g.staffing.allowClockOut, minPaid: g.staffing.minPaid,
-    comfMax: g.staffing.comfMax ?? 2, comfExtra: (g.staffing.comfExtra ?? 20) / 100,
+    comfMax: g.staffing.comfMax ?? 2, comfExtra: (g.staffing.comfExtra ?? 20) / 100, slbPrime: g.staffing.slbPrime ?? 20, slbCover: g.staffing.slbCover ?? true,
     washOn: g.wash.on && g.wash.washers > 0, washers: g.wash.washers, washDelay: g.wash.delay,
     washSlt: wash("slt").perLoad || 65, washSlb: wash("slb").perLoad || 25, washComf: wash("comf").perLoad || 2, washTc: wash("tc").perLoad || 10,
     cycSlt: wash("slt").cycleMin || 45, cycSlb: wash("slb").cycleMin || 45, cycComf: wash("comf").cycleMin || 60, cycTc: wash("tc").cycleMin || 40,

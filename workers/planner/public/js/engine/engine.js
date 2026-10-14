@@ -175,6 +175,10 @@ export function createEngine(S) {
     const tStart = Math.min(...emps.map(e => e.x.start)), tMax = Math.max(...emps.map(e => e.x.schedEnd + e.x.ot)) + dt;
     let t = tStart;
     const done = k => init[k] - pool[k];
+    // Starch bottoms presses (Neal, Oct 14): it takes a while to get all the presses full again, so each time an SLB press
+    // starts from empty (start of the day, or after sitting empty more than 5 minutes) its first s.slbPrime minutes press
+    // nothing. A press handed straight to someone else stays full and loses nothing.
+    const PRIME = Math.max(0, +s.slbPrime || 0) / 60, prime = {};
     const TL = [[tStart, 0, 0, 0, 0, 0, 0, 0]]; // [time, slt, slb, dct, dcb, tc, comf, asm] finished so far
     const record = (e, stn, frac, pcs) => {
       const from = t, to = t + dt * frac;
@@ -211,7 +215,22 @@ export function createEngine(S) {
       //    the helper station last)
       const order = (a, b) => ((a.pos === "slt2") - (b.pos === "slt2")) || (multi(a.pos) - multi(b.pos)) || ((a.home === "slt2") - (b.home === "slt2"));
       reg.sort(order);
+      // 0) an SLB presser on break: the best-ranked SLB-trained person not on a press of their own (SLB or SLT 1) steps in
+      //    for the whole break so the press never sits empty (Neal, Oct 14), then goes back to their own work
+      if (s.slbCover) for (const st of STATIONS) {
+        if (st.type !== "slb" || occ[st.id] || !has("slb")) continue;
+        const owner = emps.find(e => e.pos === st.id && e.brkS != null && t >= e.brkS - EPS && t < e.brkE - EPS);
+        if (!owner) continue;
+        let c = reg.find(e => e.coverOf === st.id && e.coverTo > t + EPS && !asg.has(e));
+        if (!c) {
+          c = reg.filter(e => !asg.has(e) && !(e.coverTo > t + EPS) && !["slb", "slt"].includes(TYPE_OF[e.pos]) && trained(e.empId, st.id))
+            .sort((a, b) => rankOf(empById(a.empId), st.id) - rankOf(empById(b.empId), st.id))[0];
+          if (c) { c.coverOf = st.id; c.coverTo = owner.brkE; }
+        }
+        if (c) take(c, st.id);
+      }
       for (const e of reg) {
+        if (asg.has(e)) continue;
         if (!e.swapped && okAt(e, e.pos)) { take(e, e.pos); e.home = e.pos; continue; }
         // the SLT 2 helper steps up to SLT 1 while no one's on it (its presser on break or not in yet), then goes back
         // (Neal, Oct 14: Rosenda's break left SLT 1 empty)
@@ -273,11 +292,17 @@ export function createEngine(S) {
       const comfEach = nComf > 1 ? (1 + COMF_EXTRA * (nComf - 1)) / nComf : 1;   // two at the table: each at 60% with +20%
       for (const [e, stn] of asg) {
         let ty = stn === "comf" ? "comf" : POOL_OF(TYPE_OF[stn]); if (ty === "dcb" && !HAS_TC && avl("dcb") <= 1e-4) ty = "tc";
-        const out = stn === "comf" ? r.comf * dt * (HAS_COMF && TYPE_OF.comf === "comf" ? comfEach : 1) : (stn === "slt1" ? r.sltSolo * dt : stn === "slt2" ? (r.sltPair - r.sltSolo) * dt : perHr[ty] * dt);
+        let out = stn === "comf" ? r.comf * dt * (HAS_COMF && TYPE_OF.comf === "comf" ? comfEach : 1) : (stn === "slt1" ? r.sltSolo * dt : stn === "slt2" ? (r.sltPair - r.sltSolo) * dt : perHr[ty] * dt);
+        if (PRIME > 0 && TYPE_OF[stn] === "slb") {
+          const ps = prime[stn] || (prime[stn] = { last: -Infinity, left: 0 });
+          if (t - ps.last > 5 / 60 + EPS) ps.left = PRIME;   // the press sat empty: fill it again
+          ps.last = t + dt;
+          if (ps.left > EPS) { ps.left -= dt; out = 0; }
+        }
         (byPool[ty] = byPool[ty] || []).push({ e, stn, out });
       }
       for (const k in byPool) {
-        const list = byPool[k], tot = list.reduce((a, x) => a + x.out, 0); const f = Math.min(1, avl(k) / tot);
+        const list = byPool[k], tot = list.reduce((a, x) => a + x.out, 0); const f = tot > 0 ? Math.min(1, avl(k) / tot) : 1;
         for (const x of list) record(x.e, x.stn, f, x.out * f);
         pool[k] = Math.max(0, pool[k] - tot * f);
       }

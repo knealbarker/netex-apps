@@ -28,6 +28,8 @@ const GROUPS = [
     ["minPaid", "Minimum paid hours before clock-out", "num", "", { step: 0.25, min: 0, max: 12, unit: "h" }],
     ["comfMax", "People on comforters at once", "num", "Comforters are folded and packaged on one table.", { step: 1, min: 1, max: 4, unit: "people" }],
     ["comfExtra", "Each extra person on comforters adds", "num", "Of one person's speed: 20% means two people do 1.2× as many.", { step: 5, min: 0, max: 100, unit: "%" }],
+    ["slbPrime", "Starch bottoms press start-up", "num", "Pressing time lost each time an SLB press starts from empty (start of day, or after it sat empty). A press that's handed over full loses nothing.", { step: 1, min: 0, max: 90, unit: "min" }],
+    ["slbCover", "Cover starch bottoms breaks", "bool", "While an SLB presser is on break, the best-ranked SLB-trained person free of a press steps in so the press stays full."],
   ] },
   { id: "money", title: "Labor & prices", lead: "Used for labor as a share of revenue. Prices are updated from SMRT's averages when SMRT is connected.", fields: [
     ["payAvg", "Average hourly pay", "num", "", { step: 0.25, min: 0, max: 200, unit: "$/h" }],
