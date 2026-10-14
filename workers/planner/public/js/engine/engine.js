@@ -97,7 +97,8 @@ export function createEngine(S) {
     const out = {};
     if (!s.staggerBreaks) { for (const x of ppl) out[x.id] = x.mid; return out; }
     const step = 0.25;
-    for (const x of ppl) { x.lo = x.start + Math.min(2, x.a / 2); x.hi = Math.max(x.lo, x.start + x.a - Math.min(2, x.a / 2)); }
+    // the earliest a break starts: 3 hours after clocking in (Neal, Oct 13); the latest: 2 hours before the shift ends
+    for (const x of ppl) { x.lo = x.start + Math.min(3, x.a / 2); x.hi = Math.max(x.lo, x.start + x.a - Math.min(2, x.a / 2)); }
     ppl.sort((a, b) => (a.hi - a.lo) - (b.hi - b.lo) || a.mid - b.mid);
     const done = [];
     for (const x of ppl) {

@@ -171,6 +171,10 @@ await t("production day complete: everyone clocked out, or nothing assembled for
   // Cora clocked out at 2:30 for her planned break: not over while she's on it
   eq(M.productionDone(P0({ isToday: true, now: 15.25, clock: open }), local(14.6), { c: { s: 14.5, e: 15 } }), null);
 });
+await t("breaks start at least 3 hours after clocking in", async () => {
+  const X = M.evaluate(staffed());
+  for (const r of X.R.rows) if (r.staffed && r.brkS != null) ok(r.brkS >= r.x.start + 3 - 1e-6, `${r.st.id}: start ${r.x.start} break ${r.brkS}`);
+});
 await t("the Floor replays a published move: it shows the person moving at that time", async () => {
   const F = await import("../public/js/plan/floor.js");
   const P = staffed(); P.crew.dct1 = { ...P.crew.dct1, moves: [{ at: "09:00", to: "slb2" }] };
