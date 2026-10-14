@@ -80,6 +80,13 @@ export async function render(main, ctx) {
     if (!plan.rev && !Object.keys(plan.crew).length && !isPast()) suggest("open");
     drawPage();
     loadChanges();
+    st.tally = null; loadTally();
+  }
+  // the station tablets at the SLB presses (Neal, Oct 14): pairs pressed today, per press and per person
+  async function loadTally() {
+    if (!P0isToday()) { st.tally = null; return drawPresses(); }
+    try { st.tally = await api(`/tally/${pick}`); } catch { /* keep the last */ }
+    drawPresses();
   }
   function isPast() { return pick < st.V.today; }
   function adopt(plan) {
@@ -150,6 +157,7 @@ export async function render(main, ctx) {
   // ------------------------------------------------------------ background refresh
   async function tick() {
     if (!alive()) return stop();
+    loadTally();
     if (!st.dirty && !st.saving) {
       try {
         const p = await api(`/plan/${pick}`);
@@ -188,6 +196,7 @@ export async function render(main, ctx) {
       ${isPast() ? raw(html`<div class="banner info"><b>This day is over.</b> The plan is shown as it was saved (read-only). <a href="#/review?day=${pick}">See how it went in Review</a>.</div>`) : ""}
       <div id="pl-note"></div>
       <section class="pv-neck" id="pl-neck" aria-label="The bottleneck"></section>
+      <section class="pv-presses" id="pl-presses" aria-label="Starch bottoms presses" hidden></section>
       <section class="pv-work" id="pl-work" aria-label="The rest of the work"></section>
       <section class="pv-board" aria-label="Stations">
         <div class="pv-board-head"><h2>Stations</h2><span class="muted small" id="pl-board-hint">${can ? "Tap a person to move them · tap a station to add someone" : ""}</span>
@@ -263,7 +272,7 @@ export async function render(main, ctx) {
     const L = st.L = X.P.isToday ? M.liveSuggestions(X, new Set(st.plan.hidden || [])) : null;
     // the production day is over: what's left waits for later or for a manager, so nothing more is planned (Neal, Oct 13)
     st.over = M.productionDone(X.P, X.P.dp?.D?.lastAsm, M.breaksOf(X.R));
-    drawNote(); drawStatus(X, L); drawNeck(X, L); drawWork(X, L); drawBoard(X, L); drawAway(X.P);
+    drawNote(); drawStatus(X, L); drawNeck(X, L); drawPresses(); drawWork(X, L); drawBoard(X, L); drawAway(X.P);
     const rp = document.getElementById("pl-replan"); if (rp) rp.hidden = !!st.over;
     drawPub(X); saveStatus();
   }
@@ -296,6 +305,24 @@ export async function render(main, ctx) {
   function leftovers(P) {
     const D = P.dp?.D || { done: {} };
     return CATS.map(k => ({ k, n: Math.max(0, Math.round((P.q[k] || 0) - (D.done?.[k] || 0))) })).filter(x => x.n > 0).sort((a, b) => b.n - a.n);
+  }
+
+  // ---- SLB 1 and SLB 2 from the station tablets: green within 10% of the goal, yellow 10-20% under, red past 20% under
+  function drawPresses() {
+    const el = document.getElementById("pl-presses"); if (!el) return;
+    const T = st.tally;
+    if (!T || !P0isToday() || !T.stations.length) { el.hidden = true; el.innerHTML = ""; return; }
+    el.hidden = false;
+    const r1 = v => (v == null ? "—" : v.toFixed(1)), g1 = v => (Number.isInteger(+v) ? String(v) : (+v).toFixed(1));
+    const ago = m => (m == null ? "" : T.now - m < 2 ? "just now" : `${T.now - m} min ago`);
+    el.innerHTML = html`<div class="pr-head"><h2>Starch bottoms presses</h2><span class="muted small">From the station tablets · goal ${g1(T.goal)}/hr${T.total ? ` · ${fmtN(T.total)} pairs pressed today` : ""}</span></div>
+      <div class="pr-grid">${T.stations.map(s => { const S = s.station, others = s.people.filter(p => p.count > 0);
+        return raw(html`<div class="pr-card ${S.color}">
+          <div class="pr-top"><b>${s.label}</b><span>${s.current ? `${s.current.name}${s.current.status === "upcoming" ? ` · from ${hm(s.current.from / 60)}` : ""}` : "No one planned"}</span></div>
+          <div class="pr-nums"><div><b>${fmtN(S.count)}</b><span>pairs</span></div><div><b class="pr-rate">${r1(S.perHour)}</b><span>per hour${S.pct != null ? ` · ${Math.round(S.pct * 100)}%` : ""}</span></div>
+            <div><b class="pr-hr ${S.lastHour ? S.lastHour.color : ""}">${S.lastHour ? r1(S.lastHour.perHour) : "—"}</b><span>last hour</span></div></div>
+          <p class="pr-foot">${S.lastMin == null ? "No counts yet today." : `Last count ${hm(S.lastMin / 60)} · ${ago(S.lastMin)}`}${others.length > 1 ? raw(html`<br>${others.map(p => raw(html`<span class="pr-who c-${p.color}">${first(p.name)} ${p.count} · ${r1(p.perHour)}/hr${p.ownGoal ? ` (goal ${g1(p.goal)})` : ""}</span>`))}`) : ""}</p>
+        </div>`); })}</div>`;
   }
 
   // ---- the bottleneck: starch bottoms (Neal: the main reason for the planner)

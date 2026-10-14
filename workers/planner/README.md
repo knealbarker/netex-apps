@@ -36,6 +36,24 @@ With the `CF_API_TOKEN` secret set, every change also rewrites the Netex users g
   plan and the next work day once, from reports@netexcleaners.com through Email Routing (`SEND_EMAIL` binding).
   Recipients must be verified under Email Routing › Destination addresses.
 
+## Station tablets (`/station`, `src/tally.js`, `public/station/`)
+A tablet at each starch bottoms press (SLB 1, SLB 2) in Fully Kiosk Browser. The manager enters the pairs in each batch
+taken to IAB; the count goes to whoever the saved plan (moves included) has on that station at that moment. The tablet
+unlocks once that person has a punch today, or after a long press on "they're clocked in" (written to Changes today).
+- **Pace** = pairs ÷ hours on the station (plan ∩ time clock), as of the last count; **last hour** = the counts in the hour
+  before it, over the time since the count before those. Green within 10% of the goal, yellow 10–20% under, red more than
+  20% under; more than 10% over, the numbers pulse (faster and bigger up to 40% over).
+- **Goals**: Settings › Station tablets › Station goal (default 20 pairs/h); a person's own SLB goal on Team › Schedule.
+- **Sign-in**: none. Settings › Station tablets › Add a tablet gives a 6-digit code (15 min, once); the tablet then keeps a
+  secret in an HttpOnly cookie (Path=/station, 400 days, renewed on every poll). Only its SHA-256 is stored; Remove cuts it
+  off. Ten wrong codes cancel every waiting code. Cloudflare Access needs a **Bypass** application for
+  `prodplanner.netexcleaners.com/station`; nothing under /station trusts Access, and the rest of the app is unchanged.
+- **Photos**: one small JPEG from the front camera per count (Settings can turn it off), stored in D1
+  (`plan_station_photos`), Admins see them in Review, deleted after Settings' "keep photos" days by the cron.
+  Only /station pages get `camera=(self)`.
+- **Plan** shows SLB 1/SLB 2 tiles; **Review** compares pressed with SMRT's starch bottoms assembled, lists every count
+  (managers add or remove; a count added there goes to whoever was planned on the station at that time).
+
 ## Layout
 - `src/index.js` routes, security headers and the cron; `src/auth.js` sign-in; `src/users.js` users and the Access group.
 - `src/team.js`, `src/settings.js`, `src/import.js`, `src/pieces.js` (SMRT pieces), `src/plan.js` (save/publish),
@@ -50,6 +68,7 @@ Secret: `CF_API_TOKEN` (Account › Access: Organizations, Identity Providers, a
 
 ## Tests (Node 22; Node's SQLite stands in for D1, headless Chromium for the pages)
 - `test/run.mjs` sign-in and users · `test/stage2.mjs` team, settings, import · `test/pieces.mjs` · `test/plan.mjs` · `test/model.mjs`
+- `test/tally.mjs` station tablets (pairing, credit, pace, photos) · `test/station-ui.mjs` the tablet page and its Plan/Review/Settings/Team parts in Chromium
 - `test/review.mjs` · `test/stage5.mjs` pay rates, any day, changes, events, streak, summary email · `test/engine-parity.mjs`
 - Browser: `test/browser.mjs`, `test/review-ui.mjs`, and **`test/e2e.mjs`** — the whole planner end to end,
   offline included. Screenshots (and the printed plan as a PDF) in `test/shots`.

@@ -65,10 +65,15 @@ const GROUPS = [
     ["to", "Send to", "listText", "Comma-separated. Each address must be verified in Cloudflare (Email Routing › Destination addresses) before it can receive mail."],
     ["at", "Send after", "time", "Central time. Pick a time after the plant has gone home."],
   ] },
+  { id: "tally", title: "Station tablets", lead: "A tablet at each starch bottoms press. The manager enters the pairs in each batch taken to IAB; counts go to whoever the plan has on that station. Review checks the day's total against SMRT's assembly.", fields: [
+    ["goal", "Station goal", "num", "Pairs per hour for each SLB press. People without their own SLB goal on Team get this one too. Green within 10% of it, yellow 10–20% under, red more than 20% under; it pulses more than 10% over. (Planning speeds are under Stations & speeds.)", { step: 0.5, min: 1, max: 200, unit: "pairs/h" }],
+    ["photos", "Take a photo with each count", "bool", "The tablet's front camera, one small picture per count. Admins see them in Review. Tell the pressers before turning it on."],
+    ["keepDays", "Keep photos for", "int", "", { min: 1, max: 365, unit: "days" }],
+  ] },
   { id: "business", title: "Business", lead: "", fields: [["name", "Business name", "text", "Printed at the top of the plan."]] },
 ];
 
-const SECTIONS = [["day", "Working day"], ["staffing", "Overtime & moves"], ["money", "Labor & prices"], ["stations", "Stations & speeds"], ["wash", "Washers"], ...(SHUTTLES ? [["runs", "Shuttle runs"]] : []), ["route", "Route deliveries"], ["alerts", SHUTTLES ? "Shuttle alerts" : "Work week"], ["summary", "Daily summary email"], ["smrt", "SMRT mapping"], ["rippling", "Rippling"], ["business", "Business"], ["import", "Import"]];
+const SECTIONS = [["day", "Working day"], ["staffing", "Overtime & moves"], ["money", "Labor & prices"], ["stations", "Stations & speeds"], ["wash", "Washers"], ...(SHUTTLES ? [["runs", "Shuttle runs"]] : []), ["route", "Route deliveries"], ["alerts", SHUTTLES ? "Shuttle alerts" : "Work week"], ["summary", "Daily summary email"], ["tally", "Station tablets"], ["smrt", "SMRT mapping"], ["rippling", "Rippling"], ["business", "Business"], ["import", "Import"]];
 
 export async function render(main, ctx) {
   const { me } = ctx;
@@ -105,6 +110,7 @@ export async function render(main, ctx) {
       <div class="set-actions"><button type="button" class="btn small" id="sumPreview">Preview today's email</button><button type="button" class="btn small" id="sumTest">Send a test now</button></div>` : "",
     rippling: () => canEdit ? html`<div class="sum-status">${raw(ripStatus())}</div>` : "",
     money: () => canEdit && S.status ? html`<div class="sum-status">${raw(payLine())}</div>` : "",
+    tally: () => canEdit ? html`<div id="tabList" class="tab-list"><p class="muted small">Loading tablets…</p></div>` : "",
   };
   const fmtWhen = iso => new Date(iso).toLocaleString(undefined, { weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
   function summaryStatus() {
@@ -223,7 +229,7 @@ export async function render(main, ctx) {
       <nav class="set-nav" aria-label="Settings sections">${SECTIONS.filter(([id]) => id !== "import" || isOwner).map(([id, l]) => raw(html`<a href="#/settings" data-jump="sec-${id}">${l}</a>`))}</nav>
       <div class="set-cards">
         ${["day", "staffing", "money"].map(id => raw(groupCard(GROUPS.find(g => g.id === id))))}${raw(stationsCard())}${raw(groupCard(GROUPS.find(g => g.id === "wash")))}
-        ${SHUTTLES ? raw(runsCard()) : ""}${["route", "alerts", "summary", "smrt", "rippling", "business"].map(id => raw(groupCard(GROUPS.find(g => g.id === id))))}${raw(importCard())}
+        ${SHUTTLES ? raw(runsCard()) : ""}${["route", "alerts", "summary", "tally", "smrt", "rippling", "business"].map(id => raw(groupCard(GROUPS.find(g => g.id === id))))}${raw(importCard())}
       </div>
     </div>`;
 
@@ -263,6 +269,39 @@ export async function render(main, ctx) {
     t.scrollIntoView({ behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth", block: "start" });
     t.querySelector("input:not([disabled]),select:not([disabled])")?.focus({ preventScroll: true });
   }));
+
+  // ---------- station tablets (Admins): pair with a code once; the tablet stays signed in until removed here ----------
+  async function drawTablets() {
+    const box = main.querySelector("#tabList"); if (!box) return;
+    let D;
+    try { D = await api("/station-devices"); } catch (x) { box.innerHTML = html`<p class="muted small">${x.message}</p>`; return; }
+    const seen = d => d.lastSeen ? `seen ${new Date(d.lastSeen).toLocaleString(undefined, { weekday: "short", hour: "numeric", minute: "2-digit" })}` : "not seen yet";
+    box.innerHTML = html`${D.devices.length ? raw(html`<div class="tab-rows">${D.devices.map(d => raw(html`<div class="tab-row">
+        <span class="chip">${d.label}</span><b>${d.name}</b>
+        <span class="muted small">${d.codeUntil ? `waiting for its code (until ${new Date(d.codeUntil).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })})` : d.paired ? `paired · ${seen(d)}` : "not paired"}</span>
+        <span class="tab-act"><button type="button" class="btn ghost small" data-tcode="${d.id}">New code</button><button type="button" class="btn ghost small danger" data-tdel="${d.id}">Remove</button></span></div>`))}</div>`)
+      : raw('<p class="muted small">No tablets yet.</p>')}
+      <div class="set-actions"><button type="button" class="btn small" id="tabAdd">Add a tablet</button></div>
+      <p class="muted small">On the tablet, open <b>prodplanner.netexcleaners.com/station</b> in Fully Kiosk Browser and enter the code. Cloudflare Access must let /station through (a Bypass application); the tablet's own pairing keeps the data private.</p>`;
+    const showCode = (r, label) => openDialog({ title: `Pairing code for ${label}`, submitLabel: "Done",
+      body: html`<p class="dlg-lead">Enter this on the tablet within 15 minutes. It works once.</p><div class="pair-code">${r.code.slice(0, 3)} ${r.code.slice(3)}</div>`, onSubmit: () => drawTablets() });
+    box.querySelector("#tabAdd").addEventListener("click", () => openDialog({
+      title: "Add a station tablet", submitLabel: "Get a code",
+      body: html`<label class="field"><span>Station</span><select class="input" name="station">${D.stations.map(s => raw(html`<option value="${s.code}">${s.label}</option>`))}</select></label>
+        <label class="field"><span>Name <em>(optional)</em></span><input class="input" name="name" maxlength="40" placeholder="SLB 1 tablet"></label>`,
+      async onSubmit(f) { const r = await api("/station-devices", { method: "POST", body: { station: f.station.value, name: f.name.value } }); setTimeout(() => showCode(r, D.stations.find(s => s.code === f.station.value)?.label || ""), 0); },
+    }));
+    box.querySelectorAll("[data-tcode]").forEach(b => b.addEventListener("click", async () => {
+      const d = D.devices.find(x => x.id === b.dataset.tcode);
+      try { showCode(await api(`/station-devices/${d.id}/code`, { method: "POST" }), d.label); } catch (x) { toast(x.message, "bad"); }
+    }));
+    box.querySelectorAll("[data-tdel]").forEach(b => b.addEventListener("click", () => {
+      const d = D.devices.find(x => x.id === b.dataset.tdel);
+      openDialog({ title: `Remove ${d.name}?`, submitLabel: "Remove", body: html`<p class="dlg-lead">The tablet stops working right away. Its counts stay. To use it again, add it and pair it with a new code.</p>`,
+        async onSubmit() { await api(`/station-devices/${d.id}`, { method: "DELETE" }); toast("Tablet removed."); drawTablets(); } });
+    }));
+  }
+  drawTablets();
 
   // dirty tracking + save, per card
   main.querySelectorAll(".set-form").forEach(form => {

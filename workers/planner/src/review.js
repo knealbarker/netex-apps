@@ -10,6 +10,7 @@ import { requireRole, rank } from "./auth.js";
 import { loadGroups, loadRuns } from "./settings.js";
 import { productionIds } from "./team.js";
 import { payRates, laborCost } from "./pay.js";
+import { dayTally } from "./tally.js";
 import { CATS, categorizer, splitOrders, loadOpen, nextWorkDay, prevWorkDay, addDays, localNow, storeToRun, runDeadline } from "./pieces.js";
 
 const DAY = /^\d{4}-\d{2}-\d{2}$/;
@@ -141,6 +142,7 @@ export async function reviewDay(db, env, me, day) {
 
   return { day, today, isToday: day === today, isWorkDay: workDays.includes(weekday(day)), prev: prevWorkDay(day, workDays), next: day < today ? nextWorkDay(day, workDays) : null, nextWork: nextWorkDay(day, workDays),
     done: money ? done : { ...done, revenue: undefined }, due, deadlines, labor, people: vs, planned: planned ? { source: planned.source, at: planned.at || null, by: planned.by || null, metrics: planned.metrics } : null,
+    tally: await dayTally(db, env, day).catch(e => { console.error(JSON.stringify({ job: "review", tallyError: String(e && e.stack || e) })); return null; }),
     followups: await followups(db, env, day), trend: await trend(db, env, day, workDays, departmentId, cat, prices, money ? { payAvg: groups.money.payAvg, rates } : null), money };
 }
 

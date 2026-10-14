@@ -30,7 +30,7 @@ export async function listTeam(db, env, me = null) {
   for (const t of trainings) t.stations = st.filter(x => x.t === t.id).map(x => x.label);
   const people = (await db.prepare(`SELECT p.id, p.first_name AS firstName, p.last_name AS lastName, p.display_name AS displayName,
         p.payroll_id AS payrollId, p.status, pp.usual_start AS usualStart, pp.note,
-        pp.usual_hours AS usualHours, pp.usual_days AS usualDays, pp.leave_by AS leaveBy, pp.leave_note AS leaveNote
+        pp.usual_hours AS usualHours, pp.usual_days AS usualDays, pp.leave_by AS leaveBy, pp.leave_note AS leaveNote, pp.slb_rate AS slbRate
       FROM core_people p LEFT JOIN plan_person_prefs pp ON pp.person_id = p.id
       WHERE p.org_id=? AND p.department_id=? AND p.deleted_at IS NULL
       ORDER BY p.status='active' DESC, COALESCE(p.display_name, p.first_name || ' ' || p.last_name) COLLATE NOCASE`).bind(env.ORG_ID, departmentId).all()).results;
@@ -67,7 +67,7 @@ function personFields(body, current = {}) {
   return { firstName, lastName, displayName, payrollId, usualStart, note, ...scheduleFields(body, current) };
 }
 /** The standing schedule (Neal, Oct 13): usual hours and days, and a "must leave by" time with its reason. */
-const SCHEDULE_KEYS = ["usualStart", "usualHours", "usualDays", "leaveBy", "leaveNote"];
+const SCHEDULE_KEYS = ["usualStart", "usualHours", "usualDays", "leaveBy", "leaveNote", "slbRate"];
 function scheduleFields(body, current = {}) {
   const usualHours = body.usualHours !== undefined ? (body.usualHours === null || body.usualHours === "" ? null : +body.usualHours) : current.usualHours ?? null;
   if (usualHours != null && !(usualHours > 0 && usualHours <= 16)) throw new HttpError(400, "Usual hours must be between 0 and 16.");
@@ -75,7 +75,10 @@ function scheduleFields(body, current = {}) {
   const leaveBy = body.leaveBy !== undefined ? (body.leaveBy || null) : current.leaveBy ?? null;
   if (leaveBy && !TIME.test(leaveBy)) throw new HttpError(400, "Must leave by must be a time like 14:45.");
   const leaveNote = body.leaveNote !== undefined ? (String(body.leaveNote ?? "").trim().slice(0, 120) || null) : current.leaveNote ?? null;
-  return { usualHours, usualDays, leaveBy, leaveNote };
+  // their own SLB goal on the station tablets (pairs per hour); null = the station goal in Settings (Neal, Oct 14)
+  const slbRate = body.slbRate !== undefined ? (body.slbRate === null || body.slbRate === "" ? null : +body.slbRate) : current.slbRate ?? null;
+  if (slbRate != null && !(slbRate >= 1 && slbRate <= 200)) throw new HttpError(400, "SLB goal must be between 1 and 200 pairs an hour.");
+  return { usualHours, usualDays, leaveBy, leaveNote, slbRate };
 }
 
 async function payrollTaken(db, orgId, payrollId, exceptId = "") {
@@ -92,8 +95,8 @@ export async function addPerson(db, env, me, body) {
   await db.batch([
     db.prepare(`INSERT INTO core_people(id, org_id, department_id, home_location_id, first_name, last_name, display_name, payroll_id, updated_by)
       VALUES(?,?,?,?,?,?,?,?,?)`).bind(id, env.ORG_ID, departmentId, locationId, v.firstName, v.lastName, v.displayName, v.payrollId, me.id),
-    db.prepare("INSERT INTO plan_person_prefs(person_id, usual_start, note, usual_hours, usual_days, leave_by, leave_note, updated_by) VALUES(?,?,?,?,?,?,?,?)")
-      .bind(id, v.usualStart, v.note, v.usualHours, v.usualDays, v.leaveBy, v.leaveNote, me.id),
+    db.prepare("INSERT INTO plan_person_prefs(person_id, usual_start, note, usual_hours, usual_days, leave_by, leave_note, slb_rate, updated_by) VALUES(?,?,?,?,?,?,?,?,?)")
+      .bind(id, v.usualStart, v.note, v.usualHours, v.usualDays, v.leaveBy, v.leaveNote, v.slbRate, me.id),
   ]);
   await audit(db, { orgId: env.ORG_ID, userId: me.id, appId: env.APP_ID, entity: "core_people", entityId: id, action: "create", changes: v });
   return { id };
@@ -103,7 +106,7 @@ export async function updatePerson(db, env, me, id, body) {
   // managers keep the standing schedule up to date; names, Rippling ids and status stay with Admins
   requireRole(me, Object.keys(body || {}).every(k => SCHEDULE_KEYS.includes(k)) ? "manager" : "admin");
   const cur = await db.prepare(`SELECT p.first_name AS firstName, p.last_name AS lastName, p.display_name AS displayName, p.payroll_id AS payrollId,
-      p.status, pp.usual_start AS usualStart, pp.note, pp.usual_hours AS usualHours, pp.usual_days AS usualDays, pp.leave_by AS leaveBy, pp.leave_note AS leaveNote FROM core_people p LEFT JOIN plan_person_prefs pp ON pp.person_id=p.id
+      p.status, pp.usual_start AS usualStart, pp.note, pp.usual_hours AS usualHours, pp.usual_days AS usualDays, pp.leave_by AS leaveBy, pp.leave_note AS leaveNote, pp.slb_rate AS slbRate FROM core_people p LEFT JOIN plan_person_prefs pp ON pp.person_id=p.id
       WHERE p.id=? AND p.org_id=? AND p.deleted_at IS NULL`).bind(id, env.ORG_ID).first();
   if (!cur) throw new HttpError(404, "That person isn't on the team list.");
   const v = personFields(body, cur);
@@ -115,10 +118,10 @@ export async function updatePerson(db, env, me, id, body) {
   await db.batch([
     db.prepare(`UPDATE core_people SET first_name=?, last_name=?, display_name=?, payroll_id=?, status=?, left_on=${leftOn === undefined ? "left_on" : "?"},
       updated_at=?, updated_by=?, rev=rev+1 WHERE id=?`).bind(...[v.firstName, v.lastName, v.displayName, v.payrollId, status, ...(leftOn === undefined ? [] : [leftOn]), now, me.id, id]),
-    db.prepare(`INSERT INTO plan_person_prefs(person_id, usual_start, note, usual_hours, usual_days, leave_by, leave_note, updated_by) VALUES(?,?,?,?,?,?,?,?)
+    db.prepare(`INSERT INTO plan_person_prefs(person_id, usual_start, note, usual_hours, usual_days, leave_by, leave_note, slb_rate, updated_by) VALUES(?,?,?,?,?,?,?,?,?)
       ON CONFLICT(person_id) DO UPDATE SET usual_start=excluded.usual_start, note=excluded.note, usual_hours=excluded.usual_hours, usual_days=excluded.usual_days,
-        leave_by=excluded.leave_by, leave_note=excluded.leave_note, updated_at=?, updated_by=excluded.updated_by, rev=rev+1`)
-      .bind(id, v.usualStart, v.note, v.usualHours, v.usualDays, v.leaveBy, v.leaveNote, me.id, now),
+        leave_by=excluded.leave_by, leave_note=excluded.leave_note, slb_rate=excluded.slb_rate, updated_at=?, updated_by=excluded.updated_by, rev=rev+1`)
+      .bind(id, v.usualStart, v.note, v.usualHours, v.usualDays, v.leaveBy, v.leaveNote, v.slbRate, me.id, now),
   ]);
   await audit(db, { orgId: env.ORG_ID, userId: me.id, appId: env.APP_ID, entity: "core_people", entityId: id, action: "update", changes: { ...body } });
   return { id };

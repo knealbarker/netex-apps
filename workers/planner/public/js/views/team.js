@@ -129,7 +129,8 @@ function depthChart(data, active, chart, canEdit) {
 const DAYS = [["1", "Mon"], ["2", "Tue"], ["3", "Wed"], ["4", "Thu"], ["5", "Fri"], ["6", "Sat"], ["0", "Sun"]];
 function schedText(p) {
   const d = p.usualDays ? (p.usualDays === "12345" ? "Mon–Fri" : DAYS.filter(([k]) => p.usualDays.includes(k)).map(([, l]) => l).join(" ")) : "";
-  return [d, p.usualStart ? `in ${clock12(p.usualStart)}` : "", p.usualHours ? `${p.usualHours}h` : "", p.leaveBy ? `leaves by ${clock12(p.leaveBy)}${p.leaveNote ? ` (${p.leaveNote})` : ""}` : ""].filter(Boolean).join(" · ");
+  return [d, p.usualStart ? `in ${clock12(p.usualStart)}` : "", p.usualHours ? `${p.usualHours}h` : "", p.leaveBy ? `leaves by ${clock12(p.leaveBy)}${p.leaveNote ? ` (${p.leaveNote})` : ""}` : "",
+    p.slbRate ? `SLB goal ${p.slbRate}/hr` : ""].filter(Boolean).join(" · ");
 }
 function scheduleDialog(p, done) {
   const days = p.usualDays || "";
@@ -140,12 +141,16 @@ function scheduleDialog(p, done) {
       <div class="two"><label class="field"><span>Usual clock-in</span><input class="input" name="usualStart" type="time" step="300" value="${p.usualStart || ""}"></label>
         <label class="field"><span>Usual hours</span><input class="input" name="usualHours" type="number" min="1" max="16" step="0.25" inputmode="decimal" value="${p.usualHours ?? ""}" placeholder="Settings' full day"></label></div>
       <div class="two"><label class="field"><span>Must leave by <em>(optional)</em></span><input class="input" name="leaveBy" type="time" step="300" value="${p.leaveBy || ""}"></label>
-        <label class="field"><span>Why <em>(managers see this)</em></span><input class="input" name="leaveNote" maxlength="120" value="${p.leaveNote || ""}" placeholder="School pickup"></label></div>`,
+        <label class="field"><span>Why <em>(managers see this)</em></span><input class="input" name="leaveNote" maxlength="120" value="${p.leaveNote || ""}" placeholder="School pickup"></label></div>
+      ${(p.trainings || []).includes("slb") || p.slbRate ? raw(html`<label class="field"><span>SLB goal <em>(pairs per hour on the station tablet)</em></span>
+        <input class="input" name="slbRate" type="number" min="1" max="200" step="0.5" inputmode="decimal" value="${p.slbRate ?? ""}" placeholder="Station goal from Settings">
+        <small class="muted">Their own number turns yellow 10% under it, red 20% under, and pulses 10% over. Blank uses the station goal.</small></label>`) : ""}`,
     onOpen: (f, d) => d.classList.add("sheet"),
     async onSubmit(f) {
       const e = f.elements;
       const body = { usualDays: DAYS.filter(([k]) => e["d" + k].checked).map(([k]) => k).join(""), usualStart: e.usualStart.value || null,
-        usualHours: e.usualHours.value === "" ? null : +e.usualHours.value, leaveBy: e.leaveBy.value || null, leaveNote: e.leaveNote.value };
+        usualHours: e.usualHours.value === "" ? null : +e.usualHours.value, leaveBy: e.leaveBy.value || null, leaveNote: e.leaveNote.value,
+        ...(e.slbRate ? { slbRate: e.slbRate.value === "" ? null : +e.slbRate.value } : {}) };
       await api(`/team/${p.id}`, { method: "PATCH", body }); toast("Schedule saved."); done();
     },
   });

@@ -68,6 +68,7 @@ export async function render(main, ctx) {
       ${D.money && L.avgHours > 0.05 ? raw(html`<p class="muted small rv-note">Labor cost uses each person's pay rate from Rippling; ${fmtH(L.avgHours)} of ${fmtH(L.hours)} ${L.avgHours >= L.hours - 0.05 ? "are" : "is"} costed at the average ${fmt$(L.payAvg)}/h because Rippling hasn't sent a rate for ${L.avgHours >= L.hours - 0.05 ? "anyone yet" : "everyone"}.</p>`) : ""}
       <div class="rv-grid">
         <section class="card pl-card rv-hours"><header class="pl-cardhead"><div><h2>By the hour</h2><p>Pieces assembled in SMRT each hour${D.isToday ? ", so far" : ""}. Assembly runs behind pressing, so spurts follow batches.</p></div></header>${raw(byHour())}</section>
+        ${D.tally && (D.tally.total || D.tally.entries.length || D.isToday) ? raw(html`<section class="card pl-card rv-tally" id="rv-tally"><header class="pl-cardhead"><div><h2>Starch bottoms pressed</h2><p>Counts from the station tablets, checked against SMRT's starch bottoms assembled. Pace is per person on the station, against their SLB goal.</p></div></header>${raw(tallyCard())}</section>`) : ""}
         <section class="card pl-card"><header class="pl-cardhead"><div><h2>Pieces through the day</h2><p>Assembled in SMRT, counted as they happened${D.planned?.metrics?.end != null ? ", against the published plan's pace" : ""}.</p></div></header>${raw(chart())}</section>
         ${SHUTTLES ? raw(html`<section class="card pl-card"><header class="pl-cardhead"><div><h2>Deadlines</h2><p>When the last piece for each was assembled.</p></div></header>${raw(deadlines())}</section>`) : ""}
         <section class="card pl-card"><header class="pl-cardhead"><div><h2>Plan vs. actual</h2><p>${D.planned ? `${D.planned.source === "published" ? `Published${D.planned.by ? ` by ${D.planned.by}` : ""}` : "Saved, not published"}; actual times from Rippling. Differences of 10 minutes or more are shown.` : "No plan was saved for this day."}</p></div></header>${raw(people())}</section>
@@ -84,6 +85,7 @@ export async function render(main, ctx) {
     main.querySelector("#rv-next").addEventListener("click", () => D.next && go(D.next));
     main.querySelector("#rv-date").addEventListener("change", e => { if (e.target.value && e.target.value <= D.today) go(e.target.value); });
     main.querySelectorAll("[data-trend]").forEach(b => { b.addEventListener("click", () => go(b.dataset.trend)); b.addEventListener("keydown", e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); go(b.dataset.trend); } }); });
+    wireTally();
     main.querySelectorAll("form.fu").forEach(f => f.addEventListener("submit", async e => {
       e.preventDefault();
       const resolved = e.submitter?.value === "resolve";
@@ -115,6 +117,50 @@ export async function render(main, ctx) {
     } catch (e) { const box = el(); if (box) box.innerHTML = html`<p class="muted pad">Couldn't work out the next day: ${e.message}</p>`; }
   }
 
+  // the station tablets (Neal, Oct 14): pressed vs. SMRT's assembled, pace per person, every count (photos for Admins)
+  function tallyCard() {
+    const T = D.tally, asm = D.done.q?.slb || 0, diff = T.total - asm, pct = asm ? Math.abs(diff) / asm : null;
+    const r1 = v => (v == null ? "—" : v.toFixed(1)), g1 = v => (Number.isInteger(+v) ? String(v) : (+v).toFixed(1));
+    const check = !T.total ? { c: "", t: D.isToday ? "No counts yet today." : "No counts were entered this day." }
+      : D.isToday ? { c: "", t: diff > 0 ? `${fmtN(diff)} pressed and not assembled yet (at IAB, or done ahead)` : diff < 0 ? `${fmtN(-diff)} more assembled than counted — counts may be missing` : "Every pressed pair is assembled" }
+      : pct <= 0.05 ? { c: "good", t: `Counts match SMRT within ${Math.max(1, Math.round(pct * 100))}%` } : { c: "warn", t: `Counts are ${diff > 0 ? "over" : "under"} SMRT by ${fmtN(Math.abs(diff))} (${Math.round(pct * 100)}%) — a missed or doubled count, or pairs pressed one day and assembled the next` };
+    const rows = T.stations.flatMap(s => s.people.filter(p => p.count > 0).map(p => ({ s, p })));
+    const E = T.entries.slice().reverse();
+    return html`<div class="rv-next">
+        <div><b>${fmtN(T.total)}</b><span>pairs pressed · tablets</span></div>
+        <div><b>${fmtN(asm)}</b><span>starch bottoms assembled · SMRT</span></div>
+        <div><b class="${check.c ? "c-" + check.c : ""}">${T.total ? (diff > 0 ? "+" : "") + fmtN(diff) : "—"}</b><span>difference</span></div>
+      </div>
+      <p class="small ${check.c ? "c-" + check.c : "muted"}">${check.t}</p>
+      ${rows.length ? raw(html`<div class="t-scroll"><table class="rt"><thead><tr><th>Station</th><th>Person</th><th class="num">Pairs</th><th class="num">Hours</th><th class="num">Per hour</th><th class="num">Goal</th></tr></thead><tbody>
+        ${T.stations.map(s => raw(html`<tr class="rt-sub"><td><b>${s.label}</b></td><td class="muted">whole station</td><td class="num"><b>${fmtN(s.station.count)}</b></td><td class="num">${s.station.minutes ? fmtH(s.station.minutes / 60) : "—"}</td>
+          <td class="num c-${tc(s.station.color)}">${r1(s.station.perHour)}</td><td class="num">${g1(s.station.goal)}</td></tr>
+          ${s.people.filter(p => p.count > 0).map(p => raw(html`<tr><td></td><td>${p.name}</td><td class="num">${fmtN(p.count)}</td><td class="num">${p.minutes ? fmtH(p.minutes / 60) : "—"}</td>
+            <td class="num c-${tc(p.color)}">${r1(p.perHour)}${p.pct != null ? raw(html` <small>${Math.round(p.pct * 100)}%</small>`) : ""}</td><td class="num">${g1(p.goal)}${p.ownGoal ? "" : raw(' <small class="muted">station</small>')}</td></tr>`))}`))}
+        </tbody></table></div>`) : ""}
+      ${E.length || can ? raw(html`<details class="rv-counts"${E.length && E.length <= 8 ? " open" : ""}><summary>Every count (${E.length})${can ? " · add or remove" : ""}</summary>
+        <div class="tc-list">${E.map(e => raw(html`<div class="tc-row">
+          ${admin && e.hasPhoto ? raw(html`<a href="/api/tally/photo/${e.id}" target="_blank" rel="noopener" class="tc-ph" title="Photo taken with this count"><img src="/api/tally/photo/${e.id}" alt="Photo at ${hm(e.minute / 60)}" loading="lazy"></a>`) : raw('<span class="tc-ph none"></span>')}
+          <span class="tc-t">${hm(e.minute / 60)}</span><span class="chip">${e.label}</span><b>${e.count}</b><span class="tc-who">${e.name || "No one planned"}${e.source === "manager" ? raw(html` <small class="muted">· added in Review${e.note ? `: ${e.note}` : ""}</small>`) : ""}</span>
+          ${can ? raw(html`<button type="button" class="btn ghost small danger" data-tdel="${e.id}" aria-label="Remove this count">Remove</button>`) : ""}</div>`))}</div>
+        ${can && D.day <= D.today ? raw(html`<form class="tc-add" id="tc-add"><select class="input" name="station" aria-label="Station">${T.stations.map(s => raw(html`<option value="${s.code}">${s.label}</option>`))}</select>
+          <input class="input" type="time" name="at" required aria-label="Pressed by" value="${D.isToday ? new Date().toTimeString().slice(0, 5) : "16:00"}"><input class="input" type="number" name="count" min="1" max="999" required placeholder="Pairs" aria-label="Pairs">
+          <input class="input" name="note" maxlength="200" placeholder="Why (optional)" aria-label="Why"><button class="btn small">Add a count</button></form>
+          <p class="muted small">A count added here goes to whoever the plan had on that station at that time.</p>`) : ""}</details>`) : ""}`;
+  }
+  function tc(c) { return c === "green" ? "good" : c === "yellow" ? "warn" : c === "red" ? "bad" : "none"; }
+  function wireTally() {
+    main.querySelectorAll("[data-tdel]").forEach(b => b.addEventListener("click", async () => {
+      if (!confirm("Remove this count?")) return;
+      try { await api(`/tally/${b.dataset.tdel}`, { method: "DELETE" }); toast("Count removed."); D = await api(`/review/${pick}`); draw(); } catch (x) { toast(x.message, "bad"); }
+    }));
+    main.querySelector("#tc-add")?.addEventListener("submit", async e => {
+      e.preventDefault(); const f = e.currentTarget;
+      try { await api("/tally", { method: "POST", body: { day: D.day, station: f.station.value, at: f.at.value, count: +f.count.value, note: f.note.value } }); toast("Count added."); D = await api(`/review/${pick}`); draw(); }
+      catch (x) { toast(x.message, "bad"); }
+    });
+  }
+
   function chart() {
     const C = D.done.curve;
     if (C.length < 2) return html`<p class="muted pad">${D.isToday ? "Fills in as pieces are assembled." : "No pieces were assembled this day."}</p>`;
@@ -136,7 +182,9 @@ export async function render(main, ctx) {
 
   // pieces assembled per clock hour, starch bottoms first (Neal, Oct 13: watch the bottleneck through the day)
   function byHour() {
-    const H = D.done.byHour || {}, hours = Object.keys(H).map(Number).sort((a, b) => a - b);
+    const H = D.done.byHour || {}, TB = D.tally?.byHour || {};
+    const pressed = h => Object.values(TB).reduce((t, x) => t + (x[h] || 0), 0), hasPressed = !!D.tally?.total;
+    const hours = [...new Set([...Object.keys(H), ...Object.values(TB).flatMap(x => Object.keys(x))].map(Number))].sort((a, b) => a - b);
     if (!hours.length) return html`<p class="muted pad">${D.isToday ? "Fills in as pieces are assembled." : "No pieces were assembled this day."}</p>`;
     const cols = [["slb", "Starch bottoms"], ["slt", "Starch tops"], ["dct", "DC tops"], ["dcb", "DC bottoms"], ["other", "Other"]];
     const v = (h, k) => k === "other" ? (H[h].comf || 0) + (H[h].tc || 0) : (H[h][k] || 0);
@@ -144,11 +192,11 @@ export async function render(main, ctx) {
     const top = Math.max(1, ...all.map(h => (H[h] ? v(h, "slb") : 0)));
     const sum = k => all.reduce((t, h) => t + (H[h] ? v(h, k) : 0), 0);
     const nowH = new Date().getHours();
-    return html`<div class="hr-scroll"><table class="hr-tbl"><thead><tr><th>Hour</th>${cols.map(([, l], i) => raw(html`<th class="${i === 0 ? "neck" : ""}">${l}</th>`))}<th>All</th></tr></thead><tbody>
+    return html`<div class="hr-scroll"><table class="hr-tbl"><thead><tr><th>Hour</th>${hasPressed ? raw('<th class="neck" title="Pairs pressed, from the station tablets">SLB pressed</th>') : ""}${cols.map(([, l], i) => raw(html`<th class="${i === 0 ? "neck" : ""}">${i === 0 && hasPressed ? "SLB assembled" : l}</th>`))}<th>All</th></tr></thead><tbody>
       ${all.map(h => { const row = H[h] || {}; const tot = Object.values(row).reduce((a, b) => a + b, 0), slb = H[h] ? v(h, "slb") : 0;
         return raw(html`<tr class="${D.isToday && h === nowH ? "now" : ""}"><th>${hm(h)}–${hm(h + 1).replace(/ [AP]M/, "")}</th>
-          <td class="neck"><span class="hr-bar" style="--w:${Math.round(slb / top * 100)}%"></span><b>${slb || "·"}</b></td>${cols.slice(1).map(([k]) => raw(html`<td>${(H[h] ? v(h, k) : 0) || "·"}</td>`))}<td>${tot || "·"}</td></tr>`); })}
-      </tbody><tfoot><tr><th>Total</th>${cols.map(([k], i) => raw(html`<td class="${i === 0 ? "neck" : ""}"><b>${fmtN(sum(k))}</b></td>`))}<td><b>${fmtN(D.done.pieces)}</b></td></tr></tfoot></table></div>`;
+          ${hasPressed ? raw(html`<td class="neck"><b>${pressed(h) || "·"}</b></td>`) : ""}<td class="neck"><span class="hr-bar" style="--w:${Math.round(slb / top * 100)}%"></span><b>${slb || "·"}</b></td>${cols.slice(1).map(([k]) => raw(html`<td>${(H[h] ? v(h, k) : 0) || "·"}</td>`))}<td>${tot || "·"}</td></tr>`); })}
+      </tbody><tfoot><tr><th>Total</th>${hasPressed ? raw(html`<td class="neck"><b>${fmtN(D.tally.total)}</b></td>`) : ""}${cols.map(([k], i) => raw(html`<td class="${i === 0 ? "neck" : ""}"><b>${fmtN(sum(k))}</b></td>`))}<td><b>${fmtN(D.done.pieces)}</b></td></tr></tfoot></table></div>`;
   }
   // today: orders past their due time, and finished orders not marked ready (moved here from the Plan, Oct 13)
   async function orders() {

@@ -935,3 +935,44 @@ dialog.sheet .dlg-body { max-height: min(70vh, 640px); overflow: auto; }
 .dc-cell.rx, .dc-ro.rx { background: var(--card2); color: var(--text); }
 .dc-cell:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .dc-cell:disabled { opacity: .5; }
+
+/* Settings › Station tablets */
+.tab-rows { display: grid; gap: 8px; margin-bottom: 10px; }
+.tab-row { display: grid; grid-template-columns: auto auto 1fr auto; align-items: center; gap: 10px; padding: 10px 12px; border: 1px solid var(--line2); border-radius: 11px; background: var(--bg2); }
+.tab-act { display: flex; gap: 6px; }
+.pair-code { font-size: 44px; font-weight: 800; letter-spacing: .12em; text-align: center; padding: 14px; border-radius: 12px; background: var(--bg2); border: 1px solid var(--line2); font-feature-settings: "tnum" 1; }
+@media (max-width: 640px) { .tab-row { grid-template-columns: auto 1fr; } .tab-row .muted, .tab-act { grid-column: 1 / -1; } }
+
+/* Plan › Starch bottoms presses (station tablets): colored by pace against the goal */
+.pv-presses { margin-bottom: 12px; }
+.pr-head { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; margin: 2px 2px 8px; }
+.pr-head h2 { margin: 0; font-size: 17px; }
+.pr-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 10px; }
+.pr-card { --c: var(--line2); border-radius: var(--radius); border: 1px solid var(--line2); border-left: 6px solid var(--c); background: var(--card2); padding: 12px 14px; display: grid; gap: 8px; }
+.pr-card.green { --c: #16a34a; } .pr-card.yellow { --c: #eab308; } .pr-card.red { --c: #dc2626; }
+.pr-top { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
+.pr-top b { font-size: 16px; } .pr-top span { color: var(--muted); font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pr-nums { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
+.pr-nums div { display: flex; flex-direction: column; min-width: 0; }
+.pr-nums b { font-size: 26px; font-weight: 800; letter-spacing: -.02em; }
+.pr-nums span { font-size: 12.5px; color: var(--muted); }
+.pr-card.green .pr-rate { color: #16a34a; } .pr-card.yellow .pr-rate { color: #ca8a04; } .pr-card.red .pr-rate { color: #dc2626; }
+.pr-hr.green { color: #16a34a; } .pr-hr.yellow { color: #ca8a04; } .pr-hr.red { color: #dc2626; }
+.pr-foot { margin: 0; font-size: 13px; color: var(--muted); line-height: 1.6; }
+.pr-who { display: inline-block; margin-right: 10px; font-weight: 600; }
+.pr-who.c-green { color: #16a34a; } .pr-who.c-yellow { color: #ca8a04; } .pr-who.c-red { color: #dc2626; }
+
+/* Review › Starch bottoms pressed */
+.rv-tally .c-none { color: inherit; }
+.rv-counts { margin-top: 10px; }
+.rv-counts summary { cursor: pointer; font-weight: 600; padding: 6px 0; }
+.tc-list { display: grid; gap: 6px; margin: 8px 0; }
+.tc-row { display: grid; grid-template-columns: 52px 72px auto 40px minmax(0, 1fr) auto; align-items: center; gap: 10px; padding: 6px 8px; border: 1px solid var(--line2); border-radius: 10px; background: var(--bg2); }
+.tc-ph { width: 52px; height: 39px; border-radius: 6px; overflow: hidden; display: block; background: var(--card2); }
+.tc-ph img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.tc-ph.none { opacity: .4; }
+.tc-t { font-variant-numeric: tabular-nums; color: var(--muted); }
+.tc-who { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tc-add { display: grid; grid-template-columns: 110px 120px 90px minmax(0, 1fr) auto; gap: 8px; margin-top: 8px; }
+.rt tr.rt-sub td { border-top: 1px solid var(--line2); }
+@media (max-width: 700px) { .tc-row { grid-template-columns: 52px 60px auto 36px minmax(0, 1fr); } .tc-row .btn { grid-column: 1 / -1; } .tc-add { grid-template-columns: 1fr 1fr; } }
