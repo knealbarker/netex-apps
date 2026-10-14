@@ -360,10 +360,14 @@ export async function render(main, ctx) {
     const now = P.isToday && P.now != null ? P.now : null;
     // people: clocked out (gray from then on), not clocked in yet, on break
     const info = {}; for (const code of Object.keys(st.crew)) { const pi = personInfo(X, code); if (pi) info[pi.id] = pi; }
-    const all = rows.flatMap(g => g.lanes.flatMap(l => l.bars));
-    let a = all.length ? Math.floor(Math.min(...all.map(b => b.from))) : (parseTime(s.defStart) ?? 7), b = all.length ? Math.ceil(Math.max(...all.map(b => b.to))) : a + 9;
-    if (now != null) { a = Math.min(a, Math.floor(now)); b = Math.max(b, Math.ceil(now + 0.01)); }
-    if (b - a < 6) b = a + 6;
+    // 5 AM to 4 PM, wider only for real production clock time today: an earlier clock-in, or someone still on (or out) later (Neal, Oct 13)
+    let a = 5, b = 16;
+    if (P.isToday) for (const c of P.clock || []) {
+      const h = x => { const t = String(x).slice(11, 16).split(":"); return +t[0] + (+t[1] || 0) / 60; };
+      a = Math.min(a, Math.floor(h(c.clockIn)));
+      const end = c.clockOut ? h(c.clockOut) : now; if (end != null) b = Math.max(b, Math.ceil(end + 0.01));
+    }
+    rows.forEach(g => g.lanes.forEach(l => { l.bars = l.bars.map(x => ({ ...x, from: Math.max(a, x.from), to: Math.min(b, x.to) })).filter(x => x.to > x.from + 0.01); }));
     const q = h => Math.round(h * 4) / 4; // bars land on the 15-minute grid
     const pct = h => ((h - a) / (b - a) * 100).toFixed(3) + "%", wid = (f, t) => ((t - f) / (b - a) * 100).toFixed(3) + "%";
     const ticks = []; for (let t = a; t < b; t++) ticks.push(html`<span style="left:${pct(t)}">${(t % 12) || 12}${t === 12 ? raw("<small>PM</small>") : t === a ? raw(`<small>${t < 12 ? "AM" : "PM"}</small>`) : ""}</span>`);
