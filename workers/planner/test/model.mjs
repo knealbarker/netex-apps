@@ -87,6 +87,32 @@ await t("empty stations: SLT 2 is left empty first, then the 2nd assembly spot; 
   eq([r2.crew.slt1.emp, r2.crew.slt2.emp], ["a", "b"]);
   ok(POS.length > 0);
 });
+await t("depth chart (Neal's, Oct 13) on Monday 10/12 at 5 AM: #1s on their stations, SLB first, Maria covers SLB 2 until Diana", async () => {
+  const CH = { slt1: ["rosenda", "maria", "isela"], slt2: ["maria", "lupe", "diana"], slb: ["carnell", "diana", "maria", "betty"],
+    dct: ["marina", "betty", "lupe", "maria", "diana", "gaby"], dcb: ["gaby", "betty", "diana"], iab1: ["isela", "kosi"],
+    iab2: ["kosi", "isela", "maria", "roderick", "marina", "betty"], slo: ["roderick"], dco: ["gabriel"],
+    comf: ["maria", "marina", "betty", "diana", "gaby", "kosi", "rosenda"], tc: ["gaby", "betty"] };
+  const start = { rosenda: "04:48", maria: "05:36", isela: "07:48", lupe: "05:43", diana: "07:30", carnell: "05:30", betty: "07:00",
+    marina: "05:36", gaby: "05:30", kosi: "07:30", roderick: "03:48", gabriel: "05:48" };
+  const ppl = Object.keys(start).map(id => {
+    const depth = {}; for (const [tr, L] of Object.entries(CH)) if (L.includes(id)) depth[tr] = L.indexOf(id) + 1;
+    return { id, name: id, trainings: Object.keys(depth), depth, start: start[id] };
+  });
+  const q = { dct: 204, dcb: 83, slt: 194, slb: 160, comf: 2, tc: 15 };
+  const { createEngine } = await import("../public/js/engine/engine.js");
+  const E = createEngine({ ...s, q, crew: M.blankCrew(pos.stations.concat(pos.ops), s), stations: pos.stations, ops: pos.ops, people: ppl, trainingOf: pos.trainingOf,
+    rates: { ...s.rates, slb: 20 } });
+  const r = E.assign(ppl, { q, startOf: e => e.start });
+  const at = Object.fromEntries(Object.entries(r.crew).filter(([, c]) => c.emp).map(([k, c]) => [k, c.emp]));
+  eq(at, { slt1: "rosenda", slt2: "maria", slb1: "carnell", slb2: "diana", dct1: "marina", dct2: "betty", dct3: "lupe", dcb1: "gaby",
+    asm1: "isela", asm2: "kosi", slo: "roderick", dco: "gabriel" }, "stations");
+  eq(r.crew.slt2.moves, [{ at: "05:35", to: "slb2" }, { at: "07:30", to: "slt2" }], "Maria covers SLB 2");
+  eq(r.crew.dct3.moves, [{ at: "05:45", to: "dct2" }, { at: "07:00", to: "dct3" }], "Lupe covers DCT 2 until Betty");
+  ok(!r.crew.comf.emp && !r.crew.tc.emp, "comforters and tablecloths aren't starting stations");
+  // Diana out: Maria (SLB #3) takes SLB 2 for the day; Lupe (SLT 2 #2) gets SLT 2
+  const r2 = E.assign(ppl.filter(e => e.id !== "diana"), { q, startOf: e => e.start });
+  eq([r2.crew.slb2.emp, r2.crew.slt2.emp], ["maria", "lupe"]);
+});
 await t("auto-assign keeps hours and hard stops, and uses today's Rippling clock-ins", async () => {
   const P = P0({ isToday: true, now: 6, clock: [{ personId: "c", clockIn: "2026-10-12T06:12:00-05:00" }] });
   P.crew.dct2 = { emp: "c", start: "06:00", hrs: 6, stop: "13:00", source: "user" };

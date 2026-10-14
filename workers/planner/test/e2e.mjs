@@ -108,17 +108,18 @@ await t("Users: add a manager who signs in with a phone number only", async () =
   await p.waitForSelector('.urow:has-text("Pat Phone")');
   ok(await p.isVisible('.urow:has-text("Pat Phone"):has-text("(903) 555-0142")'), "phone shown");
 });
-await t("Team: pay rates shown to the Owner; Order from history puts Gus on DCT first", async () => {
+await t("Team: pay rates shown to the Owner; the station depth chart sets Gus as DCT #1", async () => {
   await p.goto(url + "/#/team"); await p.waitForSelector(".trow");
   ok(await p.isVisible('.trow:has-text("Ana Test") >> text=$15.00/h'), "Ana's rate");
   ok(await p.isVisible('.trow:has-text("Hilda Test") >> text=no pay rate yet'));
-  await p.click("#fromHistory"); await p.waitForSelector("dialog .aa");
-  ok(await p.isVisible('dialog .aa:has-text("Gus Test")'), "Gus suggested");
-  await shot(p, "e1-order-from-history.png", false);
-  await p.click('dialog button[type="submit"]');
-  await p.waitForFunction(() => !document.querySelector("dialog"));
+  const g0 = (await api("GET", "/team")).body.people.find(x => x.id === ids.Gus);
+  if (!g0.trainings.includes("dct")) await api("PUT", `/team/${ids.Gus}/trainings`, { trainings: [...g0.trainings, "dct"] });
+  await p.goto(url + "/#/team"); await p.waitForSelector(`#dc-dct-${ids.Gus}`);
+  await p.selectOption(`#dc-dct-${ids.Gus}`, "1");
+  await p.waitForFunction(i => document.querySelector(`#dc-dct-${i}`)?.classList.contains("r1"), ids.Gus);
+  await shot(p, "e1-depth-chart.png", false);
   const g = (await api("GET", "/team")).body.people.find(x => x.id === ids.Gus);
-  ok(g.trainings[0] === "dct", JSON.stringify(g.trainings));
+  ok(g.depth.dct === 1, JSON.stringify(g.depth));
 });
 await t("Settings: summary email card with recipients, preview, Rippling pay-rate status, notifications", async () => {
   await p.goto(url + "/#/settings"); await p.waitForSelector("#sec-summary");

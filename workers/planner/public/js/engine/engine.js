@@ -47,7 +47,13 @@ export function createEngine(S) {
   const empById = id => peopleById.get(id) || null;
   // rank = position in the person's ordered training list (1 = first choice), 0 = not trained
   // (S.rankOf can replace this, e.g. to replay the desktop's per-station ranks in the parity tests)
-  const rankOf = S.rankOf || ((e, stId) => { if (!e || !e.trainings) return 0; const t = S.trainingOf[stId]; const i = t ? e.trainings.indexOf(t) : -1; return i < 0 ? 0 : i + 1; });
+  // Station depth chart (Neal, Oct 13): each training (SLB, DCT, IAB 1, ...) has ONE ordered list of people: #1, #2, #3.
+  // rank = the person's place on that list (0 = not trained). People's `depth` {training: rank} comes from the Team
+  // screen; without it (old data, tests) the list is ordered by each person's own training order.
+  const DEPTH = {};
+  (S.people || []).forEach((p, i) => (p.trainings || []).forEach((t, k) => (DEPTH[t] = DEPTH[t] || []).push({ id: p.id, k: p.depth && p.depth[t] ? p.depth[t] : 1000 + k, i })));
+  for (const t of Object.keys(DEPTH)) DEPTH[t] = DEPTH[t].sort((a, b) => a.k - b.k || a.i - b.i).map(x => x.id);
+  const rankOf = S.rankOf || ((e, stId) => { if (!e || !e.trainings) return 0; const t = S.trainingOf[stId]; if (!t || !e.trainings.includes(t)) return 0; const i = (DEPTH[t] || []).indexOf(e.id); return i < 0 ? e.trainings.indexOf(t) + 1 : i + 1; });
   const trained = (empId, stId) => rankOf(empById(empId), stId) > 0;
   const TYPE_OF = Object.fromEntries(STATIONS.map(x => [x.id, x.type]));
   const POOL_OF = t => (t === "slt2" ? "slt" : t);
@@ -359,35 +365,80 @@ export function createEngine(S) {
     for (const o of OPS) need[o.id] = 100; // operators always staffed when someone can run them
     return need;
   }
-  /** Puts people on stations: highest-ranked first, busiest stations first (optionally favouring who usually works where). */
+  /**
+   * Puts people on stations from the station depth chart (Neal, Oct 13):
+   *  1. Operators first; with more starch bottoms than one presser can do in a day, both SLB presses next.
+   *  2. Every other station with work, busiest first. Each station gets its #1; a station whose #1 is out or already
+   *     placed gets the best-ranked person still free (#2, #3, ...).
+   *  3. Comforters and Tablecloths aren't starting stations: people move there later, when the washers have them ready.
+   *  4. SLT 2 opens when starch tops are more than one press-day, or to take a spare person (by SLT 2 rank).
+   *  5. A #1 still free goes to their own station when that kind of work exists today (IAB 2 while IAB 1 has the assembly).
+   *  6. Someone in early covers a late person's station until they arrive (a planned move): SLB first when it's heavy.
+   * `share` is accepted for the old callers but no longer used: the depth chart replaces "where they usually work".
+   */
   function assign(people, { q = s.q, share = null, startOf = null } = {}) {
-    const need = stationNeed(q), posts = POS, n = people.length + posts.length, BIG = 1e9, cost = [];
-    // Which stations to leave empty when there aren't enough people (Neal, Oct 13): SLT 2 first, unless starch tops need the
-    // pair to finish in the day; then the second assembly station (bagging can catch up). With lots of starch bottoms
-    // (more than one press-day) both SLB presses are filled first.
-    const day = s.fullDay || 7.5, r = s.rates, asm = STATIONS.filter(x => x.type === "asm");
+    void share;
+    const need = stationNeed(q), day = s.fullDay || 7.5, r = s.rates;
     const lotsSlb = (q.slb || 0) / r.slb > day, sltPair = (q.slt || 0) > r.sltSolo * day;
-    const prio = p => p.type === "slb" && lotsSlb ? 40 : p.type === "slt2" ? (sltPair ? 0 : -40) : p.type === "asm" && asm.indexOf(p) > 0 ? -20 : 0;
-    for (let i = 0; i < n; i++) {
-      const row = [];
-      for (let j = 0; j < n; j++) {
-        if (i >= people.length || j >= posts.length) { row.push(0); continue; }
-        const e = people[i], rk = rankOf(e, posts[j].id);
-        if (!rk) { row.push(BIG); continue; }
-        const w = need[posts[j].id] || 0, h = share ? share(e, posts[j].id) : 0, r3 = Math.min(rk, 3);
-        const deep = Math.max(0, rk - 3) * 0.5; // 4th, 5th ... choices rank just below 3rd
-        row.push(w <= 0.01 ? -1 + r3 * 0.1 - h * 0.5 + deep * 0.1 : Math.min(-2, -(w * 10 + (4 - r3) * 12 + h * 25 + prio(posts[j])) + deep));
-      }
-      cost.push(row);
+    const ids = new Set(people.map(e => e.id)), byId = new Map(people.map(e => [e.id, e]));
+    const startH = e => parseTime((startOf && startOf(e)) || e.start || s.defStart) ?? 7;
+    const listOf = stId => { const t = S.trainingOf[stId]; return t ? (DEPTH[t] || []).filter(id => ids.has(id)) : []; };
+    const typeWork = ty => STATIONS.filter(x => x.type === ty).reduce((t, x) => t + (need[x.id] || 0), 0);
+    const later = st => (HAS_COMF && st.type === "comf") || (HAS_TC && st.type === "tc");
+    const open = POS.filter(p => p.type === "ops" || (!later(p) && (p.type === "slt2" ? sltPair : (need[p.id] || 0) > 0.01)));
+    const busiest = (a, b) => (need[b.id] || 0) - (need[a.id] || 0) || POS.indexOf(a) - POS.indexOf(b);
+    const phases = [open.filter(p => p.type === "ops"), open.filter(p => lotsSlb && p.type === "slb"), open.filter(p => p.type !== "ops" && !(lotsSlb && p.type === "slb")).sort(busiest)];
+    const at = {}, why = {}, used = new Set();
+    const put = (stId, id, how) => { at[stId] = id; used.add(id); why[stId] = how; };
+    for (const ph of phases) {
+      for (const p of ph) { const id = listOf(p.id)[0]; if (id && !used.has(id)) put(p.id, id, "1st"); }
+      for (const p of ph) if (!at[p.id]) { const L = listOf(p.id), i = L.findIndex(id => !used.has(id)); if (i >= 0) put(p.id, L[i], "next"); }
     }
-    const pick = people.length ? hungarian(cost) : [];
-    const crew = Object.fromEntries(POS.map(p => [p.id, { emp: "", hrs: s.fullDay, start: s.defStart, stop: "" }])), placed = [], left = [];
-    people.forEach((e, i) => {
-      const j = pick[i];
-      if (j == null || j < 0 || j >= posts.length || cost[i][j] >= BIG || ((need[posts[j].id] || 0) <= 0.01 && cost[i][j] > -1 + 0.5)) { left.push(e); return; }
-      crew[posts[j].id] = { emp: e.id, start: (startOf && startOf(e)) || e.start || s.defStart, hrs: s.fullDay, stop: "" };
-      placed.push({ e, st: posts[j], rk: rankOf(e, posts[j].id) });
-    });
+    // a #1 still free: their own station when that kind of work exists today
+    for (const e of people) {
+      if (used.has(e.id)) continue;
+      const own = STATIONS.find(p => !at[p.id] && !later(p) && p.type !== "slt2" && listOf(p.id)[0] === e.id && typeWork(p.type) > 0.01);
+      if (own) put(own.id, e.id, "own");
+    }
+    // SLT 2 takes a spare person (in SLT 2 order) when there are starch tops at all
+    const slt2 = STATIONS.find(p => p.type === "slt2");
+    if (slt2 && !at[slt2.id] && (q.slt || 0) > 0) { const id = listOf(slt2.id).find(x => !used.has(x)); if (id) put(slt2.id, id, "spare"); }
+    const crew = Object.fromEntries(POS.map(p => [p.id, { emp: "", hrs: s.fullDay, start: s.defStart, stop: "" }])), placed = [];
+    for (const [stId, id] of Object.entries(at)) {
+      const e = byId.get(id);
+      crew[stId] = { emp: id, start: (startOf && startOf(e)) || e.start || s.defStart, hrs: s.fullDay, stop: "" };
+      placed.push({ e, st: POS.find(p => p.id === stId), rk: rankOf(e, stId), how: why[stId] });
+    }
+    // cover until arrival: an early person on the late person's list holds the station, then goes to their own spot
+    const coverable = Object.entries(at).filter(([stId]) => STATIONS.some(p => p.id === stId) && (need[stId] || 0) > 0.01);
+    const coverFor = (e, onlySlb) => {
+      let best = null;
+      for (const [stId, id] of coverable) {
+        if (id === e.id || !rankOf(e, stId) || (onlySlb && TYPE_OF[stId] !== "slb")) continue;
+        if (Object.values(crew).some(c => (c.moves || []).some(m => m.to === stId))) continue;   // already covered
+        const gap = startH(byId.get(id)) - startH(e);
+        if (gap >= 0.5 - EPS && (!best || gap > best.gap)) best = { stId, id, gap };
+      }
+      return best;
+    };
+    // SLT 2's person covers a late SLB presser when starch bottoms are heavy (Neal: getting SLB covered comes first)
+    if (slt2 && at[slt2.id] && lotsSlb) {
+      const e = byId.get(at[slt2.id]), c = coverFor(e, true);
+      if (c) crew[slt2.id].moves = [{ at: hhmm(startH(e)), to: c.stId }, { at: hhmm(startH(byId.get(c.id))), to: slt2.id }];
+    }
+    // anyone still without a station: covers a late person's station from an empty station of their own
+    const left = [];
+    for (const e of people) {
+      if (used.has(e.id)) continue;
+      const c = coverFor(e, false);
+      const home = c && STATIONS.find(p => !crew[p.id].emp && !later(p) && TYPE_OF[p.id] === TYPE_OF[c.stId] && rankOf(e, p.id))
+        || c && STATIONS.find(p => !crew[p.id].emp && !later(p) && rankOf(e, p.id));
+      if (c && home) {
+        crew[home.id] = { emp: e.id, start: (startOf && startOf(e)) || e.start || s.defStart, hrs: s.fullDay, stop: "",
+          moves: [{ at: hhmm(startH(e)), to: c.stId }, { at: hhmm(startH(byId.get(c.id))), to: home.id }] };
+        used.add(e.id); placed.push({ e, st: home, rk: rankOf(e, home.id), how: "cover" });
+      } else left.push(e);
+    }
     return { crew, placed, left };
   }
 

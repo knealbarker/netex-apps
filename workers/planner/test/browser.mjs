@@ -153,24 +153,37 @@ await t("Settings › Import: the Owner imports the desktop files", async () => 
   await p.waitForSelector("#sec-import .import-result:not([hidden])");
   ok(/3 people added/.test(await p.textContent("#sec-import .import-result")), await p.textContent("#sec-import .import-result"));
 });
-await t("Team: each person shows trainings in order; DCT 1-3 count as one", async () => {
+await t("Team: each person shows their rank at each station; DCT 1-3 count as one", async () => {
   await p.goto(url + "/#/team");
   await p.waitForSelector(".team-list");
   const beto = await p.locator('.trow:has-text("Beto Dos") .tchip').allTextContents();
-  ok(JSON.stringify(beto) === JSON.stringify(["1DCT", "2DCB"]), JSON.stringify(beto));
+  ok(JSON.stringify(beto) === JSON.stringify(["1DCT", "1DCB"]), JSON.stringify(beto));
   await p.screenshot({ path: join(SHOTS, "9-team.png") });
 });
-await t("Team: trainings editor reorders, removes and adds, then saves", async () => {
+await t("Team: trainings editor removes and adds, then saves (new ones go to the bottom of that station's list)", async () => {
+  const before = (await (await p.request.get(url + "/api/team")).json()).people.find(x => x.name === "Ana Uno").trainings;
   await p.click('.trow:has-text("Ana Uno") [data-train]');
   await p.waitForSelector("dialog .tlist");
-  await p.click('dialog [data-down="0"]');               // SLT 1 below IAB 1
-  await p.click('dialog .tadd [data-add="dct"]');        // add DCT at the end
+  await p.click('dialog [data-del="0"]');                // drop the first one
+  await p.click('dialog .tadd [data-add="dct"]');        // add DCT
   await p.locator("dialog").screenshot({ path: join(SHOTS, "9b-trainings.png") });
   await p.click('dialog button[type="submit"]');
   await p.waitForSelector("dialog", { state: "detached" });
   const team = await (await p.request.get(url + "/api/team")).json();
-  const ana = team.people.find(x => x.name === "Ana Uno").trainings;
-  ok(JSON.stringify(ana) === JSON.stringify(["iab1", "slt1", "dco", "slb", "dct"]), JSON.stringify(ana));
+  const ana = team.people.find(x => x.name === "Ana Uno");
+  ok(JSON.stringify(ana.trainings.slice().sort()) === JSON.stringify([...before.slice(1), "dct"].sort()), JSON.stringify(ana.trainings));
+  const dct = team.people.filter(x => x.trainings.includes("dct")).length;
+  ok(ana.depth.dct === dct, "Ana at the bottom of DCT: " + JSON.stringify(ana.depth));
+});
+await t("Team: depth chart: picking #1 for Ana on DCT moves everyone else down one", async () => {
+  await p.waitForSelector(".depth .dc");
+  const id = (await (await p.request.get(url + "/api/team")).json()).people.find(x => x.name === "Ana Uno").id;
+  await p.selectOption(`#dc-dct-${id}`, "1");
+  await p.waitForFunction(i => document.querySelector(`#dc-dct-${i}`)?.classList.contains("r1"), id);
+  const team = await (await p.request.get(url + "/api/team")).json();
+  const ranks = team.people.filter(x => x.trainings.includes("dct")).map(x => x.depth.dct).sort();
+  ok(team.people.find(x => x.id === id).depth.dct === 1 && JSON.stringify(ranks) === JSON.stringify(ranks.map((_, i) => i + 1)), JSON.stringify(ranks));
+  await p.locator(".depth").screenshot({ path: join(SHOTS, "9e-depth-chart.png") });
 });
 await t("Team: picking a training in the strip sorts people by who runs it best", async () => {
   await p.click('[data-focus="slb"]');

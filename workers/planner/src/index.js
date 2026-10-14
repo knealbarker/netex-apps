@@ -5,7 +5,7 @@ import { listUsers, createUser, updateUser, syncAccessGroup } from "./users.js";
 import { requireRole } from "./auth.js";
 import { HttpError, json, readJson } from "./util.js";
 import { allSettings, saveGroup, saveProduction, saveRuns, saveBoardOrder } from "./settings.js";
-import { listTeam, addPerson, updatePerson, setTrainings, teamHistory } from "./team.js";
+import { listTeam, setChart, addPerson, updatePerson, setTrainings, teamHistory } from "./team.js";
 import { importDesktop } from "./import.js";
 import { piecesView } from "./pieces.js";
 import { loadPlan, savePlan, publishPlan, addCallout, removeCallout, publishedPlan } from "./plan.js";
@@ -53,6 +53,7 @@ const routes = [
   ["GET", /^\/api\/team\/history$/, async (req, env, me) => json(await teamHistory(env.DB, env, me))],
   ["POST", /^\/api\/team$/, async (req, env, me) => json(await addPerson(env.DB, env, me, await readJson(req)), 201)],
   ["PATCH", /^\/api\/team\/([0-9A-Z]{26})$/, async (req, env, me, m) => json(await updatePerson(env.DB, env, me, m[1], await readJson(req)))],
+  ["PUT", /^\/api\/team\/chart\/([a-z0-9_]{1,20})$/, async (req, env, me, m) => json(await setChart(env.DB, env, me, m[1], (await readJson(req)).people))],
   ["PUT", /^\/api\/team\/([0-9A-Z]{26})\/trainings$/, async (req, env, me, m) => json(await setTrainings(env.DB, env, me, m[1], (await readJson(req)).trainings))],
   ["POST", /^\/api\/import\/desktop$/, async (req, env, me) => json(await importDesktop(env.DB, env, me, await readJson(req)))],
   ["GET", /^\/api\/pieces$/, async (req, env) => { const d = new URL(req.url).searchParams.get("day"); return json(await piecesView(env.DB, env, { day: /^\d{4}-\d{2}-\d{2}$/.test(d || "") ? d : null })); }],

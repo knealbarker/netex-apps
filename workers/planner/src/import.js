@@ -6,7 +6,7 @@
 import { HttpError, ulid, nowIso, audit } from "./util.js";
 import { requireRole } from "./auth.js";
 import { loadGroups, validateGroup, putGroupStmt, productionStmts, runsStmts } from "./settings.js";
-import { productionIds, trainingStmts } from "./team.js";
+import { productionIds, importTrainingStmts } from "./team.js";
 
 const CATS = ["dct", "dcb", "slt", "slb", "comf", "tc"];
 const DAY = /^\d{4}-\d{2}-\d{2}$/;
@@ -124,7 +124,7 @@ export async function importDesktop(db, env, me, body) {
       if (!cur || rank < cur.rank) best.set(tr.t, { rank, sort: tr.sort });
     }
     const list = [...best.entries()].sort((a, b) => a[1].rank - b[1].rank || a[1].sort - b[1].sort).map(([t]) => t);
-    stmts.push(...trainingStmts(db, pid, list, me.id)); // the desktop list is the whole truth for these people
+    stmts.push(...importTrainingStmts(db, pid, list, me.id)); // the desktop list is the whole truth for these people
     summary.trainings += list.length;
   }
 

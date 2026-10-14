@@ -25,11 +25,12 @@ let pick = null; // the day being looked at, kept while moving between sections
 
 // What each button at the top of the Plan does (the "?" next to it opens this).
 const HELP = {
-  suggest: { title: "Suggest from history", body: `<p>Builds a whole crew for this day from what usually happens on this weekday:</p>
-    <ul><li><b>Who:</b> people who worked at least half of the last 8 same weekdays (from Rippling; falls back to the last two weeks).</li>
+  suggest: { title: "Suggest from history", body: `<p>Builds a whole crew for this day:</p>
+    <ul><li><b>Who:</b> everyone on Team who isn't marked <b>out</b> (and whose usual days include this day).</li>
     <li><b>When:</b> each person's usual clock-in for that weekday. Anyone marked late on Team starts at their late time.</li>
-    <li><b>Where:</b> the stations they're usually on, balanced against where today's pieces are.</li>
-    <li>People marked <b>out</b> on Team are left off.</li></ul>
+    <li><b>Where:</b> the station depth chart on Team. Operators first; with more starch bottoms than one presser can do, both SLB presses next; then each station with work, busiest first, gets its #1, or the next person down its list.</li>
+    <li>Comforters and Tablecloths aren't starting stations; people move there later. SLT 2 opens for heavy starch tops, or for a spare person.</li>
+    <li>Someone in early covers a late person's station until they arrive (e.g. Maria on SLB 2 until Diana), shown as moves.</li></ul>
     <p><b>It replaces the crew</b> for this day, including changes you made by hand. Undo (Ctrl+Z) brings the old crew back. Nothing reaches the floor until you Publish.</p>
     <p>Best for starting a day. To change one or two things, edit the crew directly.</p>` },
   undo: { title: "Undo", body: `<p>Takes back the last change to the crew or the piece counts on this screen (also Ctrl+Z). It goes back up to 60 steps, until you leave the Plan.</p>

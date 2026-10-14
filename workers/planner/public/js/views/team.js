@@ -1,6 +1,6 @@
-// Team: who's on the production team and what each person is trained on, in order
-// (1 = where they belong first, then the next best place, and so on).
-// Training is per kind of work: SLB 1/2 share one training, as do DCT 1-3.
+// Team: who's on the production team, and the station depth chart (Neal, Oct 13): each station has one #1, one #2,
+// and so on. The planner fills every station that has work with its #1, then works down the list.
+// Training is per kind of work: SLB 1/2 share one list, as do DCT 1-3.
 import { api } from "../api.js";
 import { html, raw, toast, initials, RANK, openDialog } from "../ui.js";
 import { rankingSuggestions } from "../plan/model.js";
@@ -29,10 +29,11 @@ export async function render(main, ctx) {
 
   function draw() {
     const active = data.people.filter(p => p.status === "active");
-    const cov = data.trainings.map(t => ({ t, trained: active.filter(p => p.trainings.includes(t.id)).length, first: active.filter(p => p.trainings[0] === t.id).length }));
+    const chart = chartOf(data, active);
+    const cov = data.trainings.map(t => ({ t, trained: (chart[t.id] || []).length, first: (chart[t.id] || [])[0] }));
     let people = data.people.filter(p => showFormer || p.status === "active");
     if (focus) { // who can run this, best first
-      const pos = p => { const i = p.trainings.indexOf(focus); return i < 0 ? 99 : i; };
+      const pos = p => { const i = (chart[focus] || []).indexOf(p.id); return i < 0 ? 99 : i; };
       people = [...people].sort((a, b) => pos(a) - pos(b) || a.name.localeCompare(b.name));
     }
     const thin = cov.filter(c => c.trained < 2);
@@ -40,31 +41,31 @@ export async function render(main, ctx) {
     const T = data.today, todayAway = active.flatMap(p => (p.away || []).filter(t => t.fromDay <= T && t.toDay >= T).map(t => ({ p, t })));
     main.innerHTML = html`
       <div class="page-head">
-        <div><h1>Team</h1><p>${active.length} people on the production team. Each person's trainings are listed in order: 1 is where they belong first.</p></div>
+        <div><h1>Team</h1><p>${active.length} people on the production team. Each station has one #1, one #2, and so on: the plan puts each station's #1 there first, then works down the list.</p></div>
         <div class="head-actions">
           ${former ? raw(html`<label class="check"><input type="checkbox" id="former" ${raw(showFormer ? "checked" : "")}> Show former (${former})</label>`) : ""}
-          ${canTrain ? raw(html`<button class="btn" id="fromHistory" title="Reorder trainings by where people have actually worked">Order from history</button>`) : ""}
           ${canEdit ? raw(html`<button class="btn primary" id="addPerson">${raw(PLUS)}Add person</button>`) : ""}
         </div>
       </div>
       <div class="cov" role="group" aria-label="Who can run each kind of work. Pick one to sort the team by it.">
         ${cov.map(c => raw(html`<button class="cov-tile ${c.trained < 2 ? "thin" : ""} ${focus === c.t.id ? "on" : ""}" data-focus="${c.t.id}" aria-pressed="${focus === c.t.id}"
             title="${c.t.name}${c.t.stations.length > 1 ? ` — covers ${c.t.stations.join(", ")}` : ""}">
-          <b>${c.t.short}</b><span>${c.trained} trained</span><small>${c.first} first choice</small></button>`))}
+          <b>${c.t.short}</b><span>${c.trained} trained</span><small>${c.first ? `#1 ${(data.people.find(p => p.id === c.first) || {}).firstName || ""}` : "no #1"}</small></button>`))}
       </div>
       <div class="banner ${todayAway.length ? "warn" : "info"} away-today"><b>Today:</b>${todayAway.length
         ? raw(todayAway.map(({ p, t }) => html`<span class="chip ${t.kind === "late" ? "late" : "off"}" title="${t.note || ""}">${p.name} · ${t.kind === "late" ? `in ${clock12(t.at)}` : "out"}</span>`).join(""))
         : "everyone is expected in."}${canTrain ? raw(html` <button class="btn small" id="awayAny">${raw(CAL)}Out or late…</button>`) : ""}</div>
       ${thin.length ? raw(html`<div class="banner warn"><b>Thin coverage:</b> ${thin.map(c => `${c.t.short} (${c.trained})`).join(" · ")} — one sick day leaves these without a trained person.</div>`) : ""}
       ${focus ? raw(html`<p class="focus-note">Sorted by who runs <b>${tName(focus).name}</b> best. <button class="linkish" id="clearFocus">Show everyone A–Z</button></p>`) : ""}
+      ${raw(depthChart(data, active, chart, canTrain))}
       <div class="card list team-list" role="list">
         ${people.map(p => raw(html`<div class="trow ${p.status === "active" ? "" : "former"}" role="listitem">
           ${canEdit ? raw(html`<button class="who-btn" data-edit="${p.id}" aria-label="Edit ${p.name}">`) : raw('<div class="who-btn">')}
             <span class="avatar" aria-hidden="true">${initials(p.name)}</span>
             <span class="who-txt"><b>${p.name}</b>${(p.away || []).length && p.status === "active" ? raw(html`<span class="away-chips">${p.away.slice(0, 3).map(t => raw(html`<span class="chip ${t.kind === "late" ? "late" : "off"}" title="${t.note || ""}">${awayText(t, T)}</span>`))}${p.away.length > 3 ? raw(html`<span class="chip">+${p.away.length - 3} more</span>`) : ""}</span>`) : ""}<small>${[schedText(p), p.payrollId ? `Rippling #${p.payrollId}` : "", "rate" in p ? (p.rate ? `$${p.rate.toFixed(2)}/h` : "no pay rate yet") : "", p.status === "active" ? "" : "Former"].filter(Boolean).join(" · ")}</small></span>
           ${raw(canEdit ? "</button>" : "</div>")}
-          <ol class="tchips" aria-label="Trainings in order">
-            ${p.trainings.length ? p.trainings.map((t, i) => raw(html`<li class="tchip ${focus === t ? "hit" : ""} ${i === 0 ? "first" : ""}" title="${tName(t)?.name || t}"><i>${i + 1}</i>${tName(t)?.short || t}</li>`))
+          <ol class="tchips" aria-label="Where they rank at each station">
+            ${p.trainings.length ? rankList(p, chart).map(({ t, r }) => raw(html`<li class="tchip ${focus === t ? "hit" : ""} ${r === 1 ? "first" : ""}" title="${tName(t)?.name || t}: #${r}"><i>${r}</i>${tName(t)?.short || t}</li>`))
               : raw('<li class="tnone">No trainings yet</li>')}
           </ol>
           ${canTrain && p.status === "active" ? raw(html`<span class="trow-act"><button class="btn ghost small" data-sched="${p.id}">${raw(CLK)}Schedule</button><button class="btn ghost small" data-away="${p.id}">${raw(CAL)}Time off</button><button class="btn ghost small" data-train="${p.id}">${raw(PEN)}Trainings</button></span>`) : raw("<span></span>")}
@@ -74,7 +75,14 @@ export async function render(main, ctx) {
 
     main.querySelector("#former")?.addEventListener("change", e => { showFormer = e.target.checked; draw(); });
     main.querySelector("#addPerson")?.addEventListener("click", () => personDialog(null, reload));
-    main.querySelector("#fromHistory")?.addEventListener("click", () => historyDialog(data, reload));
+    main.querySelectorAll(".dc-cell").forEach(el => el.addEventListener("change", async () => {
+      const t = el.dataset.t, id = el.dataset.p, r = +el.value || 0, L = (chart[t] || []).filter(x => x !== id);
+      if (r) L.splice(Math.min(r - 1, L.length), 0, id);
+      el.disabled = true;
+      try { await api(`/team/chart/${t}`, { method: "PUT", body: { people: L.concat(formerOn(data, t)) } }); toast(`${tName(t)?.short || t}: ${L.length ? L.map((x, i) => `#${i + 1} ${(data.people.find(p => p.id === x) || {}).firstName}`).slice(0, 3).join(", ") : "no one"}${L.length > 3 ? "…" : ""}`); }
+      catch (e) { toast(e.message || "Couldn't save the depth chart.", "warn", 7000); }
+      reload();
+    }));
     main.querySelector("#clearFocus")?.addEventListener("click", () => { focus = null; draw(); });
     main.querySelectorAll("[data-focus]").forEach(b => b.addEventListener("click", () => { focus = focus === b.dataset.focus ? null : b.dataset.focus; draw(); main.querySelector(`[data-focus="${b.dataset.focus}"]`)?.focus(); }));
     main.querySelectorAll("[data-edit]").forEach(b => b.addEventListener("click", () => personDialog(data.people.find(p => p.id === b.dataset.edit), reload)));
@@ -85,6 +93,36 @@ export async function render(main, ctx) {
   }
   async function reload() { Object.assign(data, await api("/team")); draw(); }
   draw();
+}
+
+// ---------------------------------------------------------------- station depth chart
+/** {training: [active person ids, #1 first]} from each person's rank (people without a rank go below, in their own order). */
+function chartOf(data, active) {
+  const out = {};
+  for (const t of data.trainings) out[t.id] = active.filter(p => p.trainings.includes(t.id))
+    .map((p, i) => ({ id: p.id, k: (p.depth && p.depth[t.id]) || 1000 + p.trainings.indexOf(t.id), i })).sort((a, b) => a.k - b.k || a.i - b.i).map(x => x.id);
+  return out;
+}
+/** Former people still on a list stay at the bottom (they don't show in the grid). */
+const formerOn = (data, t) => data.people.filter(p => p.status !== "active" && p.trainings.includes(t)).map(p => p.id);
+/** A person's stations, best rank first. */
+const rankList = (p, chart) => p.trainings.map(t => ({ t, r: (chart[t] || []).indexOf(p.id) + 1 })).filter(x => x.r > 0).sort((a, b) => a.r - b.r);
+function depthChart(data, active, chart, canEdit) {
+  const T = data.trainings, ppl = [...active].sort((a, b) => a.name.localeCompare(b.name));
+  const cell = (p, t) => {
+    const L = chart[t.id] || [], i = L.indexOf(p.id), r = i + 1, n = L.length + (i < 0 ? 1 : 0);
+    const cls = r === 1 ? "r1" : r === 2 ? "r2" : r ? "rx" : "";
+    if (!canEdit) return html`<td><span class="dc-ro ${cls}">${r || "–"}</span></td>`;
+    return html`<td><select class="dc-cell ${cls}" id="dc-${t.id}-${p.id}" data-t="${t.id}" data-p="${p.id}" aria-label="${p.name} at ${t.short}">
+      <option value="">–</option>${raw(Array.from({ length: n }, (_, k) => `<option value="${k + 1}"${k + 1 === r ? " selected" : ""}>${k + 1}</option>`).join(""))}</select></td>`;
+  };
+  return html`<section class="card depth" aria-labelledby="dc-h">
+    <header class="depth-head"><h2 id="dc-h">Station depth chart</h2>
+      <p>${canEdit ? "Pick a number to put someone at that rank; everyone below moves down one. Pick – to take them off. Being on a station's list means they're trained there." : "Each station's #1, #2, #3 … as the plan uses them."}
+      Comforters and Tablecloths aren't starting stations: their list is who moves there first once the washers are done.</p></header>
+    <div class="dc-scroll"><table class="dc"><thead><tr><th></th>${raw(T.map(t => html`<th scope="col" title="${t.name}${t.stations.length > 1 ? ` — ${t.stations.join(", ")}` : ""}">${t.short}</th>`).join(""))}</tr></thead>
+      <tbody>${raw(ppl.map(p => html`<tr><th scope="row">${p.name}</th>${raw(T.map(t => cell(p, t)).join(""))}</tr>`).join(""))}</tbody></table></div>
+  </section>`;
 }
 
 // The standing schedule (Neal, Oct 13): every plan starts from it; a one-day change (stay late, send home) is made on the Plan.
@@ -144,11 +182,9 @@ function trainingsDialog(p, trainings, done) {
   let list = [...p.trainings];
   const byId = Object.fromEntries(trainings.map(t => [t.id, t]));
   const body = () => html`
-    <p class="dlg-lead">Put them in order: 1 is where ${p.firstName} belongs first, then the next best place. The plan fills stations in this order.</p>
-    <ol class="tlist" aria-label="Trainings in order">${list.map((t, i) => raw(html`
-      <li><i>${i + 1}</i><span><b>${byId[t]?.short || t}</b><small>${byId[t]?.name || ""}${byId[t]?.stations.length > 1 ? ` · ${byId[t].stations.join(", ")}` : ""}</small></span>
-        <button type="button" class="icon-btn" data-up="${i}" aria-label="Move ${byId[t]?.short} up" ${raw(i === 0 ? "disabled" : "")}>↑</button>
-        <button type="button" class="icon-btn" data-down="${i}" aria-label="Move ${byId[t]?.short} down" ${raw(i === list.length - 1 ? "disabled" : "")}>↓</button>
+    <p class="dlg-lead">Where ${p.firstName} is trained. A new training puts ${p.firstName} at the bottom of that station's list; move them up in the station depth chart.</p>
+    <ol class="tlist" aria-label="Trainings">${list.map((t, i) => raw(html`
+      <li><i>${(p.depth && p.depth[t]) ? "#" + p.depth[t] : "new"}</i><span><b>${byId[t]?.short || t}</b><small>${byId[t]?.name || ""}${byId[t]?.stations.length > 1 ? ` · ${byId[t].stations.join(", ")}` : ""}</small></span>
         <button type="button" class="icon-btn" data-del="${i}" aria-label="Remove ${byId[t]?.short}">×</button></li>`))}
       ${list.length ? "" : raw('<li class="tnone">Not trained on anything yet. Add below.</li>')}</ol>
     ${trainings.length > list.length ? raw(html`<div class="field"><span>Add a training</span><div class="tadd">${trainings.filter(t => !list.includes(t.id)).map(t => raw(html`
@@ -169,7 +205,7 @@ function trainingsDialog(p, trainings, done) {
     if (d.up) { const i = +d.up; [list[i - 1], list[i]] = [list[i], list[i - 1]]; focusSel = i - 1 > 0 ? `[data-up="${i - 1}"]` : `[data-down="${i - 1}"]`; }
     else if (d.down) { const i = +d.down; [list[i + 1], list[i]] = [list[i], list[i + 1]]; focusSel = i + 1 < list.length - 1 ? `[data-down="${i + 1}"]` : `[data-up="${i + 1}"]`; }
     else if (d.del) { list.splice(+d.del, 1); focusSel = ".tadd button"; }
-    else if (d.add) { list.push(d.add); focusSel = `[data-up="${list.length - 1}"]`; }
+    else if (d.add) { list.push(d.add); focusSel = `[data-del="${list.length - 1}"]`; }
     else return;
     box.innerHTML = body();
     (box.querySelector(focusSel) || box.querySelector("button"))?.focus();

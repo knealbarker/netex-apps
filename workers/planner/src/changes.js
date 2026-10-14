@@ -66,6 +66,7 @@ export async function listChanges(db, env, day) {
     .filter(r => localNow(tz, new Date(r.at)).day === day);
   const people = new Map((await db.prepare("SELECT id, COALESCE(display_name, first_name || ' ' || last_name) AS n FROM core_people WHERE org_id=?").bind(env.ORG_ID).all()).results.map(p => [p.id, p.n]));
   const short = d => new Date(d + "T12:00:00Z").toLocaleDateString("en-US", { timeZone: "UTC", weekday: "short", month: "short", day: "numeric" });
+  const TRAIN = Object.fromEntries((await db.prepare("SELECT id, name FROM plan_trainings").all()).results.map(t => [t.id, t.name]));
   const out = [];
   const push = (r, text, tag = "") => out.push({ at: r.at, who: r.who || null, text, tag });
   for (const r of rows) {
@@ -79,6 +80,7 @@ export async function listChanges(db, env, day) {
       const what = c.kind === "late" ? `in late at ${c.at || "?"}` : "out";
       push(r, r.action === "delete" ? `${people.get(c.personId) || "Someone"}: removed "${what}" for ${when}` : `${people.get(c.personId) || "Someone"} ${what} ${when}${c.note ? ` — ${c.note}` : ""}`, "callout");
     }
+    else if (r.entity === "plan_depth") push(r, `Depth chart for ${TRAIN[r.eid] || r.eid} changed`, "team");
     else if (r.entity === "plan_person_trainings") push(r, `Trainings for ${people.get(r.eid) || "someone"} changed`, "team");
     else if (r.entity === "core_people") push(r, `${r.action === "create" ? "Added" : "Updated"} ${people.get(r.eid) || "someone"} on the team`, "team");
     else if (r.entity === "core_settings") push(r, `Settings: ${SETTINGS_NAMES[String(r.eid).replace(/^planner\./, "")] || r.eid} changed`, "settings");

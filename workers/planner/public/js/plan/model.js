@@ -44,7 +44,7 @@ export function positions(SET) {
 }
 
 /** Active people for the engine. `rate` (Rippling's hourly pay) is only there for Admins and the Owner; the engine uses the average without it. */
-export const peopleFrom = TEAM => TEAM.people.filter(p => p.status === "active").map(p => ({ id: p.id, name: p.name, trainings: p.trainings || [], start: p.usualStart || null,
+export const peopleFrom = TEAM => TEAM.people.filter(p => p.status === "active").map(p => ({ id: p.id, name: p.name, trainings: p.trainings || [], depth: p.depth || null, start: p.usualStart || null,
   hours: p.usualHours > 0 ? +p.usualHours : null, days: p.usualDays || null, leaveBy: p.leaveBy || null, leaveNote: p.leaveNote || null, ...(p.rate > 0 ? { rate: p.rate } : {}) }));
 
 export function blankCrew(POS, s) { return Object.fromEntries(POS.map(p => [p.id, { emp: "", start: s.defStart, hrs: s.fullDay, stop: "", source: "" }])); }
@@ -411,7 +411,7 @@ export function snapshotOf(X) {
   return {
     sig: sigOf(P), day: P.day,
     input: { q: P.q, crew: P.crew, stations: P.stations, ops: P.ops, trainingOf: P.trainingOf, settings: { ...s, price: {}, payAvg: 0, laborTarget: 0 },
-      people: P.people.filter(p => used.has(p.id)).map(p => ({ id: p.id, name: p.name, trainings: p.trainings, start: p.start })) },
+      people: P.people.filter(p => used.has(p.id)).map(p => ({ id: p.id, name: p.name, trainings: p.trainings, depth: p.depth || null, start: p.start })) },
     waves: waves.map(w => ({ id: w.id, name: w.name, kind: w.kind, deadline: w.deadline, back: w.back ?? null, q: w.q, todo: w.todo, stores: w.stores || [], eta: etas[w.id] ?? null })),
     metrics: R.empty ? { empty: true } : { end: R.end, firstStart: R.firstStart, pieces: R.totalPieces, short: R.P.shortTotal, otH: R.otTotal, laborH: R.labor, people: R.rows.filter(r => r.staffed).length },
   };

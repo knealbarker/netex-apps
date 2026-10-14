@@ -118,12 +118,12 @@ await t("Admin adds a person; Rippling id must be unique; Viewer can read but no
   eq((await call("GET", "/api/team", { as: "v@example.com" })).body.people.length, 1);
   eq((await call("POST", "/api/team", { as: "v@example.com", body: { firstName: "X" } })).status, 403);
 });
-await t("Manager sets an ordered training list; duplicates and unknowns refused; empty clears", async () => {
+await t("Manager sets a person's trainings; duplicates and unknowns refused; empty clears", async () => {
   const { call } = app();
   const { id } = (await call("POST", "/api/team", { body: { firstName: "Cara" } })).body;
   await withRole(call, "manager", "m@example.com");
   eq((await call("PUT", `/api/team/${id}/trainings`, { as: "m@example.com", body: { trainings: ["dcb", "slb", "iab1"] } })).status, 200);
-  eq((await call("GET", "/api/team")).body.people[0].trainings, ["dcb", "slb", "iab1"]);
+  eq((await call("GET", "/api/team")).body.people[0].trainings.slice().sort(), ["dcb", "iab1", "slb"]);
   eq((await call("PUT", `/api/team/${id}/trainings`, { body: { trainings: ["slb", "slb"] } })).status, 400);
   eq((await call("PUT", `/api/team/${id}/trainings`, { body: { trainings: ["slb1"] } })).status, 400);
   await call("PUT", `/api/team/${id}/trainings`, { body: { trainings: [] } });
@@ -131,6 +131,26 @@ await t("Manager sets an ordered training list; duplicates and unknowns refused;
   await withRole(call, "viewer", "v@example.com");
   eq((await call("PUT", `/api/team/${id}/trainings`, { as: "v@example.com", body: { trainings: ["slb"] } })).status, 403);
   eq((await call("PATCH", `/api/team/${id}`, { as: "m@example.com", body: { firstName: "Z" } })).status, 403);
+});
+await t("station depth chart: one #1, #2 ... per station; new trainings go to the bottom; removing closes the gap", async () => {
+  const { call } = app();
+  const a = (await call("POST", "/api/team", { body: { firstName: "Ana" } })).body.id;
+  const b = (await call("POST", "/api/team", { body: { firstName: "Beto" } })).body.id;
+  const c = (await call("POST", "/api/team", { body: { firstName: "Cora" } })).body.id;
+  await withRole(call, "manager", "m@example.com");
+  eq((await call("PUT", "/api/team/chart/dct", { as: "m@example.com", body: { people: [b, a] } })).status, 200);
+  const team = async () => Object.fromEntries((await call("GET", "/api/team")).body.people.map(p => [p.firstName, p.depth]));
+  eq([(await team()).Beto.dct, (await team()).Ana.dct], [1, 2]);
+  await call("PUT", `/api/team/${c}/trainings`, { body: { trainings: ["dct", "slb"] } });   // Cora joins DCT at the bottom
+  eq([(await team()).Cora.dct, (await team()).Cora.slb], [3, 1]);
+  await call("PUT", "/api/team/chart/dct", { body: { people: [c, b] } });                    // Ana off, Cora to #1
+  const T = await team();
+  eq([T.Cora.dct, T.Beto.dct, T.Ana.dct], [1, 2, undefined]);
+  eq((await call("PUT", "/api/team/chart/dct", { body: { people: [a, a] } })).status, 400);
+  eq((await call("PUT", "/api/team/chart/nope", { body: { people: [a] } })).status, 404);
+  await withRole(call, "viewer", "v@example.com");
+  eq((await call("PUT", "/api/team/chart/dct", { as: "v@example.com", body: { people: [a] } })).status, 403);
+  ok((await call("GET", "/api/changes/" + new Date().toISOString().slice(0, 10))).body.list.length >= 0);
 });
 await t("migration carries old station ranks into ordered trainings", async () => {
   // replay 0001-0004, add old-style ranks, then run 0005
