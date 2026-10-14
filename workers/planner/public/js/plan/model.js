@@ -309,28 +309,21 @@ export function verdict(X) {
 // ---------------------------------------------------------------- suggest and assign
 /** Who usually works this weekday (Rippling hours), at their usual clock-in, on the stations they're usually planned on. */
 export function suggestCrew(P, E) {
+  // Who: everyone on the team who isn't out that day, unless Team's usual days leave the day out (Neal, Oct 13: keep the
+  // stations full — history used to leave out people who hadn't worked most recent same weekdays, like new hires).
+  // History still gives each person's usual clock-in (same weekday first) and the stations they're usually on.
   const H = P.history || { hours: [], planned: [] }, wd = weekday(P.day);
   const byDay = new Map();
   for (const h of H.hours) { if (!(+h.hours > 0)) continue; (byDay.get(h.day) || byDay.set(h.day, new Map()).get(h.day)).set(h.personId, h); }
-  let days = [...byDay.keys()].filter(d => weekday(d) === wd), basis = `recent ${WD[wd]}s`;
-  if (days.length < 2) { const from = addDays(P.day, -14); days = [...byDay.keys()].filter(d => d >= from); basis = "the last two weeks"; }
-  const sameWd = [...byDay.keys()].filter(d => weekday(d) === wd);
-  const out = [], startOf = new Map();
-  if (days.length) for (const e of P.people) {
-    const hits = days.filter(d => byDay.get(d).has(e.id));
-    if (hits.length / days.length < 0.5) continue;
-    const ins = (sameWd.some(d => byDay.get(d).has(e.id)) ? sameWd : hits).map(d => byDay.get(d).get(e.id)).filter(Boolean).map(h => parseTime(h.firstIn)).filter(v => v != null);
-    out.push(e); startOf.set(e.id, ins.length ? hhmm(median(ins)) : (e.start || P.s.defStart));
+  const sameWd = [...byDay.keys()].filter(d => weekday(d) === wd), recent = [...byDay.keys()].filter(d => d >= addDays(P.day, -21));
+  const startOf = new Map(), basis = "everyone who isn't out";
+  const out2 = calledOut(P), people = P.people.filter(e => !out2.has(e.id) && !(e.days && !e.days.includes(String(wd))));
+  for (const e of people) {
+    const ins = d => d.map(x => byDay.get(x).get(e.id)).filter(Boolean).map(h => parseTime(h.firstIn)).filter(v => v != null);
+    const a = ins(sameWd), b = a.length ? a : ins(recent);
+    startOf.set(e.id, b.length ? hhmm(median(b)) : (e.start || P.s.defStart));
   }
-  if (!out.length) {
-    const lastDay = H.planned.map(p => p.day).sort().pop();
-    const ids = lastDay ? new Set(H.planned.filter(p => p.day === lastDay).map(p => p.personId)) : null;
-    for (const e of P.people) if (!ids || ids.has(e.id)) { out.push(e); startOf.set(e.id, e.start || P.s.defStart); }
-    basis = lastDay ? `the plan for ${new Date(lastDay + "T12:00:00").toLocaleDateString(undefined, { weekday: "long", month: "short", day: "numeric" })}` : "the whole team";
-  }
-  // Team's usual days decide when they're set (Neal, Oct 13): add people who usually work this weekday, drop those who don't
-  for (const e of P.people) if (e.days && e.days.includes(String(wd)) && !out.includes(e)) { out.push(e); startOf.set(e.id, e.start || P.s.defStart); }
-  const out2 = calledOut(P), people = out.filter(e => !out2.has(e.id) && !(e.days && !e.days.includes(String(wd))));
+  const days = sameWd;
   // how often each person was planned on each station (same weekday counts double)
   const cnt = {};
   for (const p of H.planned) { const w = weekday(p.day) === wd ? 2 : 1; const m = cnt[p.personId] = cnt[p.personId] || { _t: 0 }; m[p.station] = (m[p.station] || 0) + w; m._t += w; }

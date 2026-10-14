@@ -218,8 +218,8 @@ export async function render(main, ctx) {
     if (can) {
       main.querySelector("#pl-undo").addEventListener("click", undo);
       main.querySelector("#pl-suggest").addEventListener("click", () => openDialog({
-        title: "Suggest a crew from history?", submitLabel: "Replace the crew",
-        body: html`<p class="dlg-lead">Replaces the crew for ${longDay(pick)} with the people who usually work ${M.WD[M.weekday(pick)]}s (Team's usual days count too), at their usual clock-in, on the stations they're usually on. You can undo it.</p>`,
+        title: "Suggest a crew?", submitLabel: "Replace the crew",
+        body: html`<p class="dlg-lead">Replaces the crew for ${longDay(pick)} with everyone who isn't out that day (Team's usual days count), at their usual clock-in, on the stations they're usually on. You can undo it.</p>`,
         onSubmit: () => edit(() => suggest("button"), { keepNote: true }),
       }));
       main.querySelector("#pl-pub").addEventListener("click", publishDialog);
@@ -250,7 +250,7 @@ export async function render(main, ctx) {
   function drawNote() {
     const el = document.getElementById("pl-note"); if (!el) return;
     if (!st.note) { el.innerHTML = ""; return; }
-    el.innerHTML = html`<div class="banner info"><b>Suggested from history.</b> Who usually works ${M.WD[M.weekday(pick)]}s (from ${st.note.basis}), at their usual clock-in, on the stations they're usually on.${st.note.left.length ? ` Not placed: ${st.note.left.join(", ")}.` : ""}
+    el.innerHTML = html`<div class="banner info"><b>Suggested crew.</b> Everyone who isn't out (Team's usual days count), at their usual clock-in, on the stations they're usually on — starch bottoms presses first; SLT 2, then the second assembly spot, are the ones left empty when there aren't enough people.${st.note.left.length ? ` Not placed: ${st.note.left.join(", ")}.` : ""}
       ${can && !st.rev ? raw(html` <button class="linkish" id="pl-keep">Keep this crew</button>`) : ""}</div>`;
     el.querySelector("#pl-keep")?.addEventListener("click", () => { st.dirty = true; save(); st.note = null; drawNote(); });
   }

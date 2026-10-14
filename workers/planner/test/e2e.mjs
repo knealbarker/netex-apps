@@ -138,7 +138,7 @@ await t("Plan: suggested crew, keep it, washers and Changes today", async () => 
   await p.goto(url + "/#/plan"); await p.waitForSelector("#pl-board .tl-row");
   await p.click("#pl-keep"); await saved();
   // move someone from a station card: the sheet shows what changes, Move saves it
-  await p.click('#pl-board .tl-row[data-g="dct"] .tl-bar[data-emp]');
+  await p.click('#pl-board .tl-row[data-g="dct"] .tl-bar[data-emp="' + ids.Cora + '"] >> nth=0');
   await p.waitForSelector("dialog.sheet #ms-impact div");
   await p.click('dialog.sheet .ms-opt:has(input[value="slb"])'); await p.waitForSelector("dialog.sheet #ms-impact div");
   await p.click('dialog.sheet button[type="submit"]'); await saved();

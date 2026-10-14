@@ -58,25 +58,34 @@ await t("an empty crew: verdict asks for a crew, the check says so", async () =>
   const X = M.evaluate(P0());
   eq(X.verdict.head, "Pick the crew"); eq(X.checks[0].title, "No one is on a station");
 });
-await t("suggest from history: who usually works Mondays, at their usual clock-in, on their usual station", async () => {
+await t("suggest: everyone who isn't out, at their usual clock-in, on their usual station; Team's usual days can leave someone off", async () => {
   const mon = ["2026-09-21", "2026-09-28", "2026-10-05"];
   const hours = [];
   for (const d of mon) for (const [id, fi] of [["a", "04:55"], ["b", "05:30"], ["c", "06:05"], ["f", "06:00"]]) hours.push({ day: d, personId: id, hours: 8, firstIn: fi });
-  hours.push({ day: "2026-10-05", personId: "d", hours: 8, firstIn: "07:00" }); // 1 of 3 Mondays: left out
+  hours.push({ day: "2026-10-05", personId: "d", hours: 8, firstIn: "07:10" }); // only one Monday (a new hire): still on
   const planned = mon.map(d => ({ day: d, station: "slb1", personId: "f" })).concat(mon.map(d => ({ day: d, station: "dct1", personId: "c" })));
   const P = P0({ history: { hours, planned } });
   const r = M.suggestCrew(P, M.evaluate(P).E);
-  eq(r.basis, "recent Mondays");
   const on = Object.fromEntries(Object.entries(r.crew).filter(([, c]) => c.emp).map(([k, c]) => [c.emp, [k, c.start, c.source]]));
-  eq(on.a, ["slt1", "04:55", "suggested"]); eq(on.b[0], "slt2"); eq(on.f[0], "slb1"); eq(on.c[0], "dct1"); ok(!on.d, "Dani only worked one Monday");
+  eq(on.a, ["slt1", "04:55", "suggested"]); eq(on.f[0], "slb1"); eq(on.c[0], "dct1"); eq(on.d && on.d[1], "07:10", "Dani is on, at her clock-in");
+  ok(on.e, "Eli (no history) is on too");
+  // Team's usual days: Dani doesn't work Mondays
+  const P2 = P0({ history: { hours, planned } }); P2.people = P2.people.map(e => e.id === "d" ? { ...e, days: "2345" } : e);
+  ok(!Object.values(M.suggestCrew(P2, M.evaluate(P2).E).crew).some(c => c.emp === "d"), "usual days leave Dani off");
 });
-await t("suggest with no Rippling history falls back to the last plan, then the whole team", async () => {
-  const P = P0({ history: { hours: [], planned: [{ day: "2026-10-09", station: "dct1", personId: "c" }] } });
-  const r = M.suggestCrew(P, M.evaluate(P).E);
-  ok(/^the plan for Friday/.test(r.basis), r.basis);
-  eq(Object.values(r.crew).filter(c => c.emp).map(c => c.emp), ["c"]);
-  const r2 = M.suggestCrew(P0(), M.evaluate(P0()).E);
-  eq(r2.basis, "the whole team"); ok(Object.values(r2.crew).filter(c => c.emp).length === 6);
+await t("empty stations: SLT 2 is left empty first, then the 2nd assembly spot; lots of starch bottoms fills both presses", async () => {
+  const POS = pos.stations.concat(pos.ops);
+  const E = M.evaluate(P0()).E;
+  // Beto (SLT 2, SLT 1) and Fran (SLB, DCT); light starch tops, lots of starch bottoms
+  const ppl = people.filter(e => ["b", "f", "a"].includes(e.id));
+  const r = E.assign(ppl, { q: { dct: 0, dcb: 0, slt: 100, slb: 400, comf: 0, tc: 0 } });
+  const where = Object.fromEntries(Object.entries(r.crew).filter(([, c]) => c.emp).map(([k, c]) => [c.emp, k]));
+  ok(!Object.values(where).includes("slt2"), "SLT 2 empty: " + JSON.stringify(where));
+  ok(["slb1", "slb2"].every(k => Object.values(where).includes(k)), "both presses: " + JSON.stringify(where));
+  // heavy starch tops: the pair is needed, SLT 2 is filled
+  const r2 = E.assign(people.filter(e => ["a", "b"].includes(e.id)), { q: { dct: 0, dcb: 0, slt: 1400, slb: 0, comf: 0, tc: 0 } });
+  eq([r2.crew.slt1.emp, r2.crew.slt2.emp], ["a", "b"]);
+  ok(POS.length > 0);
 });
 await t("auto-assign keeps hours and hard stops, and uses today's Rippling clock-ins", async () => {
   const P = P0({ isToday: true, now: 6, clock: [{ personId: "c", clockIn: "2026-10-12T06:12:00-05:00" }] });

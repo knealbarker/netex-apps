@@ -361,6 +361,12 @@ export function createEngine(S) {
   /** Puts people on stations: highest-ranked first, busiest stations first (optionally favouring who usually works where). */
   function assign(people, { q = s.q, share = null, startOf = null } = {}) {
     const need = stationNeed(q), posts = POS, n = people.length + posts.length, BIG = 1e9, cost = [];
+    // Which stations to leave empty when there aren't enough people (Neal, Oct 13): SLT 2 first, unless starch tops need the
+    // pair to finish in the day; then the second assembly station (bagging can catch up). With lots of starch bottoms
+    // (more than one press-day) both SLB presses are filled first.
+    const day = s.fullDay || 7.5, r = s.rates, asm = STATIONS.filter(x => x.type === "asm");
+    const lotsSlb = (q.slb || 0) / r.slb > day, sltPair = (q.slt || 0) > r.sltSolo * day;
+    const prio = p => p.type === "slb" && lotsSlb ? 40 : p.type === "slt2" ? (sltPair ? 0 : -40) : p.type === "asm" && asm.indexOf(p) > 0 ? -20 : 0;
     for (let i = 0; i < n; i++) {
       const row = [];
       for (let j = 0; j < n; j++) {
@@ -369,7 +375,7 @@ export function createEngine(S) {
         if (!rk) { row.push(BIG); continue; }
         const w = need[posts[j].id] || 0, h = share ? share(e, posts[j].id) : 0, r3 = Math.min(rk, 3);
         const deep = Math.max(0, rk - 3) * 0.5; // 4th, 5th ... choices rank just below 3rd
-        row.push(w <= 0.01 ? -1 + r3 * 0.1 - h * 0.5 + deep * 0.1 : -(w * 10 + (4 - r3) * 12 + h * 25) + deep);
+        row.push(w <= 0.01 ? -1 + r3 * 0.1 - h * 0.5 + deep * 0.1 : Math.min(-2, -(w * 10 + (4 - r3) * 12 + h * 25 + prio(posts[j])) + deep));
       }
       cost.push(row);
     }
