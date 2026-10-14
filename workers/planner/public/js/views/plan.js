@@ -275,7 +275,7 @@ export async function render(main, ctx) {
     if (st.over) {
       const left = leftovers(P), n = left.reduce((t, x) => t + x.n, 0);
       cls = "good done";
-      txt = raw(html`<b>Production day complete</b> · ${st.over.why === "out" ? `everyone clocked out by ${hm(st.over.at)}` : `nothing assembled since ${hm(st.over.at)}`}${n ? ` · ${left.map(x => `${fmtN(x.n)} ${TILE[x.k].toLowerCase()}`).join(", ")} left for later` : ""}`);
+      txt = raw(html`<b>Production day complete</b> · ${st.over.why === "out" ? `everyone clocked out by ${hm(st.over.at)}` : `nothing assembled since ${hm(st.over.at)}`}${n ? ` · ${fmtN(n)} ${n === 1 ? "piece" : "pieces"} left for later` : " · everything's done"}`);
     } else if (X.R.empty) txt = X.R.noCrew ? "No one is on a station yet — tap + Add on a station, or Suggest." : "Nothing to plan yet.";
     else if (L && L.on && L.fromNow) {
       const f = L.fromNow, left = Math.round(f.left), ot = left > 0 && (f.ot || f.otH > 0.04);
