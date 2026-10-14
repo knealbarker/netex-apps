@@ -219,6 +219,22 @@ keepAwake();
 document.addEventListener("visibilitychange", keepAwake);
 document.addEventListener("pointerdown", keepAwake, { passive: true });
 
+// ------------------------------------------------------------ new versions load by themselves
+// Every 5 minutes the page compares its own files with what the server has now; when they differ, it reloads
+// (only when nobody is typing a count), so a change reaches the tablets without anyone touching them.
+const FILES = ["/station/", "/station/station.js", "/station/station.css"];
+async function fingerprint() {
+  const texts = await Promise.all(FILES.map(f => fetch(f, { cache: "no-store", credentials: "same-origin" }).then(r => (r.ok ? r.text() : Promise.reject(r.status)))));
+  const h = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(texts.join("\u0000")));
+  return [...new Uint8Array(h)].slice(0, 8).map(b => b.toString(16).padStart(2, "0")).join("");
+}
+let version = null;
+fingerprint().then(v => { version = v; }).catch(() => {});
+setInterval(async () => {
+  if (padOpen || busy || holding || !version) return;
+  try { const v = await fingerprint(); if (v !== version) location.reload(); } catch { /* offline: try again later */ }
+}, 5 * 60 * 1000);
+
 // ------------------------------------------------------------ keep it current
 refresh();
 setInterval(refresh, 20000);
