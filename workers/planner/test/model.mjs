@@ -203,10 +203,10 @@ await t("breaks start at least 3 hours after clocking in", async () => {
 });
 await t("the Floor replays a published move: it shows the person moving at that time", async () => {
   const F = await import("../public/js/plan/floor.js");
-  const P = staffed(); P.crew.dct1 = { ...P.crew.dct1, moves: [{ at: "09:00", to: "slb2" }] };
+  const P = staffed(); P.crew.dct1 = { ...P.crew.dct1, moves: [{ at: "10:00", to: "slb2" }] };
   const snap = JSON.parse(JSON.stringify(M.snapshotOf(M.evaluate(P))));
   const R = F.replay(snap), ev = F.events(R, F.TXT.en);
-  ok(ev.some(e => e.kind === "move" && e.nm === "Cora Tres" && Math.abs(e.t - 9) < 0.02 && /SLB 2/.test(e.label || "")), JSON.stringify(ev.filter(e => e.nm === "Cora Tres")));
+  ok(ev.some(e => e.kind === "move" && e.nm === "Cora Tres" && Math.abs(e.t - 10) < 0.02 && /SLB 2/.test(e.label || "")), JSON.stringify(ev.filter(e => e.nm === "Cora Tres")));
 });
 await t("a late shuttle offers a fix that makes it earlier", async () => {
   const P = staffed(); P.crew.slt1.start = "09:00"; P.crew.slt2.start = "09:00";

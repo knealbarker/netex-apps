@@ -636,14 +636,14 @@ export function catOvertime(E, R, k) {
  *  - from their start (or before): they're simply planned on that station, in an empty spot of it when there is one
  *  - later in the day: a move is added (later moves of theirs are replaced) to an empty spot, else the first one
  */
-export function applyMove(crew, POS, empId, toKey, at) {
+export function applyMove(crew, POS, empId, toKey, at, toCode = null) {
   const C = JSON.parse(JSON.stringify(crew));
   const code = Object.keys(C).find(k => C[k].emp === empId); if (!code) return C;
   const c = C[code], targets = POS.filter(p => groupOf(p.type) === toKey).map(p => p.id);
   if (!targets.length) return C;
-  const empty = targets.find(t => t !== code && !C[t].emp);
+  const empty = toCode && targets.includes(toCode) ? toCode : targets.find(t => t !== code && !C[t].emp);
   const startH = parseTime(c.start) ?? 0, atH = parseTime(at) ?? startH;
-  if (atH <= startH + 1e-6 && empty) {
+  if (atH <= startH + 1e-6 && empty && !C[empty].emp) {
     C[empty] = { ...c, moves: [] }; C[code] = { emp: "", start: c.start, hrs: c.hrs, stop: "", source: "" };
     return C;
   }
@@ -701,6 +701,18 @@ export function bottleneckMoves(X, L, { max = 2, times } = {}) {
   };
   const base = { k: B.etc ?? 0, end: live ? (L.fromNow.etc ?? 0) : (X.R.end ?? 0) };
   const out = [], brks = breaksOf(X.R);
+  // a station of that kind nobody is planned on at hour t (people on shift, after their moves; today: not gone home)
+  const freeAt = t => {
+    const busy = new Set();
+    for (const [cd, x] of Object.entries(P.crew)) {
+      if (!x.emp) continue;
+      const s0 = parseTime(x.start) ?? 0, s1 = parseTime(x.stop) ?? s0 + (+x.hrs || 0) + 0.5;
+      if (t < s0 - 1e-6 || t >= s1 - 1e-6) continue;
+      if (live && clockState(P, x.emp, P.now, brks[x.emp]) === "gone") continue;
+      busy.add(stationAt(x, cd, t));
+    }
+    return target.codes.find(cd => !busy.has(cd)) || null;
+  };
   for (const [code, c] of Object.entries(P.crew)) {
     if (!c.emp || target.codes.includes(code)) continue;
     const type = E.TYPE_OF[code]; if (!type || type === "asm" && false) continue;
@@ -711,7 +723,9 @@ export function bottleneckMoves(X, L, { max = 2, times } = {}) {
     for (const t of ts) {
       if (t < start - 1e-6 || t > end - 1) continue;
       if (groupOf(E.TYPE_OF[stationAt(c, code, t)]) === B.k) continue;
-      const crew = applyMove(P.crew, E.POS, c.emp, B.k, hhmm(t)), sc = score(crew); if (!sc) continue;
+      // only onto a press no one is on at that time (Neal, Oct 14: "move Maria to starch bottoms at 9" with both SLB presses staffed)
+      const free = freeAt(t); if (!free) continue;
+      const crew = applyMove(P.crew, E.POS, c.emp, B.k, hhmm(t), free), sc = score(crew); if (!sc) continue;
       if (sc.k <= base.k - 1 / 6 && sc.end <= base.end + 1 / 12) out.push({ empId: c.emp, name: e.name, from: groupOf(type), at: hhmm(t), rank: rk, k: B.k, kBefore: base.k, kAfter: sc.k, endBefore: base.end, endAfter: sc.end, crew });
     }
   }

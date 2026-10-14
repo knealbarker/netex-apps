@@ -91,8 +91,9 @@ export function createEngine(S) {
     if (stop != null && stop > start) { const el = stop - start, b = s.breakMin / 60; const fit = el - b > s.breakAfter + EPS ? el - b : (el > s.breakAfter + EPS ? Math.min(el, s.breakAfter) : el); a = Math.min(a, Math.max(0, fit)); }
     return { start, a, stop: (stop != null && stop > start) ? stop : null };
   }
-  // Stagger paid breaks so stations keep running: each break goes in the slot (at least 2h after clock-in and 2h before
-  // scheduled out) that the fewest co-workers are using, especially people on the same kind of station.
+  // Paid breaks (Neal, Oct 14: Carnell shouldn't wait over 4 hours): each break goes as close to 3 hours after clock-in
+  // as it can. Staggering only keeps people on the same kind of work apart (SLB 1 and SLB 2, SLT 1 and its helper);
+  // a few people from different stations out at once is fine and only nudges a break 15 minutes later.
   function breakPlan() {
     const ppl = [];
     for (const p of POS) {
@@ -105,14 +106,14 @@ export function createEngine(S) {
     const step = 0.25;
     // the earliest a break starts: 3 hours after clocking in (Neal, Oct 13); the latest: 2 hours before the shift ends
     for (const x of ppl) { x.lo = x.start + Math.min(3, x.a / 2); x.hi = Math.max(x.lo, x.start + x.a - Math.min(2, x.a / 2)); }
-    ppl.sort((a, b) => (a.hi - a.lo) - (b.hi - b.lo) || a.mid - b.mid);
+    ppl.sort((a, b) => a.lo - b.lo || (a.hi - a.lo) - (b.hi - b.lo));
     const done = [];
     for (const x of ppl) {
-      let best = x.mid, bc = Infinity;
-      for (let t = Math.ceil(x.lo / step) * step; t <= x.hi + 1e-9; t += step) {
+      let best = x.lo, bc = Infinity;
+      for (let t = Math.ceil(x.lo / step - 1e-9) * step; t <= x.hi + 1e-9; t += step) {
         let c = 0;
-        for (const d of done) { const ov = Math.max(0, Math.min(t + x.b, d.t + d.b) - Math.max(t, d.t)); if (ov > EPS) c += (d.ty === x.ty ? 4 : 1) * ov / x.b; }
-        c += Math.abs(t + x.b / 2 - x.mid) * 0.05;
+        for (const d of done) { const ov = Math.max(0, Math.min(t + x.b, d.t + d.b) - Math.max(t, d.t)); if (ov > EPS) c += (d.ty === x.ty && x.ty !== "ops" ? 4 : 0.05) * ov / x.b; }
+        c += (t - x.lo) * 0.4;
         if (c < bc - 1e-9) { bc = c; best = t; }
       }
       out[x.id] = best; done.push({ t: best, b: x.b, ty: x.ty });
@@ -210,7 +211,15 @@ export function createEngine(S) {
       //    the helper station last)
       const order = (a, b) => ((a.pos === "slt2") - (b.pos === "slt2")) || (multi(a.pos) - multi(b.pos)) || ((a.home === "slt2") - (b.home === "slt2"));
       reg.sort(order);
-      for (const e of reg) { if (!e.swapped && okAt(e, e.pos)) { take(e, e.pos); e.home = e.pos; } }
+      for (const e of reg) {
+        if (!e.swapped && okAt(e, e.pos)) { take(e, e.pos); e.home = e.pos; continue; }
+        // the SLT 2 helper steps up to SLT 1 while no one's on it (its presser on break or not in yet), then goes back
+        // (Neal, Oct 14: Rosenda's break left SLT 1 empty)
+        if (TYPE_OF[e.pos] === "slt2" && !e.swapped) {
+          const s1 = STATIONS.find(x => x.type === "slt" && room(x.id) && trained(e.empId, x.id) && under(e, x.id) && has("slt"));
+          if (s1) take(e, s1.id);
+        }
+      }
       for (const e of reg.slice().sort((a, b) => ((a.home === "slt2") - (b.home === "slt2")) || (multi(a.home || "") - multi(b.home || "")))) { if (asg.has(e)) continue; const h = e.home; if (h && okAt(e, h)) take(e, h); }
       const av = reg;
       // 2) rotation: someone who reached a station's max hours swaps with a qualified co-worker
