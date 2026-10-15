@@ -374,10 +374,17 @@ export async function render(main, ctx) {
     const pct = h => ((h - a) / (b - a) * 100).toFixed(3) + "%", wid = (f, t) => ((t - f) / (b - a) * 100).toFixed(3) + "%";
     const ticks = []; for (let t = a; t < b; t++) ticks.push(html`<span style="left:${pct(t)}">${(t % 12) || 12}${t === 12 ? raw("<small>PM</small>") : t === a ? raw(`<small>${t < 12 ? "AM" : "PM"}</small>`) : ""}</span>`);
     const nowLine = now != null && now > a && now < b ? html`<i class="tl-now" style="left:${pct(now)}" aria-hidden="true"></i>` : "";
-    const statusOf = g => {   // pieces of that kind still to do (today: left) — counts only
-      const k = g.cat; if (!k || !((P.q[k] || 0) > 0.5)) return "";
+    // red line: where each kind of work should be finished, from its pieces and pieces-per-hour (Neal, Oct 14)
+    const FIN = M.finishLines(X), RATE = { slb: `${s.rates.slb}/hr per press`, slt: `${s.rates.sltSolo}/hr on SLT 1, +${s.rates.sltPair - s.rates.sltSolo} with the helper`, dct: `${s.rates.dct}/hr per press`, dcb: `${s.rates.dcb}/hr`, tc: `${s.rates.tc}/hr`, comf: `${s.rates.comf}/hr`, asm: `${s.rates.asm}/hr per person` };
+    const finTip = f => `${M.GROUP_LABEL[f.k] || f.k}: ${fmtN(f.pieces)} ${P.isToday ? "pieces left" : "pieces"} at ${RATE[f.k] || ""} with ${f.people} ${f.people === 1 ? "person" : "people"} planned → ${f.finish != null ? `done about ${fmtClock(f.finish)}` : `${fmtN(f.short)} not covered by the planned hours`}`;
+    const finLine = k => { const f = FIN[k]; if (!f || f.finish == null || f.finish <= a || f.finish >= b) return ""; return html`<i class="tl-fin" style="left:${pct(f.finish)}" title="${finTip(f)}"><span>${hmShort(f.finish)}</span></i>`; };
+    const statusOf = g => {   // pieces of that kind still to do (today: left), and when the plan should finish them
+      const k = g.cat || (g.key === "asm" ? "asm" : null), f = k ? FIN[k] : null;
+      if (k === "asm") return f ? html`<span class="${f.finish == null ? "bad-txt" : ""}" title="${finTip(f)}">${f.finish != null ? `by ${hmShort(f.finish)}` : f.people ? `${fmtN(f.short)} short` : ""}</span>` : "";
+      if (!k || !((P.q[k] || 0) > 0.5)) return "";
       const D = P.dp?.D, left = P.isToday && D ? Math.max(0, Math.round(P.q[k] - (D.done?.[k] || 0))) : Math.round(P.q[k]);
-      return left <= 0 ? html`<span class="good-txt">done</span>` : html`<span>${fmtN(left)} ${P.isToday ? "left" : "to do"}</span>`;
+      const when = f ? (f.finish != null ? ` · by ${hmShort(f.finish)}` : f.people ? ` · ${fmtN(f.short)} short` : " · no one") : "";
+      return left <= 0 ? html`<span class="good-txt">done</span>` : html`<span class="${f && f.finish == null ? "bad-txt" : ""}" title="${f ? finTip(f) : ""}">${fmtN(left)} ${P.isToday ? "left" : "to do"}${when}</span>`;
     };
     const barHtml = (g, l, lane = l.lane) => {
       const pi = info[l.empId], nm = pi ? pi.first : first(M.nameOf(P, l.empId));
@@ -407,7 +414,7 @@ export async function render(main, ctx) {
           const plab = html`<i class="sw" style="--c:${COLOR[g.key] || COLOR.ops}"></i><span class="tl-name"><b>${g.label}</b><small>${sub}</small></span>`;
           return raw(html`<div class="tl-row ${g.first ? "first" : "sub"}" data-g="${g.key}" data-code="${g.code}">
             ${can ? raw(html`<button type="button" class="tl-lab" data-emp="${g.empId}" aria-label="Move ${g.name}" title="${g.name}">${raw(plab)}</button>`) : raw(html`<div class="tl-lab">${raw(plab)}</div>`)}
-            <div class="tl-track" style="height:32px">${raw(g.lanes.map(l => barHtml(g, l)).join(""))}${raw(nowLine)}</div>
+            <div class="tl-track" style="height:32px">${raw(g.lanes.map(l => barHtml(g, l)).join(""))}${raw(nowLine)}${raw(finLine(g.key))}</div>
           </div>`);
         }
         const lab = html`<i class="sw" style="--c:${COLOR[g.key] || COLOR.ops}"></i><span class="tl-name"><b>${g.label}</b><small>${raw(g.first ? statusOf(g) : "")}</small></span>${add ? raw('<span class="tl-plus" aria-hidden="true">+</span>') : ""}`;
@@ -415,7 +422,7 @@ export async function render(main, ctx) {
         return raw(html`<div class="tl-row ${g.key === "slb" ? "neck" : ""} ${g.first ? "first" : "sub"}" data-g="${g.key}" data-code="${g.code}">
           ${reorder ? raw(html`<div class="tl-lab">${raw(lab)}${ord}</div>`)
             : add ? raw(html`<button type="button" class="tl-lab" data-add="${g.key}" data-code="${g.code}" aria-label="Add someone to ${g.label}">${raw(lab)}</button>`) : raw(html`<div class="tl-lab">${raw(lab)}</div>`)}
-          <div class="tl-track" style="height:${lanes * 32}px">${g.lanes.length ? raw(g.lanes.map(l => barHtml(g, l)).join("")) : raw('<span class="tl-none">No one</span>')}${raw(nowLine)}</div>
+          <div class="tl-track" style="height:${lanes * 32}px">${g.lanes.length ? raw(g.lanes.map(l => barHtml(g, l)).join("")) : raw('<span class="tl-none">No one</span>')}${raw(nowLine)}${raw(finLine(g.key))}</div>
         </div>`);
       })}
     </div>`;
@@ -519,7 +526,7 @@ export async function render(main, ctx) {
     openDialog({
       title: `Add to ${g.label}`, submitLabel: "Add",
       body: html`<label class="field"><span>Who</span><select class="input" name="who" required>${list.map(e => raw(html`<option value="${e.id}">${e.name}${rk(e) < 99 ? "" : " (not trained)"}${onCrew.has(e.id) ? ` · now on ${posLabel(onCrew.get(e.id))}` : ""}</option>`))}</select></label>
-        <div class="pe-times"><label class="field"><span id="ad-l0">Clock in</span>${raw(tIn("t0", u0, "required"))}</label><label class="field"><span id="ad-l1">Clock out</span>${raw(tIn("t1", u0 + (d0.hours || s.fullDay) + s.breakMin / 60))}</label></div>
+        <div class="pe-times"><label class="field"><span id="ad-l0">Clock in</span>${raw(tIn("t0", u0, "required"))}</label><label class="field"><span id="ad-l1">Clock out</span>${raw(tIn("t1", u0 + M.SHIFT_H))}</label></div>
         <p class="muted small" id="ad-hint">Someone already on the plan moves here at the first time and stays until they clock out (or their next move).</p>`,
       onOpen: (form, d) => {
         d.classList.add("sheet");
@@ -527,7 +534,7 @@ export async function render(main, ctx) {
           const e = people.find(p => p.id === form.who.value), on = onCrew.has(e.id);
           d.querySelector("#ad-l0").textContent = on ? "Moves here at" : "Clock in"; d.querySelector("#ad-l1").parentElement.hidden = on;
           if (on) { const t = P.isToday && P.now != null ? Math.ceil(P.now * 4) / 4 : 9; form.t0.value = hhmm(t); }
-          else { const u = parseTime(M.notBeforeLate(P, e.id, e.start || s.defStart)) ?? 7; form.t0.value = hhmm(u); form.t1.value = hhmm(u + (e.hours || s.fullDay) + s.breakMin / 60); }
+          else { const u = parseTime(M.notBeforeLate(P, e.id, e.start || s.defStart)) ?? 7; form.t0.value = hhmm(u); form.t1.value = hhmm(u + M.SHIFT_H); }
         };
         form.who.addEventListener("change", sync); sync();
       },

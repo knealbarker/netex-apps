@@ -48,8 +48,8 @@ const segs = code => row(code).segs.map(g => `${g.stn} ${g.from.toFixed(2)}-${g.
 
 await t("the plan is what was entered: no simulation, no predicted finish times, no automatic breaks", () => {
   ok(R.manual, "manual plan");
-  eq(segs("slb1"), ["slb1 5.67-13.17"], "Carnell 5:40 for 7.5 hours");
-  eq(segs("slt2"), ["slb2 5.67-7.50", "slt2 7.50-13.17"], "Maria starts on SLB 2 (move at clock-in), then SLT 2");
+  eq(segs("slb1"), ["slb1 5.67-13.67"], "Carnell 5:40 for 8 hours (no clock-out entered)");
+  eq(segs("slt2"), ["slb2 5.67-7.50", "slt2 7.50-13.67"], "Maria starts on SLB 2 (move at clock-in), then SLT 2");
   ok(R.rows.every(r => !r.staffed || r.brkS == null), "no break unless one is set");
   eq(M.catEnds(X.E, R), {}, "no finish times per kind of work");
   ok(X.checks.length === 0 && X.verdict.head === "Plan", "no warnings or suggestions");
@@ -67,11 +67,11 @@ await t("tap a bar: set the start and end of that station; first = clock-in, las
 });
 await t("breaks: set from–to (the bar shows the gap), change, or clear; hours follow", () => {
   let c = M.setBreak(crew0, "slb1", 9, 9.5, s.breakMin);
-  eq([c.slb1.brk, c.slb1.stop, c.slb1.hrs], ["09:00-09:30", "13:10", 7]);
+  eq([c.slb1.brk, c.slb1.stop, c.slb1.hrs], ["09:00-09:30", "13:40", 7.5]);
   const r = M.evaluate(P0(c)).R.rows.find(x => x.st.id === "slb1");
-  eq(r.segs.map(g => [g.from, g.to]), [[parseTime("05:40"), 9], [9.5, parseTime("13:10")]]);
+  eq(r.segs.map(g => [g.from, g.to]), [[parseTime("05:40"), 9], [9.5, parseTime("13:40")]]);
   near(r.brkS, 9, "break start"); near(r.brkTaken, 0.5, "break length");
-  c = M.setBreak(c, "slb1", null, null, s.breakMin); eq([c.slb1.brk, c.slb1.hrs], ["", 7.5]);
+  c = M.setBreak(c, "slb1", null, null, s.breakMin); eq([c.slb1.brk, c.slb1.hrs], ["", 8]);
   let threw = false; try { M.setBreak(crew0, "slb1", 15, 15.5, s.breakMin); } catch { threw = true; }
   ok(threw, "a break outside the shift is refused");
   // the server form: a start only means a break of the setting's length
@@ -88,7 +88,7 @@ await t("move someone to another station at a time; remove a later station", () 
 await t("a new day copies the last saved plan, without anyone who's out", () => {
   const c1 = M.setBreak(crew0, "slb1", 9, 9.5, s.breakMin);
   const copy = M.copyCrew(M.crewToServer(c1), POS, s, new Set(["kosi"]));
-  eq([copy.slb1.emp, copy.slb1.start, copy.slb1.brk, copy.slb1.stop], ["carnell", "05:40", "09:00-09:30", "13:10"]);
+  eq([copy.slb1.emp, copy.slb1.start, copy.slb1.brk, copy.slb1.stop], ["carnell", "05:40", "09:00-09:30", "13:40"]);
   eq(copy.slt2.moves, crew0.slt2.moves, "moves come along");
   eq(copy.asm2.emp, "", "Kosi is out: left off");
 });
@@ -98,9 +98,9 @@ await t("the Floor shows the published manual plan as entered (starts, moves, br
   const FR = F.replay(snap), ev = F.events(FR, F.TXT.en);
   ok(FR.R.manual, "the Floor replays it as a manual plan");
   const carnell = ev.filter(e => e.nm === "Carnell").map(e => `${e.kind}@${e.t.toFixed(2)}`);
-  eq(carnell, ["start@5.67", "brk@9.00", "end@13.17"]);
+  eq(carnell, ["start@5.67", "brk@9.00", "end@13.67"]);
   const maria = ev.filter(e => e.nm === "Maria").map(e => `${e.kind}@${e.t.toFixed(2)}`);
-  eq(maria, ["start@5.67", "move@7.50", "end@13.17"]);
+  eq(maria, ["start@5.67", "move@7.50", "end@13.67"]);
   const now = F.rightNow(FR, ev, 9.1).find(p => p.nm === "Carnell");
   eq([now.state, now.brkEnd], ["break", 9.5]);
 });
@@ -110,6 +110,21 @@ await t("boards: by station and by person, straight from the entered times", () 
   ok(slb2.nLanes === 1 && slb2.lanes.map(l => l.empId).sort().join() === "diana,maria", "Maria then Diana share SLB 2's line");
   const pr = M.personRows(X, M.boardGroups(POS)).find(r => r.empId === "maria");
   eq(pr.lanes[0].bars.map(b => b.label), ["SLB 2", "SLT 2 helper"]);
+});
+
+await t("no clock-out entered = an 8-hour day; red finish lines are pieces ÷ pieces-per-hour over the planned people", () => {
+  eq(segs("slb1"), ["slb1 5.67-13.67"], "Carnell 5:40 + 8 hours");
+  const f = M.finishLines(X);
+  // SLB: 300 pairs at 20/hr. 5:40–7:30 Carnell + Maria (73.3), then Carnell + Diana at 40/hr → 226.7 / 40 = 5.67 h → 1:10 PM
+  near(f.slb.finish, 7.5 + (300 - 2 * 20 * (7.5 - parseTime("05:40"))) / 40, "SLB done");
+  eq(f.slb.people, 3);
+  // SLT: 200 at 50/hr solo from 4:50, helper adds 30/hr from 7:30 (Maria back on SLT 2)
+  const slt = (() => { let cum = 50 * (7.5 - parseTime("04:50")); return 7.5 + (200 - cum) / 80; })();
+  near(f.slt.finish, slt, "SLT done");
+  ok(f.comf && f.comf.finish == null && f.comf.people === 0, "comforters: no one planned → no line");
+  // a break is a gap: Carnell's 9:00–9:30 break pushes SLB later by 30 min × 20/hr ÷ 40/hr = 15 min
+  const f2 = M.finishLines(M.evaluate(P0(M.setBreak(crew0, "slb1", 9, 9.5, s.breakMin))));
+  near(f2.slb.finish - f.slb.finish, 0.25, "break moves the line");
 });
 
 console.log(`\n${pass} passed, ${fail} failed`);

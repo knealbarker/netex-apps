@@ -661,6 +661,7 @@ export function applyMove(crew, POS, empId, toKey, at, toCode = null) {
 }
 
 // ---------------------------------------------------------------- manual plans (Neal, Oct 14)
+export const SHIFT_H = 8;   // "assume everyone clocks in and works 8 hours"
 /** One person's break as [start, end] hours, from "HH:MM-HH:MM" (or "HH:MM" plus breakMin). */
 export function breakOf(c, breakMin = 30) {
   const m = String((c && c.brk) || "").match(/^(\d{1,2}:\d{2})(?:-(\d{1,2}:\d{2}))?$/); if (!m) return null;
@@ -670,7 +671,7 @@ export function breakOf(c, breakMin = 30) {
 /** Clock-in and clock-out of a crew entry (clock-out = its stop, or start + hours + break). */
 export function shiftOf(c, breakMin = 30) {
   const start = parseTime(c.start) ?? 7, br = breakOf(c, breakMin), bl = br ? br[1] - br[0] : 0;
-  let end = parseTime(c.stop); if (end == null || end <= start) end = start + Math.max(0, +c.hrs || 0) + bl;
+  let end = parseTime(c.stop); if (end == null || end <= start) end = start + SHIFT_H;   // 8-hour day unless a clock-out is entered
   return { start, end, brk: br };
 }
 /** A person's stations in time order: [{ i, stn, from, to }] (the break isn't cut out). */
@@ -756,6 +757,43 @@ export function copyCrew(prevServerCrew, POS, s, outIds = new Set()) {
     crew[code] = { ...withHours(c, s.breakMin), source: "user" };
   }
   return crew;
+}
+
+/**
+ * Where each kind of work should be finished (Neal, Oct 14: "show a red line where they SHOULD be finishing up for the
+ * day based on counts and expected pieces per hour"). Plain arithmetic on the plan as entered, no simulation:
+ * the pieces (today: the ones left, from now) are worked off at each planned person's pieces-per-hour (Settings ›
+ * Rates; the SLT 2 helper adds the pair rate minus the solo rate), minute by minute through their time on that station
+ * (breaks are gaps). The line is where the pieces run out. Washers and moves people might make aren't guessed.
+ *   { slb: { k, pieces, finish (hours) | null, short (pieces not covered by the plan), people, rate (pieces/hr at full staffing) }, ... }
+ */
+export function finishLines(X) {
+  const { P, E, R } = X, out = {};
+  if (!R || R.empty) return out;
+  const r = P.s.rates, D = P.dp && P.dp.D, live = P.isToday && P.now != null && D;
+  const rateOf = stn => { const ty = stn === "comf" ? "comf" : E.TYPE_OF[stn]; return ty === "slt" ? r.sltSolo : ty === "slt2" ? r.sltPair - r.sltSolo : ty === "asm" ? r.asm : r[ty] || 0; };
+  const kindOf = stn => (stn === "comf" ? "comf" : groupOf(E.TYPE_OF[stn]));
+  const need = {};
+  for (const k of CATS) need[k] = Math.max(0, (P.q[k] || 0) - (live ? D.done?.[k] || 0 : 0));
+  need.asm = CATS.reduce((t, k) => t + (P.s.asmInclude[k] ? need[k] : 0), 0);
+  const segs = {};
+  for (const row of R.rows) if (row.staffed) for (const g of row.segs) { const k = kindOf(g.stn); if (k in need) (segs[k] = segs[k] || []).push({ from: g.from, to: g.to, rate: rateOf(g.stn), who: row.emp.empId }); }
+  for (const k of Object.keys(need)) {
+    const L = segs[k] || [], pieces = need[k];
+    if (!(pieces > 0.5)) continue;
+    const t0 = Math.max(live ? P.now : -Infinity, Math.min(...L.map(g => g.from), Infinity));
+    let cum = 0, finish = null;
+    if (L.length && isFinite(t0)) {
+      const tEnd = Math.max(...L.map(g => g.to)), dt = 1 / 60;
+      for (let t = t0; t < tEnd - 1e-9; t += dt) {
+        const rate = L.reduce((a, g) => a + (t >= g.from - 1e-9 && t < g.to - 1e-9 ? g.rate : 0), 0);
+        if (cum + rate * dt >= pieces - 1e-6) { finish = t + (rate > 0 ? (pieces - cum) / rate : 0); cum = pieces; break; }
+        cum += rate * dt;
+      }
+    }
+    out[k] = { k, pieces, finish, short: finish == null ? Math.max(0, Math.round(pieces - cum)) : 0, people: new Set(L.map(g => g.who)).size, from: isFinite(t0) ? t0 : null };
+  }
+  return out;
 }
 
 /** Where a person is (which code) at hour t after their moves: the station code they work then. */

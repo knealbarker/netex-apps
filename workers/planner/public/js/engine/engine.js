@@ -87,14 +87,15 @@ export function createEngine(S) {
   // ---------- manual plans (Neal, Oct 14: "remove all predictive planning ... let the user manually create a plan")
   // With s.manual the plan is exactly what the manager entered: each position's clock-in (start), clock-out (stop),
   // station moves and one break ("HH:MM-HH:MM", or "HH:MM" for a break of s.breakMin). Nothing is simulated.
-  const MANUAL = !!s.manual;
+  const MANUAL = !!s.manual, SHIFT_H = 8;
   function manualTimes(id) {
     const c = s.crew[id] || {}, start = parseTime(c.start) ?? parseTime(s.defStart) ?? 7;
     const bm = String(c.brk || "").match(/^(\d{1,2}:\d{2})(?:-(\d{1,2}:\d{2}))?$/);
     let brk = null;
     if (bm) { const b0 = parseTime(bm[1]), b1 = bm[2] ? parseTime(bm[2]) : b0 + (s.breakMin || 0) / 60; if (b1 > b0) brk = [b0, b1]; }
     const bl = brk ? brk[1] - brk[0] : 0;
-    let end = parseTime(c.stop); if (end == null || end <= start) end = start + Math.max(0, +c.hrs || 0) + bl;
+    // no clock-out entered: an 8-hour day from clock-in (Neal, Oct 14: "assume everyone clocks in and works 8 hours")
+    let end = parseTime(c.stop); if (end == null || end <= start) end = start + SHIFT_H;
     return { start, end, brk, bl, work: Math.max(0, end - start - bl) };
   }
   // clock-in, working hours (after any hard stop) and hard stop for one position
