@@ -409,6 +409,18 @@ export function lastPunchOf(P, id) {
   const [H, Mi] = best.s.slice(11, 16).split(":");
   return { kind: best.kind, h: +H + (+Mi || 0) / 60 };
 }
+/** Hours a person has been on the clock on the plan's day: closed punches, plus an open one up to now (today only). Null without punches (Neal, Oct 15). */
+export function clockedHoursOf(P, id) {
+  const h = t => { const x = String(t || "").slice(11, 16).split(":"); return x.length < 2 ? null : +x[0] + (+x[1] || 0) / 60; };
+  let sum = 0, any = false;
+  for (const c of P.clock || []) {
+    if (c.personId !== id) continue;
+    const i = h(c.clockIn); if (i == null) continue;
+    const o = c.clockOut ? h(c.clockOut) : P.isToday && P.now != null ? P.now : null;
+    any = true; if (o != null && o > i) sum += o - i;
+  }
+  return any ? sum : null;
+}
 export function clockInOf(P) {
   const out = {};
   if (!P.isToday) return out;

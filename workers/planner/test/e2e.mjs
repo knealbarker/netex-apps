@@ -297,6 +297,8 @@ await t("Plan board: each person's last time-clock punch, green in / red out, by
   await m.p.click('.tl-view button:has-text("People")'); await m.p.waitForSelector(".tl-lab .tl-punch");
   const labs = await m.p.$$eval("#pl-board .tl-lab .tl-punch", els => els.map(e => e.className + " " + e.textContent));
   ok(labs.some(x => /in 8:30/.test(x)) && labs.some(x => /out 10:15/.test(x)), `name tags: ${labs.join(", ")}`);
+  const beto = await m.p.$eval(`#pl-board .tl-lab[data-emp="${ids.Beto}"] .tl-worked`, e => e.textContent);
+  ok(/4h 44m/.test(beto), `Beto's time on the clock: ${beto}`);   // 5:31–10:15
   await m.p.locator(".pv-board").screenshot({ path: join(SHOTS, "e11b-punch-people.png") });
   await m.p.click('.tl-view button:has-text("Stations")');
   await m.ctx.close();

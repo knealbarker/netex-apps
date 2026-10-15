@@ -417,8 +417,9 @@ export async function render(main, ctx) {
         const free = !people && !st.crew[g.code].emp, lanes = g.nLanes, add = can && free && !reorder;
         if (people) {   // a person's line: their name, their own station and hours; tap = the move sheet
           const pi = info[g.empId], sub = `${((POS.find(p => p.id === g.code) || {}).label || g.code).replace(/Starch Laundry/i, "SL").replace(/Dry Cleaning/i, "DC")}${pi ? ` · ${hmShort(pi.startH)}–${hmShort(pi.end)}` : ""}`;
-          const pu = punchOf(g.empId), ptitle = pu ? `${g.name} · ${punchTxt(pu)}` : g.name;
-          const plab = html`<i class="sw" style="--c:${COLOR[g.key] || COLOR.ops}"></i><span class="tl-name"><b>${g.label}${raw(punchTag(pu))}</b><small>${sub}</small></span>`;
+          const pu = punchOf(g.empId), wk = M.clockedHoursOf(P, g.empId), wkTxt = wk == null ? "" : `${Math.floor(Math.round(wk * 60) / 60)}h ${String(Math.round(wk * 60) % 60).padStart(2, "0")}m`;
+          const ptitle = [g.name, pu && punchTxt(pu), wkTxt && `${wkTxt} on the clock today`].filter(Boolean).join(" · ");
+          const plab = html`<i class="sw" style="--c:${COLOR[g.key] || COLOR.ops}"></i><span class="tl-name"><b>${g.label}${raw(punchTag(pu))}</b><small>${sub}</small>${wkTxt ? raw(html`<small class="tl-worked" title="On the clock today">⏱ ${wkTxt}</small>`) : ""}</span>`;
           return raw(html`<div class="tl-row ${g.first ? "first" : "sub"}" data-g="${g.key}" data-code="${g.code}">
             ${can ? raw(html`<button type="button" class="tl-lab" data-emp="${g.empId}" aria-label="Move ${g.name}" title="${ptitle}">${raw(plab)}</button>`) : raw(html`<div class="tl-lab" title="${ptitle}">${raw(plab)}</div>`)}
             <div class="tl-track" style="height:32px">${raw(g.lanes.map(l => barHtml(g, l)).join(""))}${raw(nowLine)}${raw(finLine(g.key))}</div>
