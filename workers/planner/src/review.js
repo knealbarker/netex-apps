@@ -1,8 +1,9 @@
 // Review: how a day actually went, against its plan.
 //  - pieces assembled that day (SMRT), through the day, and by kind of work
-//  - pieces due that day and how many were finished by the end of it; each deadline's real ready time
+//  - pieces due that day and how many were finished by the end of it (deadlines only while SHUTTLES is on)
 //  - hours from Rippling, pieces per labor hour, and (Admins and the Owner only) labor cost and labor % of revenue
-//  - the plan as published (or saved) against each person's real clock-in and clock-out
+//  - each person's real clock-in, clock-out, break and paid hours; the page lays them against the plan (it replays the
+//    plan with the same model as the Plan page: red finish lines, should-leave times, paced labor)
 //  - follow-ups: orders whose due date SMRT moved later, with a reason and a note
 //  - the last few weeks of work days, for the trend
 import { HttpError, nowIso, audit } from "./util.js";
@@ -12,6 +13,7 @@ import { productionIds } from "./team.js";
 import { payRates, laborCost } from "./pay.js";
 import { dayTally } from "./tally.js";
 import { firstBreak, minuteOf } from "../public/js/engine/breakpay.js";
+import { SHUTTLES } from "./features.js";
 import { CATS, categorizer, splitOrders, loadOpen, nextWorkDay, prevWorkDay, addDays, localNow, storeToRun, runDeadline } from "./pieces.js";
 
 const DAY = /^\d{4}-\d{2}-\d{2}$/;
@@ -67,7 +69,12 @@ async function hours(db, env, day, today, departmentId) {
   // finished days: Rippling's hours already include the paid break (netex-sync)
   return (await db.prepare(`SELECT h.person_id AS personId, h.hours, h.break_paid_hours AS bp, h.first_in AS fi, h.last_out AS lo, p.first_name || ' ' || p.last_name AS name
       FROM labor_daily_hours h JOIN core_people p ON p.id=h.person_id WHERE h.department_id=? AND h.work_date=? AND h.deleted_at IS NULL`).bind(departmentId, day).all()).results
-    .map(r => ({ personId: r.personId, name: r.name, hours: +r.hours || 0, breakPaid: +r.bp || 0, firstIn: toH(r.fi), lastOut: toH(r.lo), open: !r.lo }));
+    .map(r => {
+      const hours = +r.hours || 0, breakPaid = +r.bp || 0, firstIn = toH(r.fi), lastOut = toH(r.lo);
+      // punches aren't kept after the day is added up: time off the clock = first in to last out, less the hours worked
+      const offMin = firstIn != null && lastOut != null ? Math.max(0, Math.round((lastOut - firstIn - (hours - breakPaid)) * 60)) : null;
+      return { personId: r.personId, name: r.name, hours, breakPaid, offMin, firstIn, lastOut, open: !r.lo };
+    });
 }
 
 export async function reviewDay(db, env, me, day) {
@@ -110,7 +117,7 @@ export async function reviewDay(db, env, me, day) {
   // deadlines: when each run's pieces were really ready (the last piece assembled), against the deadline and the plan's ready time
   const runOf = storeToRun(runs);
   const waves = new Map();
-  for (const o of orders) {
+  for (const o of SHUTTLES ? orders : []) {   // shuttles are switched off (Oct 13): no deadlines
     const r = o.loc === "Route" ? { id: "route", name: "Route deliveries", kind: "route" } : runOf(o.loc) || { id: "other", name: "No run set", kind: "counter" };
     const catPieces = Object.values(o.per).reduce((t, p) => t + p[0], 0); if (!catPieces) continue;
     const dm = r.kind === "route" ? null : runDeadline(r);
@@ -141,15 +148,17 @@ export async function reviewDay(db, env, me, day) {
       const ps = toH(c.start), pe = ps != null ? ps + c.hours + (c.hours > planned.settings.breakAfter ? planned.settings.breakMin / 60 : 0) : null;
       const a = people.find(p => p.personId === c.personId); if (a) seen.add(a.personId);
       vs.push({ personId: c.personId, name: a?.name || null, station: c.label, plannedIn: ps, plannedOut: c.stop ? Math.min(pe, toH(c.stop)) : pe, plannedHours: c.hours,
-        actualIn: a?.firstIn ?? null, actualOut: a?.lastOut ?? null, actualHours: a?.hours ?? null, breakPaid: a?.breakPaid ?? 0, breakMin: a?.breakMin ?? null, stillIn: !!a?.open, missing: !a });
+        actualIn: a?.firstIn ?? null, actualOut: a?.lastOut ?? null, actualHours: a?.hours ?? null, breakPaid: a?.breakPaid ?? 0, breakMin: a?.breakMin ?? null, breakOpen: !!a?.breakOpen, offMin: a?.offMin ?? null, stillIn: !!a?.open, missing: !a });
     }
-    for (const a of people) if (!seen.has(a.personId)) vs.push({ personId: a.personId, name: a.name, station: null, unplanned: true, actualIn: a.firstIn, actualOut: a.lastOut, actualHours: a.hours, breakPaid: a.breakPaid || 0, breakMin: a.breakMin ?? null, stillIn: a.open });
+    for (const a of people) if (!seen.has(a.personId)) vs.push({ personId: a.personId, name: a.name, station: null, unplanned: true, actualIn: a.firstIn, actualOut: a.lastOut, actualHours: a.hours, breakPaid: a.breakPaid || 0, breakMin: a.breakMin ?? null, breakOpen: !!a.breakOpen, offMin: a.offMin ?? null, stillIn: a.open });
     const names = new Map((await db.prepare("SELECT id, first_name || ' ' || last_name AS n FROM core_people WHERE org_id=?").bind(env.ORG_ID).all()).results.map(r => [r.id, r.n]));
     for (const v of vs) if (!v.name) v.name = names.get(v.personId) || "Someone";
   }
 
   return { day, today, isToday: day === today, isWorkDay: workDays.includes(weekday(day)), prev: prevWorkDay(day, workDays), next: day < today ? nextWorkDay(day, workDays) : null, nextWork: nextWorkDay(day, workDays),
-    done: money ? done : { ...done, revenue: undefined }, due, deadlines, labor, people: vs, planned: planned ? { source: planned.source, at: planned.at || null, by: planned.by || null, metrics: planned.metrics } : null,
+    done: money ? done : { ...done, revenue: undefined }, due, deadlines, labor, people: vs,
+    actual: people.map(a => ({ personId: a.personId, name: a.name, hours: a.hours, breakPaid: a.breakPaid || 0, breakMin: a.breakMin ?? null, breakOpen: !!a.breakOpen,
+      offMin: a.offMin ?? null, firstIn: a.firstIn, lastOut: a.lastOut, open: !!a.open })), planned: planned ? { source: planned.source, at: planned.at || null, by: planned.by || null, metrics: planned.metrics } : null,
     tally: await dayTally(db, env, day).catch(e => { console.error(JSON.stringify({ job: "review", tallyError: String(e && e.stack || e) })); return null; }),
     followups: await followups(db, env, day), trend: await trend(db, env, day, workDays, departmentId, cat, prices, money ? { payAvg: groups.money.payAvg, rates } : null), money };
 }

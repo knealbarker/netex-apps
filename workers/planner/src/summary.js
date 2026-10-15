@@ -43,7 +43,7 @@ export async function buildSummary(db, env, day, { now = Date.now() } = {}) {
   const target = groups.money.laborTarget;
   const L = R.labor, W = R.deadlines.filter(w => w.kind !== "route" && w.deadline != null);
   const onTime = W.filter(w => w.readyAt != null && w.readyAt <= w.deadline + 1 / 60);
-  const lastOut = Math.max(-1, ...R.people.filter(p => p.actualOut != null).map(p => p.actualOut)), stillIn = R.people.some(p => p.stillIn);
+  const lastOut = Math.max(-1, ...R.actual.filter(p => p.lastOut != null).map(p => p.lastOut)), stillIn = R.actual.some(p => p.open);
   const ahead = V.days[next]?.aheadToday || 0;
   const pm = R.planned?.metrics;
   // the published plan's labor $ and %: replay it with today's pay rates and prices (the snapshot itself carries no money)
@@ -144,8 +144,9 @@ export async function buildSummary(db, env, day, { now = Date.now() } = {}) {
       H.push(table([th("Station"), th("Person"), th("Clock-in"), th("Hours", "right")], N.crew.map(c => `<tr>${td(esc(c.station))}${td(`<b>${esc(c.name)}</b>`)}${td(clock(t2h(c.start)))}${td(hrs(c.hours), "right")}</tr>`)));
       T.push(...N.crew.map(c => `  ${c.station.padEnd(22)} ${c.name.padEnd(22)} ${clock(t2h(c.start))}  ${hrs(c.hours)}`));
     } else { H.push(p("No one placed yet.")); T.push("  No one placed yet."); }
-    if (N.end != null) {
-      const proj = `Projected: everyone done about ${clock(N.end)}, ${hrs(N.laborH)} of labor (${usd(N.cost)}), ${pct(N.pct)} of revenue${N.otH > 0.04 ? `, ${hrs(N.otH)} overtime` : ", no overtime"}${N.short > 0.5 ? `, ${n0(N.short)} pieces wouldn't get done` : ""}.`;
+    if (N.lastOut != null) {
+      // manual plans (Oct 14): the work's finish comes from the red finish lines; labor at the planned pace, break paid up to 30 min
+      const proj = `Projected: ${N.end != null ? `work done about ${clock(N.end)}` : "no finish time"}${N.short > 0.5 ? ` with ${n0(N.short)} pieces not covered by the planned hours` : ""}, last clock-out ${clock(N.lastOut)}; ${hrs(N.laborH)} of labor at that pace (${usd(N.cost)}), ${pct(N.pct)} of the pieces' sales.`;
       H.push(p(esc(proj), `font-weight:600;color:${N.short > 0.5 || (N.pct != null && N.pct > target) ? C.bad : C.ink}`)); T.push("  " + proj);
     }
   }

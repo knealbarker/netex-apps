@@ -476,21 +476,38 @@ export function snapshotOf(X) {
  * Plans a day from what's stored: its saved crew, or a crew suggested from history when nothing is saved yet.
  * V = pieces view that includes `day`; plan = GET /api/plan/:day. Returns null when there are no pieces for the day.
  */
-export function projectDay({ SET, TEAM, V, plan, day, admin = false }) {
+export function projectDay({ SET, TEAM, V, plan, day, admin = false, now = null }) {
+  // a day's plan as entered (Neal, Oct 14: plans are manual): the saved crew, else a copy of the last saved plan
+  // (as the Plan page would make it), worked out with the same arithmetic as the Plan page: red finish lines per kind
+  // of work and labor at the planned pace. No suggestions, no simulation.
   const s = engineSettings(SET, V.prices || {}), pos = positions(SET), POS = pos.stations.concat(pos.ops);
   const dp = dayPieces(V, SET, day); if (!dp) return null;
   const overrides = plan.overrides || {};
   const P = { s, ...pos, people: peopleFrom(TEAM), crew: crewFromServer(plan.crew, POS, s), q: effectiveQ(dp.base, overrides), waves: dp.waves, day, today: V.today,
-    isToday: dp.isToday, now: null, callouts: plan.callouts || [], late: plan.late || [], history: plan.history || { hours: [], planned: [] }, clock: [], published: plan.published || null, admin,
+    isToday: dp.isToday, now: dp.isToday ? now : null, callouts: plan.callouts || [], late: plan.late || [], history: plan.history || { hours: [], planned: [] }, clock: plan.clock || [], published: plan.published || null, admin,
     expected: dp.expected && !Object.keys(overrides).length, dp };
-  let basis = plan.published ? "the published plan" : "the plan saved for that day", suggested = false;
-  if (!Object.keys(plan.crew || {}).length) { const r = suggestCrew(P, evaluate(P).E); P.crew = r.crew; basis = `suggested from ${r.basis}`; suggested = true; }
+  let basis = plan.published ? "the published plan" : "the plan saved for that day", copied = null;
+  if (!Object.keys(plan.crew || {}).length) {
+    if (plan.prev && Object.keys(plan.prev.crew || {}).length) {
+      P.crew = copyCrew(plan.prev.crew, POS, s, new Set((plan.callouts || []).map(c => c.personId)));
+      copied = plan.prev.day; basis = `copied from ${new Date(plan.prev.day + "T12:00:00").toLocaleDateString("en-US", { weekday: "long", month: "short", day: "numeric" })}'s plan`;
+    } else basis = "no plan saved yet";
+  }
   const X = evaluate(P);
-  const crew = POS.filter(p => P.crew[p.id].emp).map(p => ({ code: p.id, station: p.label, name: nameOf(P, P.crew[p.id].emp), start: P.crew[p.id].start, hours: +P.crew[p.id].hrs || 0 }));
+  const label = id => (POS.find(p => p.id === id) || {}).label || id;
+  const crew = POS.filter(p => P.crew[p.id].emp).map(p => { const c = P.crew[p.id];
+    return { code: p.id, station: p.label, name: nameOf(P, c.emp), personId: c.emp, start: c.start, stop: c.stop || "", brk: c.brk || "", hours: +c.hrs || 0,
+      moves: (c.moves || []).filter(m => m.at && m.to).map(m => ({ at: m.at, to: m.to, label: label(m.to) })) }; });
   const pieces = CATS.reduce((t, k) => t + (P.q[k] || 0), 0);
-  return { X, P, basis, suggested, crew, pieces, q: P.q, expected: P.expected, known: dp.D.todo,
-    end: X.R.empty ? null : X.R.end, laborH: X.M ? X.M.regH + X.M.otH + X.M.opsH : 0, cost: X.M ? X.M.total : null, pct: X.M ? X.M.pct : null,
-    otH: X.R.empty ? 0 : X.R.otTotal, short: X.R.empty ? 0 : X.R.P.shortTotal, verdict: X.verdict };
+  const FIN = X.R.empty ? {} : finishLines(X), fins = Object.values(FIN).filter(f => f.pieces > 0);
+  const short = fins.reduce((t, f) => t + (f.short || 0), 0);
+  const end = fins.length && fins.every(f => f.finish != null) ? Math.max(...fins.map(f => f.finish)) : fins.some(f => f.finish != null) ? Math.max(...fins.filter(f => f.finish != null).map(f => f.finish)) : null;
+  const PL = !X.R.empty && X.M ? paceLabor(X) : null;
+  const laborH = PL ? Object.values(PL.people).reduce((t, p) => t + p.paid, 0) : 0;
+  return { X, P, FIN, PL, basis, suggested: false, copied, crew, pieces, q: P.q, expected: P.expected, known: dp.D.todo,
+    end, lastOut: X.R.empty ? null : X.R.end, firstIn: X.R.empty ? null : X.R.firstStart, short,
+    laborH, cost: PL ? PL.total : null, pct: PL ? PL.pct : null, sales: PL ? PL.sales : null,
+    schedCost: X.M ? X.M.total : null, schedPct: PL ? PL.schedPct : null, otH: 0, verdict: X.verdict };
 }
 
 // ---------------------------------------------------------------- Team: training order from history

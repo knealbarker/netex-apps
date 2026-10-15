@@ -112,11 +112,21 @@ await t("Floor: the labor streak counts work days at or under target (no money i
   ok(f.streak && f.streak.target === 20 && typeof f.streak.days === "number", JSON.stringify(f.streak));
   ok(!("streak" in (await call("GET", `/floor/${today}`)).body), "only when asked");
 });
-await t("projectDay: the next day's saved crew, or a suggestion, with the projection", async () => {
+await t("projectDay: the next day's saved crew, else the last saved plan copied in — never a suggestion", async () => {
   const [SET, TEAM] = [(await call("GET", "/settings")).body, (await call("GET", "/team")).body];
   const V = (await call("GET", `/pieces?day=${LATER}`)).body, plan = (await call("GET", `/plan/${LATER}`)).body;
   const N = M.projectDay({ SET, TEAM, V, plan, day: LATER, admin: true });
-  ok(N && N.suggested && N.pieces === 18 && N.crew.length > 0 && N.end > 0 && N.cost > 0, JSON.stringify({ s: N?.suggested, p: N?.pieces, c: N?.crew.length, e: N?.end }));
+  ok(N && !N.suggested && N.pieces === 18, JSON.stringify({ s: N?.suggested, p: N?.pieces }));
+  if (plan.prev) ok(N.copied === plan.prev.day && N.crew.length > 0 && N.lastOut > 0 && N.cost > 0, JSON.stringify({ c: N.copied, n: N.crew.length, lo: N.lastOut, cost: N.cost }));
+  else ok(!N.copied && N.crew.length === 0 && /no plan/.test(N.basis), N.basis);
+  // with a plan saved the day before, a day without one gets it copied (finish line, paced labor)
+  const before = new Date(Date.parse(LATER + "T12:00:00Z") - 864e5).toISOString().slice(0, 10);
+  eq((await call("PUT", `/plan/${before}`, { body: { crew: { slt1: { personId: P.Ana, start: "06:00", hours: 8 } }, overrides: {} } })).status, 200);
+  const plan2 = (await call("GET", `/plan/${LATER}`)).body;
+  if (!Object.keys(plan2.crew).length) {
+    const N2 = M.projectDay({ SET, TEAM, V, plan: plan2, day: LATER, admin: true });
+    ok(plan2.prev?.day === before && N2.copied === before && N2.crew.some(c => c.personId === P.Ana) && (N2.end != null || N2.short > 0), JSON.stringify({ prev: plan2.prev?.day, end: N2.end, short: N2.short }));
+  }
 });
 await t("summary: builds today vs. plan and the next day, labor with Rippling rates", async () => {
   // publish a plan for DAY first, so the summary has a plan to compare against

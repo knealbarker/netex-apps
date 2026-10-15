@@ -216,7 +216,8 @@ await t("Publish, then the Floor shows the plan and the labor streak", async () 
 await t("Review: the next work day's projection and a link to its plan", async () => {
   await p.goto(url + `/#/review?day=${LAST}`); await p.waitForSelector("#rv-nextday .rv-next");
   ok(/pieces to plan for/.test(await p.textContent("#rv-nextday")), "projection: " + await p.textContent("#rv-nextday"));
-  ok(await p.isVisible('#rv-nextday >> text=projected labor'), "owner sees labor");
+  ok(await p.isVisible('#rv-nextday >> text=labor at the planned pace'), "owner sees labor");
+  ok(await p.isVisible(".rv-pva"), "plan vs. actual table");
   await shot(p, "e6-review.png");
   await p.click("#rv-nextday a.btn"); await p.waitForSelector("#pl-board .tl-row");
   ok(await p.evaluate(d => document.querySelector(`[data-day="${d}"]`)?.getAttribute("aria-selected") === "true", nextWorkDay(LAST, WD)), "opened that day's plan");

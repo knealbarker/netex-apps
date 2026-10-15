@@ -22,11 +22,9 @@ export async function loadPlan(db, env, day) {
   checkDay(day);
   const { locationId, departmentId } = await productionIds(db, env.ORG_ID);
   const d = await dayRow(db, locationId, day);
-  const crew = {}, overrides = {}; let callouts = [], published = null, updatedByName = null;
+  let crew = {}; const overrides = {}; let callouts = [], published = null, updatedByName = null;
   if (d) {
-    for (const a of (await db.prepare(`SELECT s.code, a.person_id AS personId, a.starts_at AS start, a.hours, a.hard_stop AS stop, a.source, a.moves_json AS moves, a.break_at AS brk
-        FROM plan_assignments a JOIN plan_stations s ON s.id=a.station_id WHERE a.day_id=? AND a.deleted_at IS NULL`).bind(d.id).all()).results)
-      crew[a.code] = { personId: a.personId, start: a.start, hours: a.hours, stop: a.stop || "", source: a.source, ...(a.moves ? { moves: parseMoves(a.moves) } : {}), ...(a.brk ? { brk: a.brk } : {}) };
+    crew = await crewOf(db, d.id);
     for (const o of (await db.prepare("SELECT category_id AS k, pieces FROM plan_count_overrides WHERE day_id=? AND deleted_at IS NULL").bind(d.id).all()).results) overrides[o.k] = o.pieces;
     callouts = (await db.prepare(`SELECT c.id, c.person_id AS personId, s.code AS station, c.note, c.created_at AS at FROM plan_callouts c LEFT JOIN plan_stations s ON s.id=c.station_id
         WHERE c.day_id=? AND c.deleted_at IS NULL ORDER BY c.created_at`).bind(d.id).all()).results;
@@ -43,8 +41,25 @@ export async function loadPlan(db, env, day) {
   const hidden = (await db.prepare("SELECT key FROM plan_events WHERE org_id=? AND day=? AND (key LIKE 'dismiss:%' OR key LIKE 'accept:%')").bind(env.ORG_ID, day).all()).results
     .map(r => r.key.replace(/^(dismiss|accept):/, ""));
   const late = away.filter(t => t.kind === "late" && !outIds.has(t.personId)).map(t => ({ id: t.id, personId: t.personId, at: t.at, note: t.note }));
-  return { day, rev: d ? d.rev : 0, status: d ? d.status : "new", updatedAt: d?.updatedAt || null, updatedBy: updatedByName, crew, overrides, callouts, late, hidden, published,
+  // no crew saved yet: the last saved plan in the 10 days before (Neal, Oct 14: a new day starts as a copy of the last one).
+  // The Plan page copies it in and saves; Review, the summary email and the tablets use it as the day's plan until then.
+  let prev = null;
+  if (!Object.keys(crew).length) {
+    const p = await db.prepare(`SELECT d.id, d.work_date AS day FROM plan_days d WHERE d.location_id=? AND d.work_date < ? AND d.work_date >= ?
+        AND EXISTS (SELECT 1 FROM plan_assignments a WHERE a.day_id=d.id AND a.deleted_at IS NULL AND a.person_id IS NOT NULL) ORDER BY d.work_date DESC LIMIT 1`)
+      .bind(locationId, day, new Date(Date.parse(day + "T12:00:00Z") - 10 * 864e5).toISOString().slice(0, 10)).first();
+    if (p) prev = { day: p.day, crew: await crewOf(db, p.id) };
+  }
+  return { day, rev: d ? d.rev : 0, status: d ? d.status : "new", prev, updatedAt: d?.updatedAt || null, updatedBy: updatedByName, crew, overrides, callouts, late, hidden, published,
     history: await history(db, env, day, departmentId, locationId), clock: await clockToday(db, env, day), clockAsOf: await clockAsOf(db, env) };
+}
+
+async function crewOf(db, dayId) {
+  const crew = {};
+  for (const a of (await db.prepare(`SELECT s.code, a.person_id AS personId, a.starts_at AS start, a.hours, a.hard_stop AS stop, a.source, a.moves_json AS moves, a.break_at AS brk
+      FROM plan_assignments a JOIN plan_stations s ON s.id=a.station_id WHERE a.day_id=? AND a.deleted_at IS NULL`).bind(dayId).all()).results)
+    crew[a.code] = { personId: a.personId, start: a.start, hours: a.hours, stop: a.stop || "", source: a.source, ...(a.moves ? { moves: parseMoves(a.moves) } : {}), ...(a.brk ? { brk: a.brk } : {}) };
+  return crew;
 }
 
 /** Who worked recent days (hours, first clock-in) and who was planned where: for "suggest from history" and the 40-hour watch. */

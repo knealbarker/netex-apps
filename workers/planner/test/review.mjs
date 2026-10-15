@@ -62,11 +62,10 @@ await t("due that day: 8 pieces, 7 finished by the end of it", async () => {
   const r = (await call("GET", `/review/${DAY}`)).body;
   eq([r.due.pieces, r.due.finished, r.due.orders], [8, 7, 5]);
 });
-await t("deadlines: the Quitman run was ready at 10:20 (before its 10:50 departure); the counter wasn't finished", async () => {
+await t("no deadlines while shuttles are switched off; every person's actual day is returned", async () => {
   const r = (await call("GET", `/review/${DAY}`)).body;
-  const q = r.deadlines.find(d => d.name === "Quitman run"), c = r.deadlines.find(d => d.name === "Counter");
-  near(q.readyAt, 10 + 20 / 60, "ready"); near(q.deadline, 11.5 - 40 / 60, "deadline"); eq(q.left, 0);
-  eq([c.readyAt, c.left], [null, 1]);
+  eq(r.deadlines.length, 0);
+  ok(Array.isArray(r.actual) && r.actual.length > 0 && r.actual.every(a => "breakPaid" in a && "offMin" in a), JSON.stringify(r.actual));
 });
 await t("labor: hours, pieces per hour; cost and labor % only for Admins and the Owner", async () => {
   const r = (await call("GET", `/review/${DAY}`)).body;
