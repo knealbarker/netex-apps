@@ -451,7 +451,7 @@ export async function render(main, ctx) {
         const gi = groups.findIndex(x => x.key === g.key), lastG = groups.length - 1;
         const free = !people && !st.crew[g.code].emp, lanes = g.nLanes, add = can && free && !reorder;
         if (people) {   // a person's line: their name, their own station and hours; tap = the move sheet
-          const pi = info[g.empId], sub = `${(POS.find(p => p.id === g.code) || {}).label || g.code}${pi ? ` · ${hmShort(pi.startH)}–${hmShort(pi.end)}` : ""}`;
+          const pi = info[g.empId], sub = `${((POS.find(p => p.id === g.code) || {}).label || g.code).replace(/Starch Laundry/i, "SL").replace(/Dry Cleaning/i, "DC")}${pi ? ` · ${hmShort(pi.startH)}–${hmShort(pi.end)}` : ""}`;
           const plab = html`<i class="sw" style="--c:${COLOR[g.key] || COLOR.ops}"></i><span class="tl-name"><b>${g.label}</b><small>${sub}</small></span>`;
           return raw(html`<div class="tl-row ${g.first ? "first" : "sub"}" data-g="${g.key}" data-code="${g.code}">
             ${can ? raw(html`<button type="button" class="tl-lab" data-emp="${g.empId}" aria-label="Move ${g.name}" title="${g.name}">${raw(plab)}</button>`) : raw(html`<div class="tl-lab">${raw(plab)}</div>`)}
