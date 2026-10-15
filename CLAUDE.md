@@ -28,8 +28,8 @@ One app per subdomain, all on Cloudflare, one shared database, one sign-in.
 - **One database for everything** (D1 `netex-apps`). New tables get a new numbered file in `db/migrations/`; never edit an applied one.
   Money is integer cents; SMRT/Rippling times are Central local with offset (`substr(x,1,10)` = local day); app timestamps are UTC.
 - **Only `workers/planner` should apply migrations** (its deploy command runs `wrangler d1 migrations apply`). New apps deploy with
-  plain `npx wrangler deploy`. Retail and sync still apply them too, which caused a harmless race on Oct 15 (sync's build failed
-  with a UNIQUE error while the planner applied 0019; a retry fixed it). Neal can drop the migrate step from their deploy commands.
+  plain `npx wrangler deploy` (retail, sync, auth and mcp all do, since Oct 15, after two Workers applying the same migration at
+  once failed a build).
 - **Share code by relative import** (`../../planner/src/...`); Workers Builds clones the whole repo, so this bundles fine. Don't copy.
 - **Tests run in Node 22** with Node's SQLite standing in for D1 and a fake Access (`workers/planner/test/harness.mjs`).
   Run the suites of any Worker whose code you touched. No network from tests.

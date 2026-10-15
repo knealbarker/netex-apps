@@ -49,7 +49,7 @@ Settings has "Preview yesterday's email" and "Send a test now" (to the saved lis
 
 ## Deploying
 Cloudflare Workers Builds, root directory `workers/retail`. Deploy command:
-`npx wrangler d1 migrations apply netex-apps --remote && npx wrangler deploy`.
+`npx wrangler deploy` (the planner's deploy applies the database migrations).
 The custom domain `retailview.netexcleaners.com` is created by the deploy. Optional secret: `CF_API_TOKEN` (same as the planner's).
 
 ## Tests

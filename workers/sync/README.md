@@ -33,7 +33,7 @@ logged in `pos_changes` (due date, notes, status, piece moved/added/removed). In
 later opens a `plan_followups` row — `noted` if SMRT already has a note, otherwise `needs_note`.
 
 ## Setup (once)
-1. The D1 migrations in `db/migrations` are applied to `netex-apps` (the deploy command does it).
+1. The D1 migrations in `db/migrations` are applied to `netex-apps` by the planner's deploy (this Worker deploys with `npx wrangler deploy`).
 1. Email Routing: the reports@ rule's action is "Send to a Worker: netex-sync".
 2. Secret `SMRT_KEY` is set in Cloudflare (Workers > netex-sync > Settings > Variables and Secrets). Never commit it.
 3. The repo is connected to Cloudflare Workers Builds with root directory `workers/sync`.
