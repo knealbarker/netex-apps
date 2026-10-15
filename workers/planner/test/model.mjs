@@ -106,8 +106,8 @@ await t("depth chart (Neal's, Oct 13) on Monday 10/12 at 5 AM: #1s on their stat
   const at = Object.fromEntries(Object.entries(r.crew).filter(([, c]) => c.emp).map(([k, c]) => [k, c.emp]));
   eq(at, { slt1: "rosenda", slt2: "maria", slb1: "carnell", slb2: "diana", dct1: "marina", dct2: "betty", dct3: "lupe", dcb1: "gaby",
     asm1: "isela", asm2: "kosi", slo: "roderick", dco: "gabriel" }, "stations");
-  eq(r.crew.slt2.moves, [{ at: "05:35", to: "slb2" }, { at: "07:30", to: "slt2" }], "Maria covers SLB 2");
-  eq(r.crew.dct3.moves, [{ at: "05:45", to: "dct2" }, { at: "07:00", to: "dct3" }], "Lupe covers DCT 2 until Betty");
+  eq(r.crew.slt2.moves, [{ at: "05:35", to: "slb2", cover: true }, { at: "07:30", to: "slt2", cover: true }], "Maria covers SLB 2");
+  eq(r.crew.dct3.moves, [{ at: "05:45", to: "dct2", cover: true }, { at: "07:00", to: "dct3", cover: true }], "Lupe covers DCT 2 until Betty");
   ok(!r.crew.comf.emp && !r.crew.tc.emp, "comforters and tablecloths aren't starting stations");
   // Diana out: Maria (SLB #3) takes SLB 2 for the day; Lupe (SLT 2 #2) gets SLT 2
   const r2 = E.assign(ppl.filter(e => e.id !== "diana"), { q, startOf: e => e.start });
@@ -156,7 +156,7 @@ await t("a manager's move: from its time the person works the new station; Team'
 });
 await t("station board: groups, starch bottoms card, moving someone, and a move that finishes it sooner", async () => {
   eq(M.boardGroups(pos.stations.concat(pos.ops)).map(g => g.key), ["slb", "slt", "dct", "dcb", "tc", "comf", "asm", "ops"]);
-  const P = staffed(); P.q = { ...P.q, slb: 400 };
+  const P = staffed(); P.q = { ...P.q, slb: 400, slt: 600 };   // starch tops keep Ana and Bo on SLT all day, so SLB 2 stays open
   const X = M.evaluate(P), B = M.bottleneck(X, null);
   eq([B.k, B.presses], ["slb", 1]); ok(B.etc > 0 && B.needed > 0, JSON.stringify(B));
   // whole-day move: Cora goes to an empty DC bottoms spot; a later move keeps her station and adds a move
@@ -173,11 +173,13 @@ await t("station timeline: rows in the saved order, a lane per person, a move sh
   eq(M.boardGroups(POS, ["asm", "slb"]).map(g => g.key), ["asm", "slb", "slt", "dct", "dcb", "tc", "comf", "ops"]);
   eq(M.boardGroups(POS, ["nope"]).map(g => g.key)[0], "slb", "unknown keys are ignored");
   const P = staffed(); P.crew.dct1 = { ...P.crew.dct1, moves: [{ at: "09:00", to: "slb2" }] };
+  P.s = { ...P.s, breakEarliest: "" };   // her break at the 3-hour mark (9:00) would otherwise start right when she moves
   const X = M.evaluate(P), rows = M.stationTimeline(X, M.boardGroups(POS));
   const row = k => rows.find(g => g.key === k);
   const coraDct = row("dct").lanes.find(l => l.empId === "c"), coraSlb = row("slb").lanes.find(l => l.empId === "c");
   ok(coraDct && coraSlb, "Cora is on DC tops, then starch bottoms");
-  ok(Math.max(...coraDct.bars.filter(b => !b.brk).map(b => b.to)) <= 9.01, "DC tops until 9:00");
+  const slbFrom = Math.min(...coraSlb.bars.filter(b => !b.brk).map(b => b.from));
+  ok(!coraDct.bars.some(b => !b.brk && b.to > 9.01 && b.from < slbFrom - 0.01), "DC tops until 9:00, then starch bottoms (after her break)");
   ok(Math.min(...coraSlb.bars.filter(b => !b.brk).map(b => b.from)) >= 8.99, "starch bottoms from 9:00");
   ok(rows.flatMap(g => g.lanes).some(l => l.bars.some(b => b.brk)), "breaks are marked");
   ok(row("ops").lanes.length >= 1, "operators have a row");

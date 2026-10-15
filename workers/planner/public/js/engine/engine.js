@@ -94,7 +94,8 @@ export function createEngine(S) {
   // Paid breaks (Neal, Oct 14: Carnell shouldn't wait over 4 hours): each break goes as close to 3 hours after clock-in
   // as it can. Staggering only keeps people on the same kind of work apart (SLB 1 and SLB 2, SLT 1 and its helper);
   // a few people from different stations out at once is fine and only nudges a break 15 minutes later.
-  function breakPlan() {
+  // shift {posId: hours}: breaks pushed later after a simulated clash (see buildPlan)
+  function breakPlan(shift = {}) {
     const ppl = [];
     for (const p of POS) {
       const c = s.crew[p.id] || {}; if (!c.emp) continue; const { start, a } = crewTimes(p.id); if (!(a > s.breakAfter + EPS)) continue;
@@ -105,7 +106,13 @@ export function createEngine(S) {
     if (!s.staggerBreaks) { for (const x of ppl) out[x.id] = x.mid; return out; }
     const step = 0.25;
     // the earliest a break starts: 3 hours after clocking in (Neal, Oct 13); the latest: 2 hours before the shift ends
-    for (const x of ppl) { x.lo = x.start + Math.min(3, x.a / 2); x.hi = Math.max(x.lo, x.start + x.a - Math.min(2, x.a / 2)); }
+    // no breaks before s.breakEarliest (Neal, Oct 14: "Nobody really likes to take a break before 9AM"), unless the shift ends too early for it
+    const early = parseTime(s.breakEarliest);
+    for (const x of ppl) {
+      x.lo = x.start + Math.min(3, x.a / 2); x.hi = Math.max(x.lo, x.start + x.a - Math.min(2, x.a / 2));
+      if (early != null) x.lo = Math.min(x.hi, Math.max(x.lo, early));
+      if (shift[x.id]) x.lo = Math.min(x.hi, x.lo + shift[x.id]);
+    }
     ppl.sort((a, b) => a.lo - b.lo || (a.hi - a.lo) - (b.hi - b.lo));
     const done = [];
     for (const x of ppl) {
@@ -120,8 +127,8 @@ export function createEngine(S) {
     }
     return out;
   }
-  function stationInfo() {
-    const out = {}, BP = breakPlan();
+  function stationInfo(shift = {}) {
+    const out = {}, BP = breakPlan(shift);
     for (const st of STATIONS) {
       const { start, a, stop } = crewTimes(st.id);
       const b = a > s.breakAfter + EPS ? s.breakMin / 60 : 0;
@@ -140,8 +147,8 @@ export function createEngine(S) {
   //  - Tablecloths are pressed on any DCT or DCB press nobody is using, so several trained people can do them at once
   //    (as many as there are open presses). Comforters are folded on one table: up to s.comfMax people, each extra
   //    person adding s.comfExtra (a share of one person's speed).
-  function simulate(q) {
-    const I = stationInfo(), r = s.rates, dt = 1 / 60;
+  function simulate(q, shift = {}) {
+    const I = stationInfo(shift), r = s.rates, dt = 1 / 60;
     const A = CATS.reduce((t, k) => t + (s.asmInclude[k] ? (q[k] || 0) : 0), 0);
     const pool = { slt: q.slt, slb: q.slb, dct: q.dct, dcb: q.dcb, tc: q.tc, asm: A, comf: q.comf };
     const init = { ...pool };
@@ -153,9 +160,14 @@ export function createEngine(S) {
       const x = I[st.id]; const brkS = x.b > 0 ? x.brkS : null;
       // a manager's moves: from each move's time the person works the station they were moved to (Neal, Oct 13)
       const moves = (s.crew[st.id].moves || []).map(m => ({ at: parseTime(m.at), to: m.to })).filter(m => m.at != null && TYPE_OF[m.to]).sort((a, b) => a.at - b.at);
-      return { pos: st.id, pos0: st.id, home: st.id, empId: s.crew[st.id].emp, x, brkS, brkE: brkS != null ? brkS + x.b : null, segs: [], work: {}, pcs: {}, last: null, otUsed: 0, rotated: false, moves, mv: -1 };
+      return { pos: st.id, pos0: st.id, home: st.id, empId: s.crew[st.id].emp, x, brkS, brkE: brkS != null ? brkS + x.b : null, segs: [], work: {}, pcs: {}, last: null, otUsed: 0, rotated: false, moves, mv: -1, cur: null, curSince: null, curCover: false,
+        sugg: s.crew[st.id].source === "suggested" };
     });
     if (!emps.length) return null;
+    // minimum time on a station (Neal, Oct 14): once someone starts a station they stay while it has work, for at least
+    // this long. Break covers don't count; a stint can still end early when the work runs out or their shift ends.
+    const MIN = Math.max(0, +s.minStint || 0) / 60;
+    const linePool = id => POOL_OF(TYPE_OF[id] || id);   // SLT 1 and its helper are one line: stepping up isn't a new stint
     const mx = id => { const v = +((s.stationMax || {})[id]); return v > 0 ? v : Infinity; };
     const under = (e, id) => (e.work[id] || 0) < mx(id) - 1e-6;
     const qual = (e, stId) => e.pos === stId || trained(e.empId, stId);
@@ -194,7 +206,11 @@ export function createEngine(S) {
       for (const e of emps) {
         if (!e.moves.length) continue;
         let i = -1; for (let j = 0; j < e.moves.length; j++) if (e.moves[j].at <= t + EPS) i = j;
-        if (i !== e.mv && i >= 0) { e.mv = i; e.pos = e.moves[i].to; e.home = e.pos; e.swapped = false; }
+        if (i !== e.mv && i >= 0) {
+          e.mv = i; e.pos = e.moves[i].to; e.home = e.pos; e.swapped = false;
+          // a manager's move happens on time, minimum or not; the planner's own cover moves wait for it
+          if (!e.sugg && !e.moves[i].cover) e.cur = null;
+        }
       }
       const occ = {}, asg = new Map(), many = {};   // many: how many people are on tablecloths / comforters this minute
       const avAll = emps.filter(e => avail(e, t));
@@ -215,6 +231,36 @@ export function createEngine(S) {
       //    the helper station last)
       const order = (a, b) => ((a.pos === "slt2") - (b.pos === "slt2")) || (multi(a.pos) - multi(b.pos)) || ((a.home === "slt2") - (b.home === "slt2"));
       reg.sort(order);
+      const coverNow = new Set();
+      // a) minimum time: anyone whose stint is younger than MIN stays on it (the SLT helper steps up to SLT 1 when no one's on it)
+      // (not on someone else's station when that person is back from break and free: they get their own station back.
+      //  Someone just arriving for their shift doesn't bump a running stint: Diana goes elsewhere while Maria presses.)
+      const pinned = MIN > 0 ? reg.filter(e => e.cur && !e.curCover && t - e.curSince < MIN - EPS && !asg.has(e)) : [];
+      const pinSet = new Set(pinned);
+      for (const e of pinned) {
+        // filling in while their own station had no work yet (starch not washed): back home as soon as it has work
+        if (e.waitFor && e.waitFor !== e.cur && has(TYPE_OF[e.waitFor]) && room(e.waitFor)) { pinSet.delete(e); continue; }
+        const owner = emps.find(o => o !== e && o.pos === e.cur && o.cur === e.cur && avail(o, t) && !pinSet.has(o) && !inOT(o));
+        if (owner && !multi(e.cur)) pinSet.delete(e);
+      }
+      for (const e of pinned) {
+        if (!pinSet.has(e)) continue;
+        let id = e.cur;
+        const s1 = STATIONS.find(x => x.type === "slt"), s2 = STATIONS.find(x => x.type === "slt2");
+        if (linePool(id) === "slt" && s1 && s2 && e.pos !== s1.id) {
+          // the helper: on SLT 2 while SLT 1's presser is here, stepping up to SLT 1 while they aren't
+          const owner1 = emps.some(o => o !== e && o.pos === s1.id && avail(o, t));
+          id = !owner1 && trained(e.empId, s1.id) ? s1.id : s2.id;
+        }
+        if (room(id) && under(e, id) && has(TYPE_OF[id] || id)) take(e, id);
+      }
+      // b) a running starch bottoms press keeps its presser until the press's own person is free to take it over, so it
+      //    never sits empty (Maria holds SLB 2 while Diana is still on her first station)
+      for (const e of reg) {
+        if (asg.has(e) || !e.cur || e.curCover || TYPE_OF[e.cur] !== "slb" || !room(e.cur) || !has("slb")) continue;
+        const owner = emps.find(o => o !== e && o.pos === e.cur && avail(o, t) && !asg.has(o) && !inOT(o));
+        if (!owner) take(e, e.cur);
+      }
       // 0) an SLB presser on break: the best-ranked SLB-trained person not on a press of their own (SLB or SLT 1) steps in
       //    for the whole break so the press never sits empty (Neal, Oct 14), then goes back to their own work
       if (s.slbCover) for (const st of STATIONS) {
@@ -223,11 +269,16 @@ export function createEngine(S) {
         if (!owner) continue;
         let c = reg.find(e => e.coverOf === st.id && e.coverTo > t + EPS && !asg.has(e));
         if (!c) {
-          c = reg.filter(e => !asg.has(e) && !(e.coverTo > t + EPS) && !["slb", "slt"].includes(TYPE_OF[e.pos]) && trained(e.empId, st.id))
-            .sort((a, b) => rankOf(empById(a.empId), st.id) - rankOf(empById(b.empId), st.id))[0];
+          const byRank = (a, b) => rankOf(empById(a.empId), st.id) - rankOf(empById(b.empId), st.id);
+          c = reg.filter(e => !asg.has(e) && !(e.coverTo > t + EPS) && !["slb", "slt"].includes(TYPE_OF[e.pos]) && trained(e.empId, st.id)).sort(byRank)[0];
+          // no one free: someone held on a station by the minimum time (not a press of SLB or SLT) steps over for the break
+          if (!c) {
+            c = reg.filter(e => asg.has(e) && !(e.coverTo > t + EPS) && !["slb", "slt", "slt2"].includes(TYPE_OF[asg.get(e)]) && !["slb", "slt"].includes(TYPE_OF[e.pos]) && trained(e.empId, st.id)).sort(byRank)[0];
+            if (c) { const was = asg.get(c); asg.delete(c); if (multi(was)) many[TYPE_OF[was]]--; else delete occ[was]; }
+          }
           if (c) { c.coverOf = st.id; c.coverTo = owner.brkE; }
         }
-        if (c) take(c, st.id);
+        if (c) { take(c, st.id); coverNow.add(c); }
       }
       for (const e of reg) {
         if (asg.has(e)) continue;
@@ -263,14 +314,18 @@ export function createEngine(S) {
           if (!room(st.id) || !can(e, st.id) || !under(e, st.id) || !has(st.type)) continue;
           if (st.type === "slt2" && (!allowHelper || !occ.slt1)) continue;
           const busy = multi(st.id) ? (many[st.type] || 0) : STATIONS.filter(x => POOL_OF(x.type) === POOL_OF(st.type) && occ[x.id]).length;
-          const rkx = rankOf(empById(e.empId), st.id), sc = remH(st.type) / (busy + 1) * (rkx === 2 ? 0.9 : rkx >= 3 ? 0.8 : 1);
+          const rkx = rankOf(empById(e.empId), st.id);
+          // a station whose own person is just away (on break) is a worse pick than an open one: they'll want it back
+          const owned = !multi(st.id) && emps.some(o => o !== e && o.pos === st.id && t < o.x.schedEnd);
+          const sc = remH(st.type) / (busy + 1) * (rkx === 2 ? 0.9 : rkx >= 3 ? 0.8 : 1) * (owned ? 0.98 : 1);
           if (sc > bs) { bs = sc; best = st.id; }
         }
         return best;
       };
       let free = av.filter(e => !asg.has(e));
-      for (const e of free) { const p = pick(e, false); if (p) { take(e, p); e.home = p; } }
-      for (const e of free) { if (asg.has(e)) continue; const p = pick(e, true); if (p) { take(e, p); e.home = p; } }
+      const waiting = e => (e.pos && !has(TYPE_OF[e.pos]) && e.x.schedEnd > t + 0.5) ? e.pos : null;   // own station not ready yet
+      for (const e of free) { const p = pick(e, false); if (p) { take(e, p); e.home = p; if (e.cur !== p) e.waitFor = waiting(e); } }
+      for (const e of free) { if (asg.has(e)) continue; const p = pick(e, true); if (p) { take(e, p); e.home = p; if (e.cur !== p) e.waitFor = waiting(e); } }
       // overtime only for work the people on regular time can't finish in the regular hours they have left
       const regCap = k => { let h = 0; for (const [f, id] of asg) if (!inOT(f) && POOL_OF(TYPE_OF[id] || id) === k) h += Math.max(0, f.x.schedEnd - t) * (k === "slt" ? r.sltSolo : perHr[k]); return h; };
       const needOT = id => { const k = id === "comf" ? "comf" : POOL_OF(TYPE_OF[id]); return pool[k] > regCap(k) + 1e-4; };
@@ -286,6 +341,15 @@ export function createEngine(S) {
       free = avAll.filter(e => !asg.has(e));
       // 4) comforters for anyone still free
       if (!HAS_COMF) for (const e of free) { if (!asg.has(e) && avl("comf") > 1e-4) asg.set(e, "comf"); }
+      // stints: a new station starts a new stint (stepping between SLT 1 and the helper doesn't); breaks pause it
+      for (const e of emps) {
+        const id = asg.get(e);
+        if (id == null) { if (!avail(e, t) && !(e.brkS != null && t >= e.brkS - EPS && t < e.brkE - EPS)) e.cur = null; continue; }
+        const cov = coverNow.has(e);
+        if (id === e.waitFor) e.waitFor = null;
+        if (e.cur !== id && !(e.cur && !cov && !e.curCover && linePool(e.cur) === "slt" && linePool(id) === "slt")) { e.cur = id; e.curSince = t; e.curCover = cov; }
+        else if (e.curCover && !cov) { e.cur = id; e.curSince = t; e.curCover = false; }
+      }
       // produce
       const byPool = {};
       const nComf = HAS_COMF ? [...asg.values()].filter(x => TYPE_OF[x] === "comf").length : 0;
@@ -318,7 +382,41 @@ export function createEngine(S) {
     const staffed = Object.values(I).filter(x => x.a > EPS);
     const totalPieces = q.dct + q.dcb + q.slt + q.slb + q.comf + q.tc;
     if (totalPieces <= 0 || !staffed.length) return { empty: true, I, noCrew: !staffed.length && totalPieces > 0 };
-    const sim = simulate(q);
+    // Breaks follow where people actually work (Neal, Oct 14): after a run, a starch bottoms or starch tops break that
+    // overlaps another break on the same line, or leaves a starch bottoms press empty, is pushed 15 minutes later and
+    // the day is run again (a few times at most).
+    const shift = {};
+    let sim = simulate(q, shift);
+    for (let pass = 0; pass < 8 && s.staggerBreaks; pass++) {
+      const on = (e, from, to) => e.segs.filter(sg => sg.to > from + 1e-6 && sg.from < to - 1e-6);
+      const B = sim.emps.filter(e => e.brkS != null && e.brkS < e.x.schedEnd).map(e => {
+        const before = e.segs.filter(sg => sg.to <= e.brkS + 2 / 60 && sg.to >= e.brkS - 5 / 60).pop();
+        return before ? { e, stn: before.stn, line: POOL_OF(TYPE_OF[before.stn] || before.stn) } : null;
+      }).filter(Boolean);
+      let bump = null;
+      for (const x of B) {
+        if (x.line !== "slb" && x.line !== "slt") continue;
+        for (const y of B) {
+          if (y === x || y.line !== x.line || !(Math.min(x.e.brkE, y.e.brkE) - Math.max(x.e.brkS, y.e.brkS) > EPS)) continue;
+          // move the later one; at the same time, the one away from their own station
+          const late = x.e.brkS > y.e.brkS + EPS ? x : y.e.brkS > x.e.brkS + EPS ? y : (POOL_OF(TYPE_OF[x.e.pos0]) !== x.line ? x : y);
+          bump = late; break;
+        }
+        if (bump) break;
+        const slbLeft = h => { let d = 0; for (const row of sim.TL) if (row[0] <= h + 1e-6) d = row[2]; return sim.init.slb - d; };
+        if (x.line === "slb" && slbLeft(x.e.brkS) > 1) {   // an SLB press nobody presses during the break
+          const covered = sim.emps.filter(o => o !== x.e).flatMap(o => on(o, x.e.brkS, x.e.brkE).filter(sg => sg.stn === x.stn))
+            .reduce((t2, sg) => t2 + Math.min(sg.to, x.e.brkE) - Math.max(sg.from, x.e.brkS), 0);
+          if (covered < (x.e.brkE - x.e.brkS) * 0.8) { bump = x; break; }
+        }
+      }
+      if (!bump) break;
+      const before = bump.e.brkS;
+      shift[bump.e.pos0] = (shift[bump.e.pos0] || 0) + 0.25;
+      const next = simulate(q, shift), moved = next.emps.find(e => e.pos0 === bump.e.pos0);
+      if (!moved || moved.brkS == null || moved.brkS <= before + EPS) break;   // can't go later
+      sim = next;
+    }
     const short = { slt: sim.pool.slt, slb: sim.pool.slb, dct: sim.pool.dct, dcb: sim.pool.dcb, tc: sim.pool.tc, comf: sim.pool.comf, asm: sim.pool.asm };
     for (const k in short) if (short[k] < 0.5) short[k] = 0;
     const shortTotal = CATS.reduce((a, k) => a + short[k], 0);
@@ -458,7 +556,7 @@ export function createEngine(S) {
     // SLT 2's person covers a late SLB presser when starch bottoms are heavy (Neal: getting SLB covered comes first)
     if (slt2 && at[slt2.id] && lotsSlb) {
       const e = byId.get(at[slt2.id]), c = coverFor(e, true);
-      if (c) crew[slt2.id].moves = [{ at: hhmm(startH(e)), to: c.stId }, { at: hhmm(startH(byId.get(c.id))), to: slt2.id }];
+      if (c) crew[slt2.id].moves = [{ at: hhmm(startH(e)), to: c.stId, cover: true }, { at: hhmm(startH(byId.get(c.id))), to: slt2.id, cover: true }];
     }
     // anyone still without a station: covers a late person's station from an empty station of their own
     const left = [];
@@ -469,7 +567,7 @@ export function createEngine(S) {
         || c && STATIONS.find(p => !crew[p.id].emp && !later(p) && rankOf(e, p.id));
       if (c && home) {
         crew[home.id] = { emp: e.id, start: (startOf && startOf(e)) || e.start || s.defStart, hrs: s.fullDay, stop: "",
-          moves: [{ at: hhmm(startH(e)), to: c.stId }, { at: hhmm(startH(byId.get(c.id))), to: home.id }] };
+          moves: [{ at: hhmm(startH(e)), to: c.stId, cover: true }, { at: hhmm(startH(byId.get(c.id))), to: home.id, cover: true }] };
         used.add(e.id); placed.push({ e, st: home, rk: rankOf(e, home.id), how: "cover" });
       } else left.push(e);
     }

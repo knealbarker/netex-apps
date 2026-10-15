@@ -44,27 +44,60 @@ const P = { s, ...pos, people: M.peopleFrom(TEAM), crew: M.crewFromServer(server
   waves: [], day: "2026-10-15", today: "2026-10-14", isToday: false, now: null, callouts: [], late: [], history: { hours: [], planned: [] }, clock: [], published: null, admin: false };
 const X = M.evaluate(P), R = X.R;
 const rowOf = code => R.rows.find(r => r.st.id === code);
+// the same day without the Oct 14 evening rules (no minimum time on a station, breaks any time after 3 hours)
+const Xold = M.evaluate({ ...P, s: { ...s, minStint: 0, breakEarliest: "" } }), Rold = Xold.R;
+const oldRow = code => Rold.rows.find(r => r.st.id === code);
 
+if (process.env.COMPARE) {
+  const ends = sX => { const e = M.catEnds(sX.E, sX.R); return `SLB done ${hm(e.slb)} · SLT ${hm(e.slt)} · DCT ${hm(e.dct)} · everyone done ${hm(sX.R.end)} · OT ${sX.R.otTotal.toFixed(2)}h`; };
+  console.log("NEW:", ends(X)); console.log("OLD:", ends(Xold));
+  const moves = R2 => R2.rows.filter(r => r.staffed).map(r => `${P.crew[r.st.id].emp} ${stepsOf(r).length - 1}`).join(", ");
+  console.log("moves NEW:", moves(R)); console.log("moves OLD:", moves(Rold));
+}
 if (process.env.VERBOSE) {
   for (const r of R.rows.filter(r => r.staffed)) console.log(`  ${r.st.id.padEnd(5)} ${P.crew[r.st.id].emp.padEnd(9)} in ${hm(r.x.start).padEnd(8)} break ${(r.brkS != null ? hm(r.brkS) : "-").padEnd(8)} out ${hm(r.clockOut).padEnd(8)} ${stepsOf(r).map(sp => `${sp.stn} ${hm(sp.from)}-${hm(sp.to)}`).join(", ")}`);
   for (const o of X.E.opsInfo().filter(o => o.on)) console.log(`  ${o.o.id.padEnd(5)} ${P.crew[o.o.id].emp.padEnd(9)} break ${hm(o.brkS)}`);
   console.log("  bottleneck moves:", JSON.stringify(M.bottleneckMoves(X, null, { max: 3 }).map(m => `${m.name} ${m.at} → ${hm(m.kAfter)}`)));
 }
 
-await t("SLT 1 keeps pressing while Rosenda is on break (Maria steps up from SLT 2)", () => {
-  const ro = rowOf("slt1"), b0 = ro.brkS, b1 = ro.brkS + ro.x.b;
-  const onSlt1 = R.rows.filter(r => r.staffed && r.st.id !== "slt1").flatMap(r => r.segs.filter(sg => sg.stn === "slt1"));
+await t("SLT 1 keeps pressing while Rosenda is on break when there's a helper (rules off: Maria steps up from SLT 2)", () => {
+  const ro = oldRow("slt1"), b0 = ro.brkS, b1 = ro.brkS + ro.x.b;
+  const onSlt1 = Rold.rows.filter(r => r.staffed && r.st.id !== "slt1").flatMap(r => r.segs.filter(sg => sg.stn === "slt1"));
   const covered = onSlt1.filter(sg => sg.from < b1 - 0.01 && sg.to > b0 + 0.01).reduce((a, sg) => a + Math.min(sg.to, b1) - Math.max(sg.from, b0), 0);
   ok(covered >= ro.x.b - 0.05, `SLT 1 covered ${Math.round(covered * 60)} of ${Math.round(ro.x.b * 60)} min of Rosenda's ${hm(b0)} break`);
 });
 await t("SLT 2's helper doesn't wander off to DC tops while SLT 1 is empty", () => {
-  const ma = rowOf("slt2"), ro = rowOf("slt1");
+  const ma = oldRow("slt2"), ro = oldRow("slt1");
   const bad = ma.segs.filter(sg => sg.stn.startsWith("dct") && sg.from < ro.brkS + ro.x.b - 0.01 && sg.to > ro.brkS + 0.01);
   ok(!bad.length, `Maria on ${bad.map(sg => `${sg.stn} ${hm(sg.from)}`).join(", ")}`);
 });
-await t("nobody's break starts later than 3½ hours after clocking in", () => {
-  const late = R.rows.filter(r => r.staffed && r.brkS != null && r.brkS - r.x.start > 3.5 + 1e-6).map(r => `${P.crew[r.st.id].emp} ${hm(r.brkS)} (in ${hm(r.x.start)})`);
+await t("rules off: nobody's break starts later than 3½ hours after clocking in", () => {
+  const late = Rold.rows.filter(r => r.staffed && r.brkS != null && r.brkS - r.x.start > 3.5 + 1e-6).map(r => `${P.crew[r.st.id].emp} ${hm(r.brkS)} (in ${hm(r.x.start)})`);
   ok(!late.length, late.join(", "));
+});
+await t("no breaks before 9:00", () => {
+  const early = R.rows.filter(r => r.staffed && r.brkS != null && r.brkS < 9 - 1e-6).map(r => `${P.crew[r.st.id].emp} ${hm(r.brkS)}`);
+  ok(!early.length, early.join(", "));
+  ok(X.E.opsInfo().every(o => !o.on || o.brkS >= 9 - 1e-6), "operators too");
+});
+await t("Neal's chain: Maria keeps SLB 2 past 7:30, Diana starts elsewhere for 2 hours, then takes SLB 2 over full", () => {
+  const ma = rowOf("slt2").segs.filter(sg => sg.stn === "slb2"), di = rowOf("slb2");
+  const mariaEnd = Math.max(...ma.filter(sg => sg.from < 7).map(sg => sg.to));
+  ok(mariaEnd >= 9 - 1e-6, `Maria on SLB 2 until ${hm(mariaEnd)}`);
+  const first = di.segs[0];
+  ok(first.stn !== "slb2" && di.segs.filter(sg => sg.stn === first.stn).reduce((a, sg) => a + sg.to - sg.from, 0) >= 2 - 0.02, `Diana starts on ${first.stn} ${hm(first.from)}–${hm(first.to)}`);
+  const diSlb = di.segs.find(sg => sg.stn === "slb2");
+  ok(diSlb && Math.abs(diSlb.from - mariaEnd) < 2 / 60, `Diana takes SLB 2 at ${diSlb && hm(diSlb.from)}, Maria left at ${hm(mariaEnd)}`);
+});
+await t("Maria moves at most 3 times (was 7)", () => {
+  const n = stepsOf(rowOf("slt2")).length - 1;
+  ok(n <= 3, stepsOf(rowOf("slt2")).map(sp => `${sp.stn} ${hm(sp.from)}`).join(", "));
+});
+await t("a station's own person gets it back after their break (no one locked out by the minimum time)", () => {
+  for (const code of ["asm1", "asm2", "dct2"]) {
+    const r = rowOf(code), after = r.segs.filter(sg => sg.from >= r.brkS + r.x.b - 1e-6 && sg.from < r.brkS + r.x.b + 0.1);
+    ok(after.some(sg => sg.stn === code), `${code}: after break ${after.map(sg => sg.stn)}`);
+  }
 });
 await t("the two starch bottoms presses never break at the same time", () => {
   const a = rowOf("slb1"), b = rowOf("slb2");
@@ -112,7 +145,7 @@ await t("board: one row per station, Maria then Diana on one SLB 2 line, Betty i
   ok(codes.indexOf("slb1") === 0 && codes.indexOf("slb2") === 1, "starch bottoms on top");
   ok(rows.filter(r => r.first).map(r => r.key).join() === "slb,slt,dct,dcb,tc,comf,asm,ops", "first row of each kind");
   const r = c => rows.find(x => x.code === c);
-  ok(r("slb2").nLanes === 1 && r("slb2").lanes.map(l => l.empId).join() === "diana,maria", `SLB 2: ${r("slb2").lanes.map(l => `${l.empId}@${l.lane}`)}`);
+  ok(r("slb2").nLanes === 1 && r("slb2").lanes.map(l => l.empId).sort().join() === "diana,maria", `SLB 2: ${r("slb2").lanes.map(l => `${l.empId}@${l.lane}`)}`);
   const s1 = r("slb1"), betty = s1.lanes.find(l => l.empId === "betty"), carn = s1.lanes.find(l => l.empId === "carnell");
   ok(betty && betty.lane === carn.lane && s1.nLanes === 1, `SLB 1 lanes: ${s1.lanes.map(l => `${l.empId}@${l.lane}`)}`);
   ok(!carn.bars.some(b => b.brk), "Carnell's break isn't striped under Betty");
@@ -123,10 +156,11 @@ await t("people board: one line per person in station order, bars labeled with t
   const rows = M.personRows(X, M.boardGroups(POS));
   ok(rows.length === 11 && rows[0].empId === "carnell" && rows[1].empId === "diana", rows.map(r => r.empId).join(","));
   const maria = rows.find(r => r.empId === "maria"), labs = maria.lanes[0].bars.filter(b => !b.brk).map(b => b.label);
-  ok(labs[0] === "SLB 2" && labs.includes("SLT 1") && labs.includes("SLT 2 helper"), labs.join(","));
+  ok(labs[0] === "SLB 2" && labs.includes("Comforters"), labs.join(","));
   ok(maria.lanes[0].bars.some(b => b.brk), "Maria's break shows");
   const betty = rows.find(r => r.empId === "betty").lanes[0].bars.filter(b => !b.brk).map(b => b.label);
   ok(betty.includes("SLB 1") && betty.includes("DCT 2"), betty.join(","));
+  ok(rows.find(r => r.empId === "diana").lanes[0].bars.filter(b => !b.brk).map(b => b.label).join() .startsWith("DCT 3,SLB 2"), "Diana: DCT 3 then SLB 2");
   ok(rows.find(r => r.empId === "roderick").lanes[0].bars[0].label === "SL Operator");
   ok(rows.filter(r => r.first).map(r => r.key).join() === "slb,slt,dct,dcb,asm,ops", rows.filter(r => r.first).map(r => r.key).join());
 });

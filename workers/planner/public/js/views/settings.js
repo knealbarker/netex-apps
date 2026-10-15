@@ -16,6 +16,7 @@ const GROUPS = [
     ["fullDay", "Full-day working hours", "num", "Hours of work in a full shift, not counting the break.", { step: 0.25, min: 1, max: 14, unit: "h" }],
     ["breakMin", "Paid break", "int", "", { min: 0, max: 120, unit: "min" }],
     ["breakAfter", "Break after", "num", "Hours worked before the break is due.", { step: 0.5, min: 0, max: 12, unit: "h" }],
+    ["breakEarliest", "No breaks before", "time", "Breaks start at this time or later (unless a shift ends too early for it). Starch bottoms and starch tops breaks also wait until someone can keep the press going."],
     ["staggerBreaks", "Stagger breaks", "bool", "So a station is never empty for everyone's break at once."],
     ["spread", "Max finish spread", "int", "How far apart people's finish times may be before the plan rebalances.", { min: 0, max: 240, unit: "min" }],
   ] },
@@ -29,6 +30,7 @@ const GROUPS = [
     ["comfMax", "People on comforters at once", "num", "Comforters are folded and packaged on one table.", { step: 1, min: 1, max: 4, unit: "people" }],
     ["comfExtra", "Each extra person on comforters adds", "num", "Of one person's speed: 20% means two people do 1.2× as many.", { step: 5, min: 0, max: 100, unit: "%" }],
     ["slbPrime", "Starch bottoms press start-up", "num", "Pressing time lost each time an SLB press starts from empty (start of day, or after it sat empty). A press that's handed over full loses nothing.", { step: 1, min: 0, max: 90, unit: "min" }],
+    ["minStint", "Minimum time on a station", "num", "Once someone starts a station they stay on it this long while it has work. Break covers don't count, and a stint can end sooner when the work runs out or the shift ends. 0 = off.", { step: 15, min: 0, max: 480, unit: "min" }],
     ["slbCover", "Cover starch bottoms breaks", "bool", "While an SLB presser is on break, the best-ranked SLB-trained person free of a press steps in so the press stays full."],
   ] },
   { id: "money", title: "Labor & prices", lead: "Used for labor as a share of revenue. Prices are updated from SMRT's averages when SMRT is connected.", fields: [

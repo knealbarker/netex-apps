@@ -49,8 +49,8 @@ await t("tablecloths only use presses nobody is on: with every DCT/DCB press bus
 });
 
 await t("comforters: two people at the table, together 20% faster than one", async () => {
-  const one = run({ dct: 0, dcb: 0, slt: 0, slb: 0, comf: 12, tc: 0 }, crew({ dct2: { emp: "" } }), { ...s, comfMax: 1 });
-  const two = run({ dct: 0, dcb: 0, slt: 0, slb: 0, comf: 12, tc: 0 }, crew({ dct2: { emp: "" } }), { ...s, comfMax: 2, comfExtra: 0.2 });
+  const one = run({ dct: 0, dcb: 0, slt: 0, slb: 0, comf: 12, tc: 0 }, crew({ dct2: { emp: "" } }), { ...s, comfMax: 1, breakEarliest: "" });   // speeds only: breaks at the 3-hour mark
+  const two = run({ dct: 0, dcb: 0, slt: 0, slb: 0, comf: 12, tc: 0 }, crew({ dct2: { emp: "" } }), { ...s, comfMax: 2, comfExtra: 0.2, breakEarliest: "" });
   const endOf = R => Math.max(...R.rows.flatMap(r => r.segs).filter(x => x.stn === "comf").map(x => x.to));
   const a = endOf(one.R) - 6, b = endOf(two.R) - 6;
   ok(Math.abs(a / b - 1.2) < 0.05, `one person ${a.toFixed(2)} h vs two ${b.toFixed(2)} h`);
