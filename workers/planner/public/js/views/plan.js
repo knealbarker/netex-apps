@@ -376,7 +376,7 @@ export async function render(main, ctx) {
     const nowLine = now != null && now > a && now < b ? html`<i class="tl-now" style="left:${pct(now)}" aria-hidden="true"></i>` : "";
     // red line: where each kind of work should be finished, from its pieces and pieces-per-hour (Neal, Oct 14)
     const FIN = M.finishLines(X), RATE = { slb: `${s.rates.slb}/hr per press`, slt: `${s.rates.sltSolo}/hr on SLT 1, +${s.rates.sltPair - s.rates.sltSolo} with the helper`, dct: `${s.rates.dct}/hr per press`, dcb: `${s.rates.dcb}/hr`, tc: `${s.rates.tc}/hr`, comf: `${s.rates.comf}/hr`, asm: `${s.rates.asm}/hr per person` };
-    const finTip = f => `${M.GROUP_LABEL[f.k] || f.k}: ${fmtN(f.pieces)} ${P.isToday ? "pieces left" : "pieces"} at ${RATE[f.k] || ""} with ${f.people} ${f.people === 1 ? "person" : "people"} planned → ${f.finish != null ? `done about ${fmtClock(f.finish)}` : `${fmtN(f.short)} not covered by the planned hours`}`;
+    const finTip = f => `${M.GROUP_LABEL[f.k] || f.k}: ${fmtN(f.pieces)} ${P.isToday ? "pieces left" : "pieces"} at ${RATE[f.k] || ""} with ${f.people} ${f.people === 1 ? "person" : "people"} planned → ${f.finish != null ? `done about ${hmShort(f.finish)} ${f.finish < 12 ? "AM" : "PM"}` : `${fmtN(f.short)} not covered by the planned hours`}`;
     const finLine = k => { const f = FIN[k]; if (!f || f.finish == null || f.finish <= a || f.finish >= b) return ""; return html`<i class="tl-fin" style="left:${pct(f.finish)}" title="${finTip(f)}"><span>${hmShort(f.finish)}</span></i>`; };
     const statusOf = g => {   // pieces of that kind still to do (today: left), and when the plan should finish them
       const k = g.cat || (g.key === "asm" ? "asm" : null), f = k ? FIN[k] : null;
