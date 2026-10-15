@@ -8,14 +8,15 @@ INSERT INTO core_apps(id, name, subdomain) VALUES ('supplies', 'Supplies', 'supp
 INSERT INTO core_user_app_roles(user_id, app_id, role_id, granted_at)
 SELECT id, 'supplies', 'owner', strftime('%Y-%m-%dT%H:%M:%fZ','now') FROM core_users WHERE lower(email) = 'neal@towncountryclean.com';
 
--- The seven places that keep supplies. Names match the Retail Snapshot's store names; existing rows are left alone.
+-- The seven places that keep supplies. Names match what netex-sync creates from Rippling ("TCC Quitman" -> Quitman);
+-- rows that already exist are left alone, so this only adds the ones with no time-clock hours yet (e.g. Winnsboro).
 INSERT OR IGNORE INTO core_locations(id, org_id, name, kind) VALUES
   ('01MSUPLOC0SULPHURSPRINGS0', 'tcc', 'Sulphur Springs', 'store'),
   ('01MSUPLOC0GREENVILLE00000', 'tcc', 'Greenville', 'store'),
   ('01MSUPLOC0EMORY0000000000', 'tcc', 'Emory', 'store'),
   ('01MSUPLOC0WINNSBORO000000', 'tcc', 'Winnsboro', 'store'),
   ('01MSUPLOC0QUITMAN00000000', 'tcc', 'Quitman', 'store'),
-  ('01MSUPLOC0LAUNDRYHUB00000', 'tcc', 'Laundry Hub', 'plant');
+  ('01MSUPLOC0LAUNDRYHUB00000', 'tcc', 'Laundry Hub', 'plant');   -- same kind netex-sync gives it from Rippling
 
 -- Which locations take part, and how. The warehouse (Workshop) is restocked by vendor orders; the others by the shuttle.
 CREATE TABLE supply_locations (
@@ -43,7 +44,7 @@ CREATE TABLE supply_vendors (
   account_no        TEXT,
   contact           TEXT,
   lead_days         INTEGER,         -- days from ordering to arriving
-  min_order_amount  REAL,            -- dollars, if there is one
+  min_order_cents   INTEGER,         -- minimum order in cents, if there is one
   min_order_note    TEXT,            -- other minimums, e.g. 'free freight over $300'
   notes             TEXT,
   sort              INTEGER NOT NULL DEFAULT 0,
@@ -61,7 +62,7 @@ CREATE TABLE supply_items (
   category     TEXT NOT NULL DEFAULT 'Other',
   unit         TEXT NOT NULL DEFAULT 'each',   -- what a store counts and what goes on the shuttle
   bulk_unit    TEXT,                           -- what the Workshop counts and orders (null = same as unit), e.g. 'case'
-  unit_cost    REAL,                           -- per bulk unit (optional; shows order totals against a vendor minimum)
+  unit_cost_cents INTEGER,                     -- per order unit, cents (optional; shows order totals against a vendor minimum)
   notes        TEXT,
   review_note  TEXT,                           -- a question left from cleaning up the old sheets; cleared once checked
   sort         INTEGER NOT NULL DEFAULT 0,
@@ -204,7 +205,7 @@ CREATE TABLE supply_order_lines (
   item_id    TEXT REFERENCES supply_items(id),
   label      TEXT,
   qty        REAL NOT NULL,
-  unit_cost  REAL,
+  unit_cost_cents INTEGER,
   sort       INTEGER NOT NULL DEFAULT 0
 );
 CREATE INDEX ix_supply_order_lines ON supply_order_lines(order_id);

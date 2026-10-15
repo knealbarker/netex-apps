@@ -9,7 +9,7 @@ const WRITE_WORDS = ["insert", "update", "delete", "drop", "alter", "create", "a
 
 // tables that hold sign-in secrets, device secrets or photos: never readable here
 export const SECRET_TABLES = ["mcp_clients", "mcp_codes", "mcp_tokens", "auth_requests", "auth_codes", "auth_events", "auth_keys",
-  "plan_station_devices", "plan_station_photos", "_cf_kv", "d1_migrations"];
+  "plan_station_devices", "plan_station_photos", "supply_devices", "_cf_kv", "d1_migrations"];
 export const SECRET_COLUMNS = ["pin_hash"];
 // readable only by Admins and the Owner (same as the apps)
 export const MONEY_TABLES = ["labor_pay_rates"];

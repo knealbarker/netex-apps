@@ -11,7 +11,7 @@ const today = env => localToday(env.TIMEZONE, env.NOW ? new Date(env.NOW) : new 
 async function orderLines(db, ids) {
   if (!ids.length) return new Map();
   const rows = (await db.prepare(`SELECT l.id, l.order_id, l.item_id AS item, COALESCE(i.name, l.label) AS name, i.vendor_sku AS sku, COALESCE(i.bulk_unit, i.unit) AS unit,
-      l.qty, l.unit_cost AS unitCost FROM supply_order_lines l LEFT JOIN supply_items i ON i.id = l.item_id
+      l.qty, l.unit_cost_cents / 100.0 AS unitCost FROM supply_order_lines l LEFT JOIN supply_items i ON i.id = l.item_id
       WHERE l.order_id IN (${ids.map(() => "?").join(",")}) ORDER BY l.sort`).bind(...ids).all()).results;
   const by = new Map(ids.map(id => [id, []]));
   for (const r of rows) by.get(r.order_id).push(r);
@@ -76,7 +76,8 @@ export async function placeOrder(db, env, me, body) {
     if (l.item && !its.has(l.item)) throw new HttpError(400, "One of the items isn't on the supply list.");
     const label = l.item ? null : String(l.label || "").trim().slice(0, 120);
     if (!l.item && !label) throw new HttpError(400, "A write-in line needs a description.");
-    lines.push({ item: l.item || null, label, qty: q, unitCost: l.item ? its.get(l.item).unitCost : null });
+    const c = l.item ? its.get(l.item).unitCost : null;
+    lines.push({ item: l.item || null, label, qty: q, unitCostCents: c == null ? null : Math.round(c * 100) });
   }
   if (!lines.length) throw new HttpError(400, "Nothing to order — every quantity is 0.");
   const t = today(env);
@@ -86,7 +87,7 @@ export async function placeOrder(db, env, me, body) {
   await db.batch([
     db.prepare("INSERT INTO supply_orders(id, org_id, vendor_id, status, ordered_at, ordered_by, expected_on, reference, note) VALUES(?,?,?,'ordered',?,?,?,?,?)")
       .bind(id, env.ORG_ID, vendorId, nowIso(), me.id, expected, String(body.reference || "").trim().slice(0, 60) || null, String(body.note || "").trim().slice(0, 300) || null),
-    ...lines.map((l, k) => db.prepare("INSERT INTO supply_order_lines(id, order_id, item_id, label, qty, unit_cost, sort) VALUES(?,?,?,?,?,?,?)").bind(ulid(), id, l.item, l.label, l.qty, l.unitCost, k)),
+    ...lines.map((l, k) => db.prepare("INSERT INTO supply_order_lines(id, order_id, item_id, label, qty, unit_cost_cents, sort) VALUES(?,?,?,?,?,?,?)").bind(ulid(), id, l.item, l.label, l.qty, l.unitCostCents, k)),
   ]);
   await audit(db, { orgId: env.ORG_ID, userId: me.id, appId: env.APP_ID, entity: "supply_orders", entityId: id, action: "create", changes: { vendorId, lines: lines.length, expected } });
   return { id, expectedOn: expected };

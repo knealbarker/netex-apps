@@ -123,7 +123,9 @@ await t("Karla edits quantities, adds a write-in, marks sent", async () => {
 console.log("Workshop counts and vendor orders");
 await t("Workshop count (entered by Karla) -> order suggestions by vendor", async () => {
   await call("PATCH", "/api/vendors/fabriclean", { body: { leadDays: 3, minAmount: 250, phone: "800-555-0100" } });
-  await call("PATCH", `/api/items/${item("Bongo 12 oz")}`, { body: { unitCost: 12.5 } });
+  await call("PATCH", `/api/items/${item("Bongo 12 oz")}`, { body: { unitCost: "$12.50" } });
+  eq(sqlite.prepare("SELECT unit_cost_cents c FROM supply_items WHERE name='Bongo 12 oz'").get().c, 1250, "money is cents");
+  eq(sqlite.prepare("SELECT min_order_cents c FROM supply_vendors WHERE id='fabriclean'").get().c, 25000);
   const r = await call("POST", "/api/counts", { body: { locationId: locId("Workshop"), lines: [
     { item: item("Bongo 12 oz"), qty: 0.5 }, { item: item("EasyGo gallon"), qty: 0.75 }, { item: item("Jeans strut hanger (black/pink box)"), qty: 5 },
     { item: item("Toilet paper"), qty: 0 }, { item: item("Dry clean filter — carbon split"), level: "need", qty: 2 } ] } });

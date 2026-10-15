@@ -33,10 +33,13 @@ the shared `netex-apps` D1 database, tables `supply_*`, migrations 0020–0021).
 (writes `db/migrations/0021_supplies_seed.sql`). Guesses are saved on the item as **To check** (Supply list › To check).
 
 ## Deploying
-1. Cloudflare Workers Builds: new Worker `netex-supplies`, this repo, root directory `workers/supplies`. Deploy command:
-   `npx wrangler d1 migrations apply netex-apps --remote && npx wrangler deploy`. The custom domain is created by the deploy.
-2. Cloudflare Zero Trust › Access › Applications: add a **Bypass** application for `supplies.netexcleaners.com/count`
-   (Include: Everyone), the same way as `prodplanner.netexcleaners.com/station`. Everything else stays behind "Netex apps".
+Migrations 0020–0021 are applied by the planner's build when this is pushed to `main` (this app's deploy doesn't migrate).
+1. Workers & Pages › Create application › Continue with GitHub › `knealbarker/netex-apps`. Project name `netex-supplies`,
+   deploy command `npx wrangler deploy`, Advanced settings › Path `/workers/supplies`, preview builds off, "Protect with
+   Cloudflare Access" off, API token "netex-sync build". The deploy creates `supplies.netexcleaners.com`.
+2. Zero Trust › Access › Applications › Add › Self-hosted: name "Supply count (public)", destination
+   `supplies.netexcleaners.com` path `/count`, policy **Tablets bypass** (the same Bypass as `prodplanner…/station`).
+   Everything else stays behind "Netex apps"; the Worker checks the device cookie on /count itself.
 3. Optional secret `CF_API_TOKEN` (same as the planner's) so Users & access keeps the "Netex users" Access group in step.
 4. Give Karla a **Manager** role under Users & access, then Setup › Who can count, and pair one device per location.
 

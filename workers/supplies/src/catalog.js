@@ -11,10 +11,11 @@ const intOrNull = (v, what, max = 365) => {
   const n = Number(v); if (!Number.isInteger(n) || n < 0 || n > max) throw new HttpError(400, `${what} must be a whole number from 0 to ${max}.`);
   return n;
 };
-const money = (v, what) => {
+// dollars typed -> integer cents stored (money is always cents in the database)
+const cents = (v, what) => {
   if (v === null || v === undefined || v === "") return null;
   const n = Number(String(v).replace(/[$,]/g, "")); if (!Number.isFinite(n) || n < 0 || n > 1e6) throw new HttpError(400, `${what} must be a dollar amount.`);
-  return Math.round(n * 100) / 100;
+  return Math.round(n * 100);
 };
 
 export async function locations(db, env, { all = false } = {}) {
@@ -31,13 +32,13 @@ export async function locationOf(db, env, id) {
 
 export async function vendors(db, env) {
   return (await db.prepare(`SELECT id, name, order_method AS orderMethod, phone, website, account_no AS accountNo, contact, lead_days AS leadDays,
-      min_order_amount AS minAmount, min_order_note AS minNote, notes, sort, is_active AS active FROM supply_vendors WHERE org_id = ? ORDER BY sort, name`)
+      min_order_cents / 100.0 AS minAmount, min_order_note AS minNote, notes, sort, is_active AS active FROM supply_vendors WHERE org_id = ? ORDER BY sort, name`)
     .bind(env.ORG_ID).all()).results.map(v => ({ ...v, active: !!v.active }));
 }
 
 /** Every active item (or all) with its pars by location id. */
 export async function items(db, env, { all = false } = {}) {
-  const rows = (await db.prepare(`SELECT id, name, vendor_id AS vendorId, vendor_sku AS sku, category, unit, bulk_unit AS bulkUnit, unit_cost AS unitCost,
+  const rows = (await db.prepare(`SELECT id, name, vendor_id AS vendorId, vendor_sku AS sku, category, unit, bulk_unit AS bulkUnit, unit_cost_cents / 100.0 AS unitCost,
       notes, review_note AS reviewNote, sort, is_active AS active FROM supply_items WHERE org_id = ? ${all ? "" : "AND is_active = 1"} ORDER BY sort, name`)
     .bind(env.ORG_ID).all()).results;
   const pars = (await db.prepare(`SELECT p.item_id, p.location_id, p.par, p.reorder_at, p.mode FROM supply_pars p JOIN supply_items i ON i.id = p.item_id WHERE i.org_id = ?`)
@@ -62,7 +63,7 @@ async function readItem(db, env, body, old = {}) {
     category: pick("category", v => text(v, 40) || "Other"),
     unit: pick("unit", v => need(v, "Unit", 30)),
     bulkUnit: pick("bulkUnit", v => text(v, 30)),
-    unitCost: pick("unitCost", v => money(v, "Cost")),
+    unitCostCents: pick("unitCost", v => cents(v, "Cost")),
     notes: pick("notes", v => text(v, 300)),
     reviewNote: pick("reviewNote", v => text(v, 300)),
     sort: pick("sort", v => intOrNull(v, "Sort", 1e6) ?? 0),
@@ -93,8 +94,8 @@ export async function createItem(db, env, me, body) {
   const locIds = new Set((await locations(db, env, { all: true })).map(l => l.id));
   const sort = it.sort || ((await db.prepare("SELECT COALESCE(MAX(sort),0)+10 AS s FROM supply_items WHERE org_id=?").bind(env.ORG_ID).first()).s);
   await db.batch([
-    db.prepare(`INSERT INTO supply_items(id, org_id, name, vendor_id, vendor_sku, category, unit, bulk_unit, unit_cost, notes, review_note, sort, is_active, updated_at, updated_by)
-      VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).bind(id, env.ORG_ID, it.name, it.vendorId, it.sku, it.category, it.unit, it.bulkUnit, it.unitCost, it.notes, it.reviewNote, sort, it.active, nowIso(), me.id),
+    db.prepare(`INSERT INTO supply_items(id, org_id, name, vendor_id, vendor_sku, category, unit, bulk_unit, unit_cost_cents, notes, review_note, sort, is_active, updated_at, updated_by)
+      VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).bind(id, env.ORG_ID, it.name, it.vendorId, it.sku, it.category, it.unit, it.bulkUnit, it.unitCostCents, it.notes, it.reviewNote, sort, it.active, nowIso(), me.id),
     ...parStmts(db, env, id, body.pars, locIds),
   ]);
   await audit(db, { orgId: env.ORG_ID, userId: me.id, appId: env.APP_ID, entity: "supply_items", entityId: id, action: "create", changes: { ...it, pars: body.pars } });
@@ -103,14 +104,14 @@ export async function createItem(db, env, me, body) {
 
 export async function updateItem(db, env, me, id, body) {
   requireRole(me, "manager");
-  const old = await db.prepare(`SELECT name, vendor_id AS vendorId, vendor_sku AS sku, category, unit, bulk_unit AS bulkUnit, unit_cost AS unitCost, notes,
+  const old = await db.prepare(`SELECT name, vendor_id AS vendorId, vendor_sku AS sku, category, unit, bulk_unit AS bulkUnit, unit_cost_cents AS unitCostCents, notes,
       review_note AS reviewNote, sort, is_active AS active FROM supply_items WHERE id=? AND org_id=?`).bind(id, env.ORG_ID).first();
   if (!old) throw new HttpError(404, "That item isn't on the list.");
   const it = await readItem(db, env, body, old);
   const locIds = new Set((await locations(db, env, { all: true })).map(l => l.id));
   await db.batch([
-    db.prepare(`UPDATE supply_items SET name=?, vendor_id=?, vendor_sku=?, category=?, unit=?, bulk_unit=?, unit_cost=?, notes=?, review_note=?, sort=?, is_active=?, updated_at=?, updated_by=? WHERE id=?`)
-      .bind(it.name, it.vendorId, it.sku, it.category, it.unit, it.bulkUnit, it.unitCost, it.notes, it.reviewNote, it.sort, it.active, nowIso(), me.id, id),
+    db.prepare(`UPDATE supply_items SET name=?, vendor_id=?, vendor_sku=?, category=?, unit=?, bulk_unit=?, unit_cost_cents=?, notes=?, review_note=?, sort=?, is_active=?, updated_at=?, updated_by=? WHERE id=?`)
+      .bind(it.name, it.vendorId, it.sku, it.category, it.unit, it.bulkUnit, it.unitCostCents, it.notes, it.reviewNote, it.sort, it.active, nowIso(), me.id, id),
     ...parStmts(db, env, id, body.pars, locIds),
   ]);
   await audit(db, { orgId: env.ORG_ID, userId: me.id, appId: env.APP_ID, entity: "supply_items", entityId: id, action: "update", changes: body });
@@ -130,19 +131,19 @@ export async function saveVendor(db, env, me, id, body) {
     accountNo: pick("accountNo", "account_no", x => text(x, 60)),
     contact: pick("contact", "contact", x => text(x, 120)),
     leadDays: pick("leadDays", "lead_days", x => intOrNull(x, "Lead time")),
-    minAmount: pick("minAmount", "min_order_amount", x => money(x, "Minimum order")),
+    minCents: pick("minAmount", "min_order_cents", x => cents(x, "Minimum order")),
     minNote: pick("minNote", "min_order_note", x => text(x, 200)),
     notes: pick("notes", "notes", x => text(x, 400)),
     active: body.active !== undefined ? (body.active ? 1 : 0) : old ? old.is_active : 1,
   };
   if (!v.name) throw new HttpError(400, "Vendor name is required.");
   const vid = id || ulid();
-  if (old) await db.prepare(`UPDATE supply_vendors SET name=?, order_method=?, phone=?, website=?, account_no=?, contact=?, lead_days=?, min_order_amount=?, min_order_note=?, notes=?, is_active=?, updated_at=?, updated_by=? WHERE id=?`)
-    .bind(v.name, v.orderMethod, v.phone, v.website, v.accountNo, v.contact, v.leadDays, v.minAmount, v.minNote, v.notes, v.active, nowIso(), me.id, vid).run();
+  if (old) await db.prepare(`UPDATE supply_vendors SET name=?, order_method=?, phone=?, website=?, account_no=?, contact=?, lead_days=?, min_order_cents=?, min_order_note=?, notes=?, is_active=?, updated_at=?, updated_by=? WHERE id=?`)
+    .bind(v.name, v.orderMethod, v.phone, v.website, v.accountNo, v.contact, v.leadDays, v.minCents, v.minNote, v.notes, v.active, nowIso(), me.id, vid).run();
   else {
     const sort = (await db.prepare("SELECT COALESCE(MAX(sort),0)+10 AS s FROM supply_vendors WHERE org_id=?").bind(env.ORG_ID).first()).s;
-    await db.prepare(`INSERT INTO supply_vendors(id, org_id, name, order_method, phone, website, account_no, contact, lead_days, min_order_amount, min_order_note, notes, sort, is_active, updated_at, updated_by)
-      VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).bind(vid, env.ORG_ID, v.name, v.orderMethod, v.phone, v.website, v.accountNo, v.contact, v.leadDays, v.minAmount, v.minNote, v.notes, sort, v.active, nowIso(), me.id).run();
+    await db.prepare(`INSERT INTO supply_vendors(id, org_id, name, order_method, phone, website, account_no, contact, lead_days, min_order_cents, min_order_note, notes, sort, is_active, updated_at, updated_by)
+      VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).bind(vid, env.ORG_ID, v.name, v.orderMethod, v.phone, v.website, v.accountNo, v.contact, v.leadDays, v.minCents, v.minNote, v.notes, sort, v.active, nowIso(), me.id).run();
   }
   await audit(db, { orgId: env.ORG_ID, userId: me.id, appId: env.APP_ID, entity: "supply_vendors", entityId: vid, action: old ? "update" : "create", changes: v });
   return { id: vid };

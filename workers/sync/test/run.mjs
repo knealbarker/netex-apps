@@ -97,7 +97,7 @@ const opts = { orgId: "tcc", integrationId: "smrt", today: TODAY, daysPerRun: 2,
 let r = await runBackfill(db, smrt, opts);
 ok("first run loads the 2 newest days", r.status === "ok" && r.loaded.map(x => x.day).join() === "2026-10-09,2026-10-08", r.loaded);
 ok("orders and pieces stored", one(sqlite, "SELECT COUNT(*) n FROM pos_orders").n === 4 && one(sqlite, "SELECT COUNT(*) n FROM pos_items").n === 10);
-ok("lookups created (statuses, departments, stores, staff)", one(sqlite, "SELECT COUNT(*) n FROM core_locations WHERE kind='store'").n === 2 && one(sqlite, "SELECT COUNT(*) n FROM pos_staff").n === 2 && one(sqlite, "SELECT COUNT(*) n FROM pos_order_departments").n === 8);
+ok("lookups created (statuses, departments, stores, staff)", one(sqlite, "SELECT COUNT(*) n FROM core_locations WHERE kind='store' AND name IN ('Quitman','Winnsboro')").n === 2 && one(sqlite, "SELECT COUNT(*) n FROM pos_staff").n === 2 && one(sqlite, "SELECT COUNT(*) n FROM pos_order_departments").n === 8);
 ok("pickedUp counts as done and closed", one(sqlite, "SELECT is_done, is_closed FROM pos_order_statuses WHERE name='pickedUp'").is_closed === 1);
 ok("picked-up time comes from the items report", !!one(sqlite, "SELECT picked_up_at FROM pos_orders LIMIT 1").picked_up_at);
 ok("history load logs no changes and opens no follow-ups", one(sqlite, "SELECT COUNT(*) n FROM pos_changes").n === 0 && one(sqlite, "SELECT COUNT(*) n FROM plan_followups").n === 0);

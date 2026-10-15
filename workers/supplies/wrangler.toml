@@ -6,7 +6,7 @@ workers_dev = false    # only reachable at supplies.netexcleaners.com
 preview_urls = false
 
 # Cloudflare Access: the "Netex apps" application (*.netexcleaners.com) signs the supply manager in for everything here,
-# EXCEPT supplies.netexcleaners.com/count — that path needs its own Bypass application (like prodplanner .../station),
+# EXCEPT supplies.netexcleaners.com/count — that path needs its own Self-hosted app with a Bypass policy (like prodplanner .../station),
 # because store devices count without signing in. The Worker checks the device's paired cookie there instead.
 routes = [{ pattern = "supplies.netexcleaners.com", custom_domain = true }]
 
