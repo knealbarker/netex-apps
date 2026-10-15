@@ -293,7 +293,11 @@ export async function render(main, ctx) {
       const hrs = X.R.rows.filter(r => r.staffed).reduce((a, r) => a + r.work, 0) + X.E.opsInfo().filter(x => x.on).reduce((a, x) => a + x.hrs, 0);
       const D = P.dp?.D, left = P.isToday && D ? leftovers(P).reduce((t, x) => t + x.n, 0) : null;
       cls = "good";
-      txt = raw(html`${left != null ? raw(html`<b>${fmtN(left)}</b> of ${fmtN(tot)} pieces left`) : raw(html`<b>${P.expected ? "~" : ""}${fmtN(tot)}</b> pieces`)} · ${people} people · ${fmtH(hrs)} planned · in ${hm(X.R.firstStart)}–${hm(X.R.end)}`);
+      // planned labor $ and its percent of the plan's pieces' sales, against the labor target (Neal, Oct 15; Admin/Owner only, like pay rates)
+      const Mo = admin && X.M ? X.M : null, tgt = SET.groups.money.laborTarget, sales = Mo ? Mo.committed : 0, pct = Mo && sales > 0 ? Mo.total / sales * 100 : null;
+      const pcls = pct == null ? "" : pct <= tgt ? "good-txt" : pct <= tgt + 2 ? "warn-txt" : "bad-txt";
+      const lab = Mo ? raw(html` · labor ${fmt$(Mo.total)}${pct != null ? raw(html` = <b class="pv-pct ${pcls}" title="Planned labor ${fmt$(Mo.total)} ÷ ${fmt$(sales)} sales of the plan's pieces · target ${tgt}%">${pct.toFixed(1)}%</b>`) : ""}`) : "";
+      txt = raw(html`${left != null ? raw(html`<b>${fmtN(left)}</b> of ${fmtN(tot)} pieces left`) : raw(html`<b>${P.expected ? "~" : ""}${fmtN(tot)}</b> pieces`)} · ${people} people · ${fmtH(hrs)} planned · in ${hm(X.R.firstStart)}–${hm(X.R.end)}${lab}`);
     }
     el.className = `pv-status ${cls}`;
     el.innerHTML = html`<span class="pv-dot" aria-hidden="true"></span><span>${txt}</span><span id="pl-smrt"></span>`;

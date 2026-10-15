@@ -262,6 +262,7 @@ await t("Viewer: no pay rates, no labor money, can't edit", async () => {
   ok(!(await v.p.isVisible("text=projected labor")), "no money");
   await v.p.goto(url + "/#/plan"); await v.p.waitForSelector("#pl-board .tl-row");
   ok(!(await v.p.isVisible("#pl-suggest")) && !(await v.p.isVisible("#pl-pub")), "no editing");
+  ok(!/labor \$/.test(await v.p.textContent("#pl-status")), "no labor $ in the status line");
   await v.ctx.close(); who = NEAL;
 });
 await t("Phone width: plan and settings fit", async () => {
@@ -293,6 +294,10 @@ await t("Plan board: each person's last time-clock punch, green in / red out, by
   ok(tags.some(x => /in 8:30/.test(x)) && tags.some(x => /out 10:15/.test(x)), `bar tags: ${tags.join(", ")}`);
   const tip = await m.p.$eval(`#pl-board .tl-bar[data-emp="${ids.Beto}"]`, e => e.title);
   ok(/last punch: clocked out 10:15 AM/.test(tip), `hover: ${tip}`);
+  const stat = await m.p.textContent("#pl-status");
+  ok(/labor \$[\d,]+ = \d+\.\d%/.test(stat), `status line labor: ${stat}`);
+  ok(await m.p.$eval("#pl-status .pv-pct", e => /good-txt|warn-txt|bad-txt/.test(e.className)), "percent colored by the target");
+  await m.p.locator("#pl-status").screenshot({ path: join(SHOTS, "e11c-status-labor.png") });
   await m.p.locator(".pv-board").screenshot({ path: join(SHOTS, "e11-punch-stations.png") });
   await m.p.click('.tl-view button:has-text("People")'); await m.p.waitForSelector(".tl-lab .tl-punch");
   const labs = await m.p.$$eval("#pl-board .tl-lab .tl-punch", els => els.map(e => e.className + " " + e.textContent));
