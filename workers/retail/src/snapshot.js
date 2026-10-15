@@ -23,6 +23,7 @@
 import { HttpError } from "../../planner/src/util.js";
 import { rank } from "../../planner/src/auth.js";
 import { loadSettings } from "./settings.js";
+import { firstBreak, minuteOf } from "../../planner/public/js/engine/breakpay.js";
 
 const DAY = /^\d{4}-\d{2}-\d{2}$/;
 const MAX_DAYS = 400;
@@ -79,15 +80,24 @@ async function gather(db, env, from, to, { s = {}, now = Date.now() } = {}) {
   const today = localToday(env.TIMEZONE, new Date(now));
   if (today >= from && today <= to) {
     const punches = (await db.prepare(`SELECT c.location_id AS loc, c.person_id AS pid, d.name AS dept, c.clock_in AS cin, c.clock_out AS cout,
-          COALESCE(p.display_name, p.first_name || ' ' || p.last_name) AS name, p.home_location_id AS home
-        FROM labor_clock_today c JOIN core_people p ON p.id=c.person_id LEFT JOIN core_departments d ON d.id=c.department_id WHERE p.org_id=?`).bind(org).all()).results;
-    const by = new Map();
+          COALESCE(p.display_name, p.first_name || ' ' || p.last_name) AS name, p.home_location_id AS home, l.name AS locName
+        FROM labor_clock_today c JOIN core_people p ON p.id=c.person_id LEFT JOIN core_departments d ON d.id=c.department_id
+        LEFT JOIN core_locations l ON l.id=COALESCE(c.location_id, p.home_location_id) WHERE p.org_id=?`).bind(org).all()).results;
+    const by = new Map(), perPerson = new Map();
     for (const c of punches) {
       const a = Date.parse(c.cin), b = c.cout ? Date.parse(c.cout) : now;
       if (!(a > 0) || localToday(env.TIMEZONE, new Date(a)) !== today) continue;
       const k = `${c.pid}|${c.loc || c.home}|${c.dept}`;
       const x = by.get(k) || by.set(k, { day: today, loc: c.loc || c.home, pid: c.pid, dept: c.dept, name: c.name, hours: 0 }).get(k);
       x.hours += Math.max(0, Math.min(b, now) - a) / 36e5;
+      (perPerson.get(c.pid) || perPerson.set(c.pid, []).get(c.pid)).push({ i: minuteOf(c.cin), o: c.cout ? minuteOf(c.cout) : null, key: k,
+        paidBreak: c.dept === "Production" || /laundry\s*hub/i.test(c.locName || "") });
+    }
+    // paid break (Neal, Oct 15): Production and Laundry Hub, the day's first gap, up to 30 min, none if back after more than 35
+    const nowMin = (() => { const t = new Intl.DateTimeFormat("en-US", { timeZone: env.TIMEZONE, hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).formatToParts(new Date(now)); return +t.find(x => x.type === "hour").value * 60 + +t.find(x => x.type === "minute").value; })();
+    for (const list of perPerson.values()) {
+      const br = firstBreak(list, nowMin);
+      if (br && br.paid > 0 && br.before.paidBreak) by.get(br.before.key).hours += br.paid / 60;
     }
     hours.push(...[...by.values()].map(x => ({ ...x, hours: r2(x.hours), live: true })));
   }

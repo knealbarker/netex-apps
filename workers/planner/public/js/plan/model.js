@@ -5,6 +5,7 @@
 //  - the checks shown before publishing, each with one-click fixes
 //  - the verdict line and the snapshot stored when a plan is published
 import { createEngine, buildWaves, waveEtas, waveState, stepsOf, CATS, CAT_FULL, CAT_LABEL, parseTime, hhmm, fmtClock, hm, fmtH, fmtN, fmt$, median } from "../engine/engine.js";
+import { firstBreak, paidBreakH } from "../engine/breakpay.js";
 
 export const WD = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 export const weekday = day => new Date(day + "T12:00:00Z").getUTCDay();
@@ -409,17 +410,27 @@ export function lastPunchOf(P, id) {
   const [H, Mi] = best.s.slice(11, 16).split(":");
   return { kind: best.kind, h: +H + (+Mi || 0) / 60 };
 }
-/** Hours a person has been on the clock on the plan's day: closed punches, plus an open one up to now (today only). Null without punches (Neal, Oct 15). */
+/** Paid hours a person has on the plan's day: closed punches, plus an open one up to now (today only), plus the paid
+ *  break (the first gap, up to 30 min, none if back after more than 35 — Neal, Oct 15). Null without punches. */
 export function clockedHoursOf(P, id) {
   const h = t => { const x = String(t || "").slice(11, 16).split(":"); return x.length < 2 ? null : +x[0] + (+x[1] || 0) / 60; };
-  let sum = 0, any = false;
+  let sum = 0, any = false; const pun = [];
   for (const c of P.clock || []) {
     if (c.personId !== id) continue;
     const i = h(c.clockIn); if (i == null) continue;
     const o = c.clockOut ? h(c.clockOut) : P.isToday && P.now != null ? P.now : null;
     any = true; if (o != null && o > i) sum += o - i;
+    pun.push({ i: Math.round(i * 60), o: c.clockOut ? Math.round(h(c.clockOut) * 60) : null });
   }
-  return any ? sum : null;
+  if (!any) return null;
+  const b = firstBreak(pun, P.isToday && P.now != null ? Math.round(P.now * 60) : null);
+  return sum + (b ? b.paid / 60 : 0);
+}
+/** The day's break from the time clock: { gap, paid, open } in minutes, or null (Neal, Oct 15). */
+export function clockBreakOf(P, id) {
+  const h = t => { const x = String(t || "").slice(11, 16).split(":"); return x.length < 2 ? null : Math.round((+x[0] + (+x[1] || 0) / 60) * 60); };
+  const pun = (P.clock || []).filter(c => c.personId === id && h(c.clockIn) != null).map(c => ({ i: h(c.clockIn), o: c.clockOut ? h(c.clockOut) : null }));
+  return pun.length ? firstBreak(pun, P.isToday && P.now != null ? Math.round(P.now * 60) : null) : null;
 }
 /** A person's workweek so far (Neal, Oct 15): finished days from Rippling (history) plus today's time on the clock.
  *  { days: [{ day, h, today, future }] for the 5 work days from the week's start, total }, or null with no hours this week. */
@@ -834,7 +845,8 @@ export function paceLabor(X) {
       if (st === "gone") end = lastOutOf(P, id) ?? leave; else if (now > leave) end = now;
     }
     const b = brk ? Math.max(0, Math.min(end, brk[1]) - Math.max(start, brk[0])) : 0;
-    const paid = Math.max(0, end - start - b), rate = rateOf(id);
+    const unpaid = brk ? Math.max(0, b - paidBreakH(brk[1] - brk[0])) : 0;   // up to 30 min of the break is paid (Neal, Oct 15)
+    const paid = Math.max(0, end - start - unpaid), rate = rateOf(id);
     people[id] = { code, start, leave, end, paid, rate, cost: paid * rate, over: end > leave + 1 / 60, kind };
   };
   for (const row of R.rows) if (row.staffed) {

@@ -1,0 +1,20 @@
+// Paid break policy (Neal, Oct 15): one paid break a day, the first gap; up to 30 min; back after more than 35 = unpaid.
+import { firstBreak, paidBreakMin, paidBreakH } from "../public/js/engine/breakpay.js";
+let pass = 0, fail = 0;
+const ok = (name, c, info) => { if (c) { pass++; console.log("  ok  " + name); } else { fail++; console.log("  FAIL " + name, info ?? ""); } };
+const t = s => { const [h, m] = s.split(":"); return +h * 60 + +m; };
+ok("30 min paid in full", paidBreakMin(30) === 30);
+ok("33 min pays 30", paidBreakMin(33) === 30);
+ok("35 min pays 30", paidBreakMin(35) === 30);
+ok("36 min pays nothing", paidBreakMin(36) === 0);
+ok("15 min pays 15", paidBreakMin(15) === 15);
+ok("a planned 30-min break (hours) is paid", Math.abs(paidBreakH(0.5) - 0.5) < 1e-9);
+const day = [{ i: t("06:00"), o: t("10:00") }, { i: t("10:30"), o: t("12:00") }, { i: t("12:50"), o: t("14:30") }];
+ok("first gap is the break; later gaps aren't", firstBreak(day).gap === 30 && firstBreak(day).paid === 30);
+ok("out of order punches are sorted", firstBreak(day.slice().reverse()).from === t("10:00"));
+const open = [{ i: t("06:00"), o: t("10:00") }];
+ok("on break now, 20 min in: 20 paid so far", (b => b.open && b.paid === 20)(firstBreak(open, t("10:20"))));
+ok("still out after 40 min: nothing paid", firstBreak(open, t("10:40")).paid === 0);
+ok("finished day, never came back: no break", firstBreak(open) === null);
+ok("still clocked in, no break yet", firstBreak([{ i: t("06:00"), o: null }], t("09:00")) === null);
+console.log(`\n${pass} passed, ${fail} failed`); process.exit(fail ? 1 : 0);

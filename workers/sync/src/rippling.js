@@ -9,9 +9,13 @@
 //   - Finished days go into labor_daily_hours (one row per person, day, department and location).
 //   - Today's punches replace labor_clock_today, so the apps can see who's in right now.
 //     What changed since the last report (new punch, clock-out, edit, removal) is kept in labor_punch_log.
+//   - Paid break (Neal, Oct 15): for Production and Laundry Hub people, the day's first gap between punches is a
+//     paid break (up to 30 min, none if they're back after more than 35). Its paid minutes are added to that day's
+//     hours (hours = paid hours) and kept in break_paid_hours. Rule: planner/public/js/engine/breakpay.js.
 //   - If the export has a pay rate column (pay_rate, hourly_rate, ...), the rate goes into labor_pay_rates.
 // Clock punches themselves are not kept after the day is added up (Neal, Oct 10).
 import { ulid, nowIso, sha1 } from "./util.js";
+import { firstBreak, minuteOf } from "../../planner/public/js/engine/breakpay.js";
 
 export const RIPPLING_COLUMNS = ["time_entry_id", "employee_name", "employee_number", "department_path", "time_entry_date", "clock_in_local", "clock_out_local", "duration_hours"];
 const RATE_COLUMNS = ["pay_rate", "hourly_rate", "hourly_pay_rate", "base_pay_rate", "pay_rate_amount", "rate", "hourly_pay", "compensation_rate", "wage", "hourly_wage"];
@@ -154,6 +158,8 @@ export async function ingestRippling(db, { orgId, integrationId, today, csv, kee
   };
 
   // add up finished days per person, department and location; collect today's punches and pay rates
+  const punches = new Map(); // person|day -> that day's punches, for the paid break
+  const breakPaid = (r, depId) => depId === prod.id || /laundry\s*hub/i.test(locationName(r.work_location, overrides) || "");
   const daily = new Map(); const todayRows = []; const byDept = {}; const seenRate = new Map(); let used = 0, skipped = 0;
   for (const r of rows) {
     const day = ripDay(r.time_entry_date), cin = ripTime(r.clock_in_local), cout = ripTime(r.clock_out_local);
@@ -167,17 +173,32 @@ export async function ingestRippling(db, { orgId, integrationId, today, csv, kee
     if (rateCol) { const c = rateCents(r[rateCol]); if (c) { const s = seenRate.get(person.id); if (!s || day < s.day) seenRate.set(person.id, { c, day }); } }
     if (day === today) { todayRows.push({ pid: person.id, depId, locId, id: r.time_entry_id, cin, cout }); continue; }
     if (day > today) { skipped++; continue; }
-    const k = `${person.id}|${day}|${depId}|${locId}`, d = daily.get(k) || { pid: person.id, day, depId, locId, hours: 0, first: null, last: null, open: false };
+    const k = `${person.id}|${day}|${depId}|${locId}`, d = daily.get(k) || { pid: person.id, day, depId, locId, hours: 0, brk: 0, first: null, last: null, open: false };
     d.hours += Number.parseFloat(r.duration_hours) || 0;
+    const pd = `${person.id}|${day}`;
+    (punches.get(pd) || punches.set(pd, []).get(pd)).push({ i: minuteOf(cin.hm), o: cout && cout.day === day ? minuteOf(cout.hm) : null, key: k, paidBreak: breakPaid(r, depId) });
     if (!d.first || cin.hm < d.first) d.first = cin.hm;
     if (!cout) d.open = true; else if (!d.last || cout.hm > d.last) d.last = cout.hm;
     daily.set(k, d);
   }
+  // the paid break goes to the department and location of the punch it follows
+  for (const list of punches.values()) {
+    const b = firstBreak(list);
+    if (b && b.paid > 0 && b.before.paidBreak) { const d = daily.get(b.before.key); d.hours += b.paid / 60; d.brk += b.paid / 60; }
+  }
+  // break_paid_hours arrives with migration 0018 (applied by the planner's deploy); until then, store hours alone
+  const hasBrk = (await db.prepare("PRAGMA table_info(labor_daily_hours)").all()).results.some(c => c.name === "break_paid_hours");
   for (const d of daily.values()) {
-    stmts.push(db.prepare(`INSERT INTO labor_daily_hours(person_id, work_date, department_id, location_id, hours, first_in, last_out, sync_run_id) VALUES(?,?,?,?,?,?,?,?)
+    const h = Math.round(d.hours * 100) / 100, b = Math.round(d.brk * 100) / 100;
+    stmts.push(hasBrk
+      ? db.prepare(`INSERT INTO labor_daily_hours(person_id, work_date, department_id, location_id, hours, break_paid_hours, first_in, last_out, sync_run_id) VALUES(?,?,?,?,?,?,?,?,?)
+      ON CONFLICT(person_id, work_date, department_id, location_id) DO UPDATE SET hours=excluded.hours, break_paid_hours=excluded.break_paid_hours, first_in=excluded.first_in, last_out=excluded.last_out,
+        sync_run_id=excluded.sync_run_id, updated_at=?, rev=rev+1`)
+        .bind(d.pid, d.day, d.depId, d.locId, h, b, d.first, d.open ? null : d.last, runId, now)
+      : db.prepare(`INSERT INTO labor_daily_hours(person_id, work_date, department_id, location_id, hours, first_in, last_out, sync_run_id) VALUES(?,?,?,?,?,?,?,?)
       ON CONFLICT(person_id, work_date, department_id, location_id) DO UPDATE SET hours=excluded.hours, first_in=excluded.first_in, last_out=excluded.last_out,
         sync_run_id=excluded.sync_run_id, updated_at=?, rev=rev+1`)
-      .bind(d.pid, d.day, d.depId, d.locId, Math.round(d.hours * 100) / 100, d.first, d.open ? null : d.last, runId, now));
+        .bind(d.pid, d.day, d.depId, d.locId, h, d.first, d.open ? null : d.last, runId, now));
   }
   // pay rates: a new rate applies from the person's first day in this export (first time) or from today (a change)
   let rateChanges = 0;

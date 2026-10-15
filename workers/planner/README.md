@@ -69,6 +69,6 @@ Secret: `CF_API_TOKEN` (Account › Access: Organizations, Identity Providers, a
 ## Tests (Node 22; Node's SQLite stands in for D1, headless Chromium for the pages)
 - `test/run.mjs` sign-in and users · `test/stage2.mjs` team, settings, import · `test/pieces.mjs` · `test/plan.mjs` · `test/model.mjs`
 - `test/tally.mjs` station tablets (pairing, credit, pace, photos) · `test/station-ui.mjs` the tablet page and its Plan/Review/Settings/Team parts in Chromium
-- `test/review.mjs` · `test/stage5.mjs` pay rates, any day, changes, events, streak, summary email · `test/engine-parity.mjs`
+- `test/breakpay.mjs` paid break rule · `test/review.mjs` · `test/stage5.mjs` pay rates, any day, changes, events, streak, summary email · `test/engine-parity.mjs`
 - Browser: `test/browser.mjs`, `test/review-ui.mjs`, and **`test/e2e.mjs`** — the whole planner end to end,
   offline included. Screenshots (and the printed plan as a PDF) in `test/shots`.

@@ -253,7 +253,8 @@ ok("custom work days: Saturday as a work day waits", !backfillAllowed({ day: "20
   ok("rippling: workshop hours stay at the Workshop", one(R, "SELECT l.kind FROM labor_daily_hours h JOIN core_locations l ON l.id=h.location_id WHERE h.person_id='PR40'").kind === "plant");
   ok("rippling: new retail clerk isn't added to the production team", one(R, "SELECT d.name FROM core_people p JOIN core_departments d ON d.id=p.department_id WHERE p.payroll_id='70'").name === "Retail");
   const h = one(R, "SELECT hours, first_in, last_out FROM labor_daily_hours WHERE person_id='PR40' AND work_date='2026-10-09'");
-  ok("rippling: split shift added up into one day", h && h.hours === 8.02 && h.first_in === "03:50" && h.last_out === "12:21", h);
+  ok("rippling: split shift added up into one day, with its 30-min break paid", h && h.hours === 8.52 && h.first_in === "03:50" && h.last_out === "12:21", h);
+  ok("rippling: the paid break is recorded on its own", one(R, "SELECT break_paid_hours AS b FROM labor_daily_hours WHERE person_id='PR40' AND work_date='2026-10-09'").b === 0.5);
   ok("rippling: new Production employee added to the team", one(R, "SELECT COUNT(*) n FROM core_people WHERE payroll_id='99' AND status='active'").n === 1 && res.added.includes("New Person"));
   const today = R.prepare("SELECT p.payroll_id, c.clock_in, c.clock_out FROM labor_clock_today c JOIN core_people p ON p.id=c.person_id ORDER BY c.clock_in").all();
   ok("rippling: today's punches kept for the live view, open shift has no clock-out", today.length === 2 && today[0].clock_in === "2026-10-12T03:45:00-05:00" && today[0].clock_out === null, today);
@@ -261,6 +262,28 @@ ok("custom work days: Saturday as a work day waits", !backfillAllowed({ day: "20
   const again = await ingestRippling(rdb, { orgId: "tcc", integrationId: "rippling", today: "2026-10-12", csv });
   ok("rippling: an identical export is skipped without touching the database", again.duplicate === true);
   ok("rippling: same email twice changes nothing", one(R, "SELECT COUNT(*) n FROM labor_daily_hours").n === 3 && one(R, "SELECT COUNT(*) n FROM labor_clock_today").n === 2);
+  {
+    // paid break policy (Neal, Oct 15): one break, the first gap; up to 30 min paid; back after more than 35 = none; Production and Laundry Hub only
+    const H = "time_entry_id,employee_name,employee_number,title,department_path,work_location,time_entry_date,clock_in_local,clock_out_local,duration_hours,timezone,status,clock_in_source,clock_out_source";
+    const row = (id, name, no, dep, loc, a, b, h) => `${id},${name},${no},T,${dep},${loc},10/08/2026,10/08/2026 ${a} CDT,10/08/2026 ${b} CDT,${h},America/Chicago,PAID,Web,Web`;
+    await ingestRippling(rdb, { orgId: "tcc", integrationId: "rippling", today: "2026-10-12", keepToday: true, csv: [H,
+      row("b1", "Brk Ok", 501, "Production", "TCC SS Workshop", "06:00 AM", "10:00 AM", 4), row("b2", "Brk Ok", 501, "Production", "TCC SS Workshop", "10:35 AM", "02:30 PM", 3.92),
+      row("b3", "Brk Late", 502, "Production", "TCC SS Workshop", "06:00 AM", "10:00 AM", 4), row("b4", "Brk Late", 502, "Production", "TCC SS Workshop", "10:36 AM", "02:30 PM", 3.9),
+      row("b5", "Brk Two", 503, "Production", "TCC SS Workshop", "06:00 AM", "09:00 AM", 3), row("b6", "Brk Two", 503, "Production", "TCC SS Workshop", "09:20 AM", "11:00 AM", 1.67),
+      row("b7", "Brk Two", 503, "Production", "TCC SS Workshop", "11:15 AM", "02:00 PM", 2.75),
+      row("b8", "Brk Hub", 504, "Laundry Hub", "TCC Laundry Hub", "07:00 AM", "11:00 AM", 4), row("b9", "Brk Hub", 504, "Laundry Hub", "TCC Laundry Hub", "11:30 AM", "03:00 PM", 3.5),
+      row("c1", "Brk Store", 505, "Retail", "TCC SS Store", "07:00 AM", "11:00 AM", 4), row("c2", "Brk Store", 505, "Retail", "TCC SS Store", "11:30 AM", "03:00 PM", 3.5),
+      row("c3", "Brk Switch", 506, "Production", "TCC SS Workshop", "06:00 AM", "08:00 AM", 2), row("c4", "Brk Switch", 506, "Production", "TCC SS Workshop", "08:01 AM", "10:00 AM", 1.98),
+      row("c5", "Brk Switch", 506, "Production", "TCC SS Workshop", "10:30 AM", "02:00 PM", 3.5),
+    ].join("\r\n") });
+    const hrs = no => one(R, `SELECT SUM(h.hours) AS h, SUM(h.break_paid_hours) AS b FROM labor_daily_hours h JOIN core_people p ON p.id=h.person_id WHERE p.payroll_id='${no}' AND h.work_date='2026-10-08'`);
+    ok("paid break: back at 35 minutes, 30 of it paid", hrs(501).h === 8.42 && hrs(501).b === 0.5, hrs(501));
+    ok("paid break: back at 36 minutes, none of it paid", hrs(502).h === 7.9 && hrs(502).b === 0, hrs(502));
+    ok("paid break: a 20-min first break is paid in full, a second gap isn't", hrs(503).b === 0.33 && hrs(503).h === 7.75, hrs(503));
+    ok("paid break: Laundry Hub gets it", hrs(504).b === 0.5 && hrs(504).h === 8, hrs(504));
+    ok("paid break: store staff don't", hrs(505).b === 0 && hrs(505).h === 7.5, hrs(505));
+    ok("paid break: a 1-minute gap between punches isn't the break", hrs(506).b === 0.5, hrs(506));
+  }
   {
     const { sqlite: S, db: sdb } = freshDb();
     const hdr = "time_entry_id,employee_name,employee_number,title,department_path,work_location,time_entry_date,clock_in_local,clock_out_local,duration_hours,timezone,status,clock_in_source,clock_out_source,Pay Rate";

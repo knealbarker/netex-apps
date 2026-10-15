@@ -11,6 +11,8 @@
 //   settings (flat, desktop names): defStart, fullDay, breakMin, breakAfter, spread, staggerBreaks, allowOT, otMax, otMult,
 //     allowMoves, allowClockOut, minPaid, washOn, washers, washDelay, washSlt, washSlb, washComf, washTc, cycSlt, cycSlb, cycComf, cycTc,
 //     rates {sltSolo, sltPair, slb, dct, dcb, tc, asm, comf}, asmInclude {cat: bool}, stationMax {code: hours}, price {cat: $}, payAvg, laborTarget
+import { paidBreakH } from "./breakpay.js";
+
 export const EPS = 1e-6;
 export const CATS = ["dct", "dcb", "slt", "slb", "comf", "tc"];
 export const CAT_LABEL = { dct: "DCT", dcb: "DCB", slt: "SLT", slb: "SLB", comf: "Comforters", tc: "Tablecloths" };
@@ -359,7 +361,7 @@ export function createEngine(S) {
       const tasks = segs.map(g => ({ stn: g.stn, from: g.from, to: g.to, hours: g.to - g.from, pcs: 0 }));
       const work = segs.reduce((a, g) => a + g.to - g.from, 0);
       rows.push({ st, x, staffed: true, emp: { empId: c.emp, pos0: st.id }, segs, brkS: m.brk ? m.brk[0] : null, brkE: m.brk ? m.brk[1] : null, brkTaken: m.bl, tasks, work, comf: 0, active: work,
-        finish: m.end, clockOut: m.end, ot: 0, idle: 0, regPaid: work, paid: work, early: 0, moved: segs.some(g => g.stn !== st.id), gap: 0 });
+        finish: m.end, clockOut: m.end, ot: 0, idle: 0, regPaid: work + paidBreakH(m.bl), paid: work + paidBreakH(m.bl), early: 0, moved: segs.some(g => g.stn !== st.id), gap: 0 });
     }
     const st2 = rows.filter(r => r.staffed), opsOn = opsInfo().filter(o => o.on);
     if (!st2.length && !opsOn.length) return { empty: true, I, noCrew: totalPieces > 0 };
@@ -442,7 +444,7 @@ export function createEngine(S) {
       if (!r.staffed) continue; const rate = payRate(r.st.id);
       regH += r.regPaid; regC += r.regPaid * rate; otH += r.ot; otC += r.ot * rate * s.otMult; idleH += r.idle; idleC += r.idle * rate;
     }
-    for (const x of opsInfo()) if (x.on) { const rate = payRate(x.o.id), paid = MANUAL ? x.hrs : x.hrs + x.b; /* manual: hrs is clock-in to out less the unpaid break */ opsH += paid; opsC += paid * rate; }
+    for (const x of opsInfo()) if (x.on) { const rate = payRate(x.o.id), paid = MANUAL ? x.hrs + paidBreakH(x.b) : x.hrs + x.b; /* manual: hrs is clock-in to out less the break; up to 30 min of it is paid (Neal, Oct 15) */ opsH += paid; opsC += paid * rate; }
     const total = regC + otC + opsC, pct = revenue > 0 ? total / revenue * 100 : null;
     const budget = revenue * s.laborTarget / 100;
     return { revCat, revenue, committed, regH, regC, otH, otC, opsH, opsC, idleH, idleC, total, pct, budget, pctIfHome: revenue > 0 ? (total - idleC) / revenue * 100 : null };
