@@ -377,13 +377,14 @@ export async function render(main, ctx) {
     // red line: where each kind of work should be finished, from its pieces and pieces-per-hour (Neal, Oct 14)
     const FIN = M.finishLines(X), RATE = { slb: `${s.rates.slb}/hr per press`, slt: `${s.rates.sltSolo}/hr on SLT 1, +${s.rates.sltPair - s.rates.sltSolo} with the helper`, dct: `${s.rates.dct}/hr per press`, dcb: `${s.rates.dcb}/hr`, tc: `${s.rates.tc}/hr`, comf: `${s.rates.comf}/hr`, asm: `${s.rates.asm}/hr per person` };
     const finTip = f => `${M.GROUP_LABEL[f.k] || f.k}: ${fmtN(f.pieces)} ${P.isToday ? "pieces left" : "pieces"} at ${RATE[f.k] || ""} with ${f.people} ${f.people === 1 ? "person" : "people"} planned → ${f.finish != null ? `done about ${hmShort(f.finish)} ${f.finish < 12 ? "AM" : "PM"}` : `${fmtN(f.short)} not covered by the planned hours`}`;
-    const finLine = k => { const f = FIN[k]; if (!f || f.finish == null || f.finish <= a || f.finish >= b) return ""; return html`<i class="tl-fin" style="left:${pct(f.finish)}" title="${finTip(f)}"><span>${hmShort(f.finish)}</span></i>`; };
+    const finLine = k => { const f = st.over ? null : FIN[k]; if (!f || f.finish == null || f.finish <= a || f.finish >= b) return ""; return html`<i class="tl-fin" style="left:${pct(f.finish)}" title="${finTip(f)}"><span>${hmShort(f.finish)}</span></i>`; };
     const statusOf = g => {   // pieces of that kind still to do (today: left), and when the plan should finish them
-      const k = g.cat || (g.key === "asm" ? "asm" : null), f = k ? FIN[k] : null;
+      const k = g.cat || (g.key === "asm" ? "asm" : null), f = k && !st.over ? FIN[k] : null;   // the day is over: no finish times
       if (k === "asm") return f ? html`<span class="${f.finish == null ? "bad-txt" : ""}" title="${finTip(f)}">${f.finish != null ? `by ${hmShort(f.finish)}` : f.people ? `${fmtN(f.short)} short` : ""}</span>` : "";
       if (!k || !((P.q[k] || 0) > 0.5)) return "";
       const D = P.dp?.D, left = P.isToday && D ? Math.max(0, Math.round(P.q[k] - (D.done?.[k] || 0))) : Math.round(P.q[k]);
       const when = f ? (f.finish != null ? ` · by ${hmShort(f.finish)}` : f.people ? ` · ${fmtN(f.short)} short` : " · no one") : "";
+      if (left > 0 && st.over) return html`<span class="muted">${fmtN(left)} for later</span>`;
       return left <= 0 ? html`<span class="good-txt">done</span>` : html`<span class="${f && f.finish == null ? "bad-txt" : ""}" title="${f ? finTip(f) : ""}">${fmtN(left)} ${P.isToday ? "left" : "to do"}${when}</span>`;
     };
     const barHtml = (g, l, lane = l.lane) => {
