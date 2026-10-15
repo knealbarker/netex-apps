@@ -122,9 +122,12 @@ await t("follow-ups: an order whose due date moved later; a Manager adds a reaso
   await call("PATCH", `/followups/${id}`, { as: "mo@example.com", body: { resolved: true } });
   eq((await call("GET", `/review/${DAY}`)).body.followups.list.find(x => x.id === id).status, "resolved");
 });
-await t("trend: 15 work days ending on the day, with hours and pieces per hour", async () => {
+await t("trend: 10 work days ending on the day, with hours and pieces per hour; target pieces per hour", async () => {
   const r = (await call("GET", `/review/${DAY}`)).body;
-  eq(r.trend.length, 15); eq(r.trend[14].day, DAY); eq(r.trend[14].pieces, 7); near(r.trend[14].pct, 18 * 15 / r.done.revenue * 100);
+  eq(r.trend.length, 10); eq(r.trend[9].day, DAY); eq(r.trend[9].pieces, 7); near(r.trend[9].pct, 18 * 15 / r.done.revenue * 100);
+  const T = r.departments.total; near(T.targetPerHour, T.avgWage / (r.labor.target / 100 * T.avgPrice));
+  const v = (await call("GET", `/review/${DAY}`, { as: "vi@example.com" })).body.departments.total;
+  ok(v.targetPerHour > 0 && v.avgWage === undefined && v.avgPrice === undefined && v.cost === undefined, "viewers get the target, no money");
   ok(r.trend.every(d => ![0, 6].includes(new Date(d.day + "T12:00:00Z").getUTCDay())), "no weekends");
 });
 await t("bad dates and future days are refused", async () => {

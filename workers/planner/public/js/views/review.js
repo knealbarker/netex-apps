@@ -9,10 +9,10 @@ const longDay = d => new Date(d + "T12:00:00").toLocaleDateString(undefined, { w
 const shortDay = d => new Date(d + "T12:00:00").toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" });
 const stamp = s => { if (!s) return "—"; const m = /^(\d{4}-\d{2}-\d{2})[T ](\d\d):(\d\d)/.exec(s); return m ? `${shortDay(m[1])} ${fmtClock(+m[2] + +m[3] / 60)}` : s; };
 let pick = null;
+function localDayOf(iso) { const d = new Date(iso); return isNaN(d) ? "" : new Date(d.getTime() - d.getTimezoneOffset() * 6e4).toISOString().slice(0, 10); }
 
 export async function render(main, ctx) {
   const can = RANK[ctx.me.role] >= RANK.manager, admin = RANK[ctx.me.role] >= RANK.admin;
-  let NX = null;          // the next work day's projection, kept while moving between days
   let BASE = null;        // settings and team, read once
   let R0 = null;          // the reviewed day's plan, worked out the same way as the Plan page (manual plan, finish lines, pace)
   main.innerHTML = html`<div class="loading"><span class="spin"></span>Adding up the day…</div>`;
@@ -60,7 +60,8 @@ export async function render(main, ctx) {
       { v: T.due ? fmtN(T.finished) : "—", s: T.due ? `of ${fmtN(T.due)} due, finished` : "pieces due", c: T.left ? "warn" : T.due ? "good" : "" },
       { v: fmtN(T.assembled), s: "pieces assembled" },
       { v: L.hours ? fmtH(L.hours) : "—", s: `paid hours · ${L.people} ${L.people === 1 ? "person" : "people"}`, t: L.breakPaid > 0.01 ? `Includes ${fmtH(L.breakPaid)} of paid breaks (up to 30 min each)` : "" },
-      { v: T.perHour != null ? T.perHour.toFixed(1) : "—", s: "pieces per paid hour" },
+      { v: T.perHour != null ? T.perHour.toFixed(1) : "—", s: `pieces per paid hour${T.targetPerHour ? ` · target ${T.targetPerHour.toFixed(1)}` : ""}`, c: T.perHour != null && T.targetPerHour ? (T.perHour >= T.targetPerHour ? "good" : "bad") : "",
+        t: T.targetPerHour ? `To keep labor at ${tgt}%: average wage${T.avgWage ? ` ${fmt$(T.avgWage)}/h` : ""} ÷ (${tgt}% × average price per piece${T.avgPrice ? ` ${fmt$(T.avgPrice)}` : ""}). Uses this day's real pay rates and price mix.` : "" },
       ...(D.money ? [{ v: T.cost != null ? fmt$(T.cost) : "—", s: `labor · ${fmt$(T.value || 0)} of sales assembled` },
         { v: T.pct != null ? T.pct.toFixed(1) + "%" : "—", c: T.pct == null ? "" : T.pct <= tgt ? "good" : "bad", s: `labor % · target ${tgt}%` }] : []),
       { v: lastOut >= 0 ? hm(lastOut) : "—", s: `last out${stillIn ? " (some still in)" : ""}` },
@@ -77,24 +78,19 @@ export async function render(main, ctx) {
       <section class="tiles rv-tiles">${tiles.map(x => raw(html`<div class="tile"${x.t ? raw(html` title="${x.t}"`) : ""}><b class="t-num ${x.c ? "c-" + x.c : ""}">${x.v}</b><span class="t-sub">${x.s}</span></div>`))}</section>
       ${D.money && L.avgHours > 0.05 ? raw(html`<p class="muted small rv-note">Labor cost uses each person's pay rate from Rippling; ${fmtH(L.avgHours)} of ${fmtH(L.hours)} ${L.avgHours >= L.hours - 0.05 ? "are" : "is"} costed at the average ${fmt$(L.payAvg)}/h because Rippling hasn't sent a rate for ${L.avgHours >= L.hours - 0.05 ? "anyone yet" : "everyone"}.</p>`) : ""}
       <section class="card pl-card rv-depts"><header class="pl-cardhead"><div><h2>By department</h2><p>Pieces due and finished, and the labor that went into each. Hours come from the time clock, split across the stations each person was on in the day's plan${DP.planBasis.startsWith("copied") ? " (none was saved, so the last saved plan)" : DP.planBasis === "none" ? " (no plan was saved, so all hours show as not on the plan)" : ""}. Assembly and the operators work for every department, so they're on their own rows and in the total.</p></div></header>${raw(deptTable())}</section>
+      <section class="card pl-card rv-people"><header class="pl-cardhead"><div><h2>People</h2><p>From the time clock. The first gap is the paid break, up to 30 min; back after more than 35 and none of it is paid. Week = paid hours this week, amber from 36, red past 40.</p></div></header>${raw(peopleCard())}</section>
       <div class="rv-grid">
         <section class="card pl-card rv-hours"><header class="pl-cardhead"><div><h2>By the hour</h2><p>Pieces assembled in SMRT each hour${D.isToday ? ", so far" : ""}. Assembly runs behind pressing, so spurts follow batches.</p></div></header>${raw(byHour())}</section>
         ${D.tally && (D.tally.total || D.tally.entries.length || D.isToday) ? raw(html`<section class="card pl-card rv-tally" id="rv-tally"><header class="pl-cardhead"><div><h2>Starch bottoms pressed</h2><p>Counts from the station tablets, checked against SMRT's starch bottoms assembled. Pace is per person on the station, against their SLB goal.</p></div></header>${raw(tallyCard())}</section>`) : ""}
-        <section class="card pl-card"><header class="pl-cardhead"><div><h2>Pieces through the day</h2><p>Assembled in SMRT, counted as they happened.</p></div></header>${raw(chart())}</section>
-        <section class="card pl-card"><header class="pl-cardhead"><div><h2>People</h2><p>From the time clock. The first gap is the paid break, up to 30 min; back after more than 35 and none of it is paid. Week = paid hours this week, amber from 36, red past 40.</p></div></header>${raw(peopleCard())}</section>
-        <section class="card pl-card" id="rv-nextday"><header class="pl-cardhead"><div><h2>Next work day · ${shortDay(D.nextWork)}</h2><p>Pieces to plan for, the crew and when the work should be done.</p></div>
-          <a class="btn small primary" href="#/plan?day=${D.nextWork}">Open ${new Date(D.nextWork + "T12:00:00").toLocaleDateString(undefined, { weekday: "long" })}'s plan</a></header><div id="rv-nextday-body"><p class="muted pad">Working it out…</p></div></section>
         <section class="card pl-card"><header class="pl-cardhead"><div><h2>Last ${D.trend.length} work days</h2><p>Pieces assembled per paid hour${D.money ? ", and labor % of revenue" : ""}.</p></div></header>${raw(trend())}</section>
       </div>
       ${D.isToday ? raw('<div id="rv-orders"></div>') : ""}
       ${raw(followups())}
     </div>`;
-    nextDay();
     if (D.isToday) orders();
     main.querySelector("#rv-prev").addEventListener("click", () => go(D.prev));
     main.querySelector("#rv-next").addEventListener("click", () => D.next && go(D.next));
     main.querySelector("#rv-date").addEventListener("change", e => { if (e.target.value && e.target.value <= D.today) go(e.target.value); });
-    main.querySelectorAll("[data-trend]").forEach(b => { b.addEventListener("click", () => go(b.dataset.trend)); b.addEventListener("keydown", e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); go(b.dataset.trend); } }); });
     wireTally();
     main.querySelectorAll("form.rv-mnote").forEach(f => f.addEventListener("submit", async e => {
       e.preventDefault(); const btn = f.querySelector("button"); btn.disabled = true;
@@ -122,14 +118,14 @@ export async function render(main, ctx) {
       return n ? raw(html`<p class="rv-ntext">${n.text}${n.by ? raw(html` <small class="muted">· ${n.by}</small>`) : ""}</p>`) : "";
     };
     const cols = 6 + (money ? 2 : 0);
-    const missRow = r => (r.miss.length || DP.notes[r.key] ? raw(html`<tr class="rv-missrow"><td colspan="${cols}"><span class="c-bad small">Missed: ${r.miss.join(" · ") || "—"}</span>${note(r.key)}</td></tr>`) : "");
-    const dept = r => raw(html`<tr class="${r.miss.length ? "rv-miss" : ""}"><td><b>${r.label}</b>${r.people.length ? raw(html`<small>${r.people.join(", ")}</small>`) : ""}</td>
+    const missRow = () => "";   // Neal, Oct 15: no missed line or notes for now
+    const dept = r => raw(html`<tr><td><b>${r.label}</b>${r.people.length ? raw(html`<small>${r.people.join(", ")}</small>`) : ""}</td>
       <td class="num">${fmtN(r.due)}</td><td class="num ${r.left ? "c-bad" : r.due ? "c-good" : ""}">${fmtN(r.finished)}${raw(finSub(r))}</td>
       <td class="num">${fmtN(r.assembled)}${raw(asmSub(r))}</td><td class="num">${r.hours > 0.05 ? fmtH(r.hours) : "—"}</td>
       <td class="num ${r.perHour != null && r.goal && r.perHour < r.goal * 0.9 ? "c-bad" : ""}">${r.perHour != null ? r.perHour.toFixed(1) : "—"}${r.goal ? raw(html`<small>goal ${r.goal}</small>`) : ""}</td>
-      ${money ? raw(html`<td class="num">${r.cost != null && r.hours > 0.05 ? fmt$(r.cost) : "—"}</td><td class="num ${pctCls(r.pct)}" ${r.pct == null && r.assembled ? raw('title="No hours on these stations in the plan, so no labor % (their labor is under Not on the plan or another department)"') : ""}>${r.pct != null ? r.pct.toFixed(1) + "%" : "—"}${r.value ? raw(html`<small>of ${fmt$(r.value)}</small>`) : ""}</td>`) : ""}</tr>${missRow(r)}`);
+      ${money ? raw(html`<td class="num">${r.cost != null && r.hours > 0.05 ? fmt$(r.cost) : "—"}</td>`) : ""}</tr>${missRow(r)}`);
     const shared = r => raw(html`<tr class="rv-shared"><td><b>${r.label}</b>${r.people.length ? raw(html`<small>${r.people.join(", ")}</small>`) : ""}</td><td colspan="3" class="muted small">${r.key === "none" ? "clocked in, not on any station in the plan" : "works for every department"}</td>
-      <td class="num">${fmtH(r.hours)}</td><td></td>${money ? raw(html`<td class="num">${fmt$(r.cost)}</td><td class="num muted">${r.pct != null ? r.pct.toFixed(1) + "%" : "—"}<small>of all sales</small></td>`) : ""}</tr>${DP.notes[r.key] || (can && r.key === "none") ? missRow(r) : ""}`);
+      <td class="num">${fmtH(r.hours)}</td><td></td>${money ? raw(html`<td class="num">${fmt$(r.cost)}</td>`) : ""}</tr>`);
     // Finished = pieces due this day that are done, whenever they were done; Assembled = pieces assembled this day,
     // whatever day they're due. The small lines show how the two overlap (Neal, Oct 15: "326 finished but 309 assembled?")
     const d0 = D.isToday ? "today" : "that day";
@@ -147,14 +143,13 @@ export async function render(main, ctx) {
     }
     const rows = DP.rows.filter(r => !r.shared), sh = DP.rows.filter(r => r.shared);
     if (!rows.length && !sh.length) return html`<p class="muted pad">Nothing due, assembled or clocked this day.</p>`;
-    return html`<div class="t-scroll"><table class="rt rv-dept"><thead><tr><th>Department</th><th class="num">Due</th><th class="num">Finished</th><th class="num">Assembled</th><th class="num">Hours</th><th class="num">Per hour</th>${money ? raw('<th class="num">Labor</th><th class="num">Labor %</th>') : ""}</tr></thead><tbody>
+    return html`<div class="t-scroll"><table class="rt rv-dept"><thead><tr><th>Department</th><th class="num">Due</th><th class="num">Finished</th><th class="num">Assembled</th><th class="num">Hours</th><th class="num">Per hour</th>${money ? raw('<th class="num">Labor</th>') : ""}</tr></thead><tbody>
       ${rows.map(dept)}${sh.map(shared)}
-      <tr class="rv-total ${T.miss.length ? "rv-miss" : ""}"><td><b>Total</b></td><td class="num"><b>${fmtN(T.due)}</b></td><td class="num ${T.left ? "c-bad" : "c-good"}"><b>${fmtN(T.finished)}</b>${raw(finSub(T))}</td>
-        <td class="num"><b>${fmtN(T.assembled)}</b>${raw(asmSub(T))}</td><td class="num"><b>${fmtH(T.hours)}</b></td><td class="num"><b>${T.perHour != null ? T.perHour.toFixed(1) : "—"}</b></td>
-        ${money ? raw(html`<td class="num"><b>${fmt$(T.cost)}</b></td><td class="num ${pctCls(T.pct)}"><b>${T.pct != null ? T.pct.toFixed(1) + "%" : "—"}</b><small>target ${tgt}%</small></td>`) : ""}</tr>
-      ${T.miss.length || DP.notes.total ? missRow({ key: "total", miss: T.miss }) : ""}
+      <tr class="rv-total"><td><b>Total</b></td><td class="num"><b>${fmtN(T.due)}</b></td><td class="num ${T.left ? "c-bad" : "c-good"}"><b>${fmtN(T.finished)}</b>${raw(finSub(T))}</td>
+        <td class="num"><b>${fmtN(T.assembled)}</b>${raw(asmSub(T))}</td><td class="num"><b>${fmtH(T.hours)}</b></td><td class="num"><b>${T.perHour != null ? T.perHour.toFixed(1) : "—"}</b>${T.targetPerHour ? raw(html`<small>target ${T.targetPerHour.toFixed(1)}</small>`) : ""}</td>
+        ${money ? raw(html`<td class="num"><b>${fmt$(T.cost)}</b><small class="${pctCls(T.pct)}">${T.pct != null ? T.pct.toFixed(1) + "% · target " + tgt + "%" : ""}</small></td>`) : ""}</tr>
       </tbody></table></div>
-      <p class="muted small"><b>Finished</b> = pieces due ${d0} that are done, whenever they were done (done ahead = assembled on an earlier day; no scan = SMRT has the order assembled or ready but the piece was never scanned). <b>Assembled</b> = pieces assembled ${d0}, whatever day they're due (ahead = due later, past due = catching up). Labor % = the department's labor ÷ the sales value (before tax) of its pieces assembled that day. Per hour = pieces assembled ÷ hours on its stations, against Settings › Rates.${D.isToday ? " Today's numbers are so far." : ""}</p>`;
+      <p class="muted small"><b>Finished</b> = pieces due ${d0} that are done, whenever they were done (done ahead = assembled on an earlier day; no scan = SMRT has the order assembled or ready but the piece was never scanned). <b>Assembled</b> = pieces assembled ${d0}, whatever day they're due (ahead = due later, past due = catching up). Labor % is for the whole day only (total row). Per hour = pieces assembled ÷ hours on its stations, against Settings › Rates.${D.isToday ? " Today's numbers are so far." : ""}</p>`;
   }
 
   // ------------------------------------------------------------ people: the time clock, breaks and the week
@@ -183,28 +178,6 @@ export async function render(main, ctx) {
     const start = new Date(Date.parse(D.day + "T12:00:00Z") - back * 864e5).toISOString().slice(0, 10);
     const before = H.filter(h => h.personId === id && h.day >= start && h.day < D.day).reduce((t, h) => t + (+h.hours || 0), 0);
     return before + (todayH || 0);
-  }
-
-  // the next work day: its saved plan (or the last one copied in, as the Plan page will), with the pieces known now
-  async function nextDay() {
-    const day = D.nextWork, el = () => main.querySelector("#rv-nextday-body");
-    try {
-      if (!NX || NX.day !== day) {
-        if (!BASE) { const [SET, TEAM] = await Promise.all([api("/settings"), api("/team")]); BASE = { SET, TEAM }; }
-        const [V, plan] = await Promise.all([api(`/pieces?day=${day}`), api(`/plan/${day}`)]);
-        NX = { day, N: M.projectDay({ ...BASE, V, plan, day, admin }), target: BASE.SET.groups.money.laborTarget };
-      }
-      const N = NX.N, box = el(); if (!box || D.nextWork !== day) return;
-      if (!N) { box.innerHTML = html`<p class="muted pad">No pieces due that day yet.</p>`; return; }
-      const people = new Set(N.crew.map(c => c.personId)).size;
-      box.innerHTML = html`<div class="rv-next">
-          <div><b>${N.expected ? "~" : ""}${fmtN(N.pieces)}</b><span>${N.pieces === 1 ? "piece" : "pieces"} to plan for${N.expected ? ` · ${fmtN(N.known)} known now` : ""}</span></div>
-          <div><b>${people || "—"}</b><span>people · ${N.copied ? "copied plan" : people ? "planned" : "no plan yet"}</span></div>
-          <div><b class="${N.short > 0.5 ? "c-bad" : ""}">${N.end != null ? hm(N.end) : "—"}</b><span>work should be done by${N.lastOut != null ? ` · last out ${hm(N.lastOut)}` : ""}</span></div>
-          ${admin ? raw(html`<div><b class="${N.pct == null ? "" : N.pct <= NX.target ? "c-good" : N.pct <= NX.target + 2 ? "c-warn" : "c-bad"}">${N.pct != null ? N.pct.toFixed(1) + "%" : "—"}</b><span>labor at the planned pace</span></div>`) : ""}
-        </div>
-        <p class="muted small">Crew: ${N.basis}.${N.short > 0.5 ? ` ${fmtN(N.short)} pieces aren't covered by the planned hours.` : ""}</p>`;
-    } catch (e) { const box = el(); if (box) box.innerHTML = html`<p class="muted pad">Couldn't work out the next day: ${e.message}</p>`; }
   }
 
   // the station tablets (Neal, Oct 14): pressed vs. SMRT's assembled, pace per person, every count (photos for Admins)
@@ -251,27 +224,6 @@ export async function render(main, ctx) {
     });
   }
 
-  function chart() {
-    const C = D.done.curve;
-    if (C.length < 2) return html`<p class="muted pad">${D.isToday ? "Fills in as pieces are assembled." : "No pieces were assembled this day."}</p>`;
-    const last = C[C.length - 1];
-    const pl = null;   // no plan line: Review measures the day against the goal, not the plan (Neal, Oct 15)
-    const total = Math.max(last[1], pl ? pl.b[1] : 0, D.due.pieces || 0, 1), top = total * 1.06;
-    const t0 = Math.floor(Math.min(C[0][0], pl ? pl.a[0] : 24)), t1 = Math.ceil(Math.max(last[0], pl ? pl.b[0] : 0, t0 + 6));
-    const Wd = 560, Ht = 260, L = 44, R = 548, T = 14, B = 232, X = t => L + (t - t0) / (t1 - t0) * (R - L), Y = v => B - v / top * (B - T);
-    const step = top > 1500 ? 500 : top > 600 ? 200 : top > 200 ? 100 : top > 60 ? 20 : 5;
-    let g = "";
-    for (let v = 0; v <= top; v += step) g += `<line class="c-grid" x1="${L}" y1="${Y(v)}" x2="${R}" y2="${Y(v)}"/><text class="c-lbl" x="${L - 6}" y="${Y(v) + 4}" text-anchor="end">${fmtN(v)}</text>`;
-    for (let t = t0; t <= t1; t += 2) g += `<text class="c-lbl" x="${X(t)}" y="${B + 18}" text-anchor="middle">${hm(t)}</text>`;
-    if (D.due.pieces) g += `<line class="c-due" x1="${L}" y1="${Y(D.due.pieces)}" x2="${R}" y2="${Y(D.due.pieces)}"/><text class="c-lbl" x="${L + 4}" y="${Y(D.due.pieces) - 5}">${fmtN(D.due.pieces)} due</text>`;
-    if (pl) g += `<polyline class="c-plan" points="${X(pl.a[0])},${Y(pl.a[1])} ${X(pl.b[0])},${Y(pl.b[1])}"/><text class="c-lbl" x="${X(pl.b[0]) > R - 90 ? X(pl.b[0]) - 6 : X(pl.b[0]) + 6}" y="${Math.min(B - 4, Y(pl.b[1]) + 16)}" text-anchor="${X(pl.b[0]) > R - 90 ? "end" : "start"}">done by ${hm(pl.b[0])}</text>`;
-    const pts = [[C[0][0] - 0.25, 0], ...C].map(([t, v]) => `${X(t).toFixed(1)},${Y(v).toFixed(1)}`).join(" ");
-    g += `<polyline class="c-done" points="${pts}"/><circle class="c-dot" cx="${X(last[0])}" cy="${Y(last[1])}" r="4.5"/>`;
-    g += `<text class="c-end" x="${Math.min(X(last[0]), R - 4)}" y="${Math.max(T + 12, Y(last[1]) - 10)}" text-anchor="end">${fmtN(last[1])} by ${hm(last[0])}</text>`;
-    return `<svg class="rv-chart" viewBox="0 0 ${Wd} ${Ht}" role="img" aria-label="${fmtN(last[1])} pieces assembled by ${hm(last[0])}">${g}</svg>
-      <div class="g-legend"><span><i class="k-done"></i>Assembled</span>${pl ? `<span><i class="k-plan"></i>${D.isToday ? "Plan's pace for what's left" : "Plan's pace"}</span>` : ""}${D.due.pieces ? '<span><i class="k-due"></i>Due this day</span>' : ""}</div>`;
-  }
-
   // pieces assembled per clock hour, starch bottoms first (Neal, Oct 13: watch the bottleneck through the day)
   function byHour() {
     const H = D.done.byHour || {}, TB = D.tally?.byHour || {};
@@ -295,35 +247,44 @@ export async function render(main, ctx) {
     const el = () => main.querySelector("#rv-orders");
     try {
       const V = await api("/pieces"); const box = el(); if (!box || !D.isToday) return;
-      const late = (V.late || []).filter(o => o.overdue || Date.parse(o.due) <= Date.now());
-      box.innerHTML = lateCard(late) + (V.notReady?.length ? notReadyCard(V.notReady) : "");
+      const dueToday = o => localDayOf(o.due) === D.day;   // today's orders only, not ones left from earlier days
+      const late = (V.late || []).filter(o => !o.overdue && dueToday(o) && Date.parse(o.due) <= Date.now()), nr = (V.notReady || []).filter(dueToday);
+      box.innerHTML = lateCard(late) + (nr.length ? notReadyCard(nr) : "");
     } catch { /* optional */ }
   }
   function trend() {
     const T = D.trend, vals = T.map(x => x.perHour).filter(v => v != null);
     if (vals.length < 2) return html`<p class="muted pad">Builds up as days come in from SMRT and Rippling.</p>`;
-    const bars = (key, max, fmt, cls, target) => {
-      const Wd = 560, H = 120, n = T.length, bw = Math.min(26, (Wd - 10) / n - 6), Y = v => H - 16 - v / max * (H - 30);
-      let g = target != null ? `<line class="c-target" x1="0" y1="${Y(target)}" x2="${Wd}" y2="${Y(target)}"/><text class="c-tlbl" x="${Wd - 2}" y="${Y(target) - 4}" text-anchor="end">${target}% target</text>` : "";
+    // each bar carries its number (Neal, Oct 15: "just put the number in the bar so I can see it")
+    const bars = (key, max, fmt, cls, target, tlabel) => {
+      const Wd = 560, H = 150, n = T.length, slot = (Wd - 10) / n, bw = Math.min(46, slot - 8), base = H - 30, Y = v => base - v / max * (base - 18);
+      let g = target != null ? `<line class="c-target" x1="0" y1="${Y(target)}" x2="${Wd}" y2="${Y(target)}"/>` : "";
       T.forEach((x, i) => {
-        const v = x[key], cx = 6 + i * ((Wd - 10) / n);
-        g += `<g class="c-bar ${x.day === D.day ? "on" : ""}" data-trend="${x.day}" tabindex="0" role="button" aria-label="${shortDay(x.day)}: ${v == null ? "no data" : fmt(v)}"><title>${shortDay(x.day)}: ${v == null ? "no data" : fmt(v)}</title>`;
-        if (v != null) g += `<rect class="${cls(v)}" x="${cx}" y="${Y(v)}" width="${bw}" height="${Math.max(1, H - 16 - Y(v))}" rx="3"/>`;
-        g += `<rect x="${cx}" y="0" width="${bw}" height="${H}" fill="transparent"/><text class="c-lbl" x="${cx + bw / 2}" y="${H - 2}" text-anchor="middle">${new Date(x.day + "T12:00:00").getDate()}</text></g>`;
+        const v = x[key], cx = 6 + i * slot + (slot - bw) / 2, d = new Date(x.day + "T12:00:00");
+        g += `<g class="c-bar ${x.day === D.day ? "on" : ""}"><title>${shortDay(x.day)}: ${v == null ? "no data" : fmt(v)}</title>`;
+        if (v != null) {
+          const y = Y(v), h = Math.max(1, base - y), inside = h >= 18;
+          g += `<rect class="${cls(v)}" x="${cx}" y="${y}" width="${bw}" height="${h}" rx="3"/>`;
+          g += `<text class="c-bv ${inside ? "in" : ""}" x="${cx + bw / 2}" y="${inside ? y + 13 : y - 4}" text-anchor="middle">${fmt(v)}</text>`;
+        }
+        g += `<text class="c-lbl" x="${cx + bw / 2}" y="${H - 14}" text-anchor="middle">${d.toLocaleDateString(undefined, { weekday: "short" })}</text><text class="c-lbl" x="${cx + bw / 2}" y="${H - 2}" text-anchor="middle">${d.getMonth() + 1}/${d.getDate()}</text></g>`;
       });
       return `<svg class="rv-bars" viewBox="0 0 ${Wd} ${H}">${g}</svg>`;
     };
-    const pmax = Math.max(...vals) * 1.15;
-    let out = `<h3 class="rv-h3">Pieces per labor hour</h3>` + bars("perHour", pmax, v => v.toFixed(1), () => "b-info");
+    const tph = D.departments?.total?.targetPerHour;
+    const pmax = Math.max(...vals, tph || 0) * 1.15;
+    let out = `<h3 class="rv-h3">Pieces per paid hour${tph ? ` · <span class="c-warn">target ${tph.toFixed(1)}</span> (dashed line)` : ""}</h3>` + bars("perHour", pmax, v => v.toFixed(1), v => (tph ? (v >= tph ? "b-good" : "b-bad") : "b-info"), tph || null, tph ? `${tph.toFixed(1)} target` : "");
     if (D.money) {
       const pv = T.map(x => x.pct).filter(v => v != null), t = D.labor.target;
-      if (pv.length) out += `<h3 class="rv-h3">Labor % of revenue</h3>` + bars("pct", Math.max(t * 1.4, ...pv), v => v.toFixed(1) + "%", v => v > t ? "b-bad" : "b-good", t);
+      if (pv.length) out += `<h3 class="rv-h3">Labor % of revenue · <span class="c-warn">target ${t}%</span> (dashed line)</h3>` + bars("pct", Math.max(t * 1.4, ...pv), v => v.toFixed(1) + "%", v => (v > t ? "b-bad" : "b-good"), t, `${t}% target`);
     }
-    return out + `<p class="muted small">Click a day to review it.</p>`;
+    return out;
   }
 
+  // this day's only: follow-ups opened that day (Neal, Oct 15: "this is a Review for today")
   function followups() {
-    const F = D.followups, list = F.list;
+    const F = D.followups, list = F.list.filter(f => localDayOf(f.at) === D.day);
+    if (!list.length) return "";
     const open = list.filter(f => f.status !== "resolved");
     const reasonName = id => F.reasons.find(r => r.id === id)?.name || "";
     return html`<section class="card set-card"><header><h2>Follow-ups ${open.filter(f => f.status === "needs_note").length ? raw(html`<span class="count">${open.filter(f => f.status === "needs_note").length}</span>`) : ""}</h2>

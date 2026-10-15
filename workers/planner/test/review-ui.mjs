@@ -66,7 +66,8 @@ await call("POST", `/plan/${DAY}/publish`, { body: { rev: 1, snapshot: { sig: "x
   input: { q: {}, crew: { slt1: { emp: ana, start: "05:00", hrs: 7.5, stop: "" }, dct1: { emp: beto, start: "06:00", hrs: 6, stop: "" } }, stations: [{ id: "slt1", type: "slt", label: "SLT 1" }, { id: "dct1", type: "dct", label: "DCT 1" }], ops: [], people: [], trainingOf: {}, settings: { breakMin: 30, breakAfter: 4 } } } } });
 const o = sqlite.prepare("SELECT id FROM pos_orders LIMIT 1").get().id, ch = ulid(), fid = ulid();
 sqlite.prepare("INSERT INTO pos_changes(id, order_id, kind, old_value, new_value, detected_at) VALUES(?,?,?,?,?,?)").run(ch, o, "due_changed", ts(DAY, "12:00"), ts(addDays(DAY, 1), "12:00"), new Date().toISOString());
-sqlite.prepare("INSERT INTO plan_followups(id, order_id, kind, change_id, status) VALUES(?,?,?,?,?)").run(fid, o, "due_moved", ch, "needs_note");
+sqlite.prepare("INSERT INTO plan_followups(id, order_id, kind, change_id, status, created_at) VALUES(?,?,?,?,?,?)").run(fid, o, "due_moved", ch, "needs_note", DAY + "T15:00:00.000Z");
+const oldFid = ulid(); sqlite.prepare("INSERT INTO plan_followups(id, order_id, kind, change_id, status, created_at) VALUES(?,?,?,?,?,?)").run(oldFid, o, "due_moved", ch, "needs_note", "2026-09-01T15:00:00.000Z");
 
 let who = "neal@towncountryclean.com";
 const { server, url } = await serve(env, { fetchImpl: A.fetchImpl, token: A.token, who: () => who });
@@ -82,7 +83,10 @@ await t("opens on the last work day with numbers, chart, by the hour and plan vs
   await p.goto(url + "/#/review"); await p.waitForSelector("#rv-root .rv-tiles");
   ok((await p.inputValue("#rv-date")) === DAY, await p.inputValue("#rv-date"));
   ok(!/late|deadline|shuttle/i.test(await p.textContent(".verdict")), await p.textContent(".verdict"));
-  ok(await p.isVisible(".rv-chart .c-done")); ok(!(await p.isVisible('.rt td:has-text("Quitman run")')), "no deadlines card");
+  ok(!(await p.$(".rv-chart")), "no pieces-through-the-day chart"); ok(!(await p.$("#rv-nextday")), "no next work day"); ok(!(await p.isVisible('.rt td:has-text("Quitman run")')), "no deadlines card");
+  ok(!(await p.$(".rv-missrow")) && !(await p.$("form.rv-mnote")), "no missed line or notes"); ok(!(await p.$("[data-trend]")), "trend bars aren't links");
+  ok(await p.isVisible(".rv-people .rt"), "people, full width"); ok(!(await p.$(`form.fu[data-id="${oldFid}"]`)), "an older follow-up isn't on this day's Review");
+  ok(!(await p.$(".rv-bars")) || (await p.$$(".rv-bars .c-bv")).length >= 2, "numbers in the trend bars");
   ok(await p.isVisible(".hr-tbl"), "by the hour");
   ok(await p.isVisible('.rv-dept td:has-text("Not on the plan")'), "Cora worked but wasn't planned: her hours on their own row");
   ok(await p.isVisible('.rv-dept td:has-text("Total")'), "department total");

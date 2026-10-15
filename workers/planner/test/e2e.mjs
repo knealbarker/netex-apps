@@ -213,14 +213,11 @@ await t("Publish, then the Floor shows the plan and the labor streak", async () 
   ok(await p.isVisible(".f-streak"), "streak"); ok(/work days in a row/.test(await p.textContent(".f-streak")), await p.textContent(".f-streak"));
   await shot(p, "e5-floor.png", false);
 });
-await t("Review: the next work day's projection and a link to its plan", async () => {
-  await p.goto(url + `/#/review?day=${LAST}`); await p.waitForSelector("#rv-nextday .rv-next");
-  ok(/pieces to plan for/.test(await p.textContent("#rv-nextday")), "projection: " + await p.textContent("#rv-nextday"));
-  ok(await p.isVisible('#rv-nextday >> text=labor at the planned pace'), "owner sees labor");
-  ok(await p.isVisible(".rv-dept"), "by department");
+await t("Review: by department, no next work day", async () => {
+  await p.goto(url + `/#/review?day=${LAST}`); await p.waitForSelector("#rv-root .rv-dept");
+  ok(!(await p.$("#rv-nextday")), "no next work day on Review");
+  ok(await p.isVisible('.tile:has-text("labor %")'), "owner sees labor");
   await shot(p, "e6-review.png");
-  await p.click("#rv-nextday a.btn"); await p.waitForSelector("#pl-board .tl-row");
-  ok(await p.evaluate(d => document.querySelector(`[data-day="${d}"]`)?.getAttribute("aria-selected") === "true", nextWorkDay(LAST, WD)), "opened that day's plan");
 });
 await t("Shuttle alerts: ready and both warnings, the right number of minutes before", async () => {
   const V = { isWorkDay: true, today, overdue: { q: {}, todo: 0, orders: 0 }, days: { [today]: { stores: [
@@ -259,8 +256,8 @@ await t("Viewer: no pay rates, no labor money, can't edit", async () => {
   const v = await page();
   await v.p.goto(url + "/#/team"); await v.p.waitForSelector(".trow");
   ok(!(await v.p.isVisible("text=/h")), "no rates");
-  await v.p.goto(url + `/#/review?day=${LAST}`); await v.p.waitForSelector("#rv-nextday .rv-next");
-  ok(!(await v.p.isVisible("text=projected labor")), "no money");
+  await v.p.goto(url + `/#/review?day=${LAST}`); await v.p.waitForSelector("#rv-root .rv-dept");
+  ok(!(await v.p.isVisible('.tile:has-text("labor %")')), "no money");
   await v.p.goto(url + "/#/plan"); await v.p.waitForSelector("#pl-board .tl-row");
   ok(!(await v.p.isVisible("#pl-suggest")) && !(await v.p.isVisible("#pl-pub")), "no editing");
   ok(!/labor \$/.test(await v.p.textContent("#pl-status")), "no labor $ in the status line");

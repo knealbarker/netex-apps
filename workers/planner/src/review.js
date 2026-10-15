@@ -175,7 +175,7 @@ export async function reviewDay(db, env, me, day) {
     actual: people.map(a => ({ personId: a.personId, name: a.name, hours: a.hours, breakPaid: a.breakPaid || 0, breakMin: a.breakMin ?? null, breakOpen: !!a.breakOpen,
       offMin: a.offMin ?? null, firstIn: a.firstIn, lastOut: a.lastOut, open: !!a.open })), planned: planned ? { source: planned.source, at: planned.at || null, by: planned.by || null, metrics: planned.metrics } : null,
     tally: await dayTally(db, env, day).catch(e => { console.error(JSON.stringify({ job: "review", tallyError: String(e && e.stack || e) })); return null; }),
-    followups: await followups(db, env, day), trend: await trend(db, env, day, workDays, departmentId, cat, prices, money ? { payAvg: groups.money.payAvg, rates } : null), money };
+    followups: await followups(db, env, day), trend: await trend(db, env, day, workDays, departmentId, cat, prices, money ? { payAvg: groups.money.payAvg, rates } : null, 10), money };
 }
 
 async function followups(db, env, day) {
@@ -259,7 +259,7 @@ async function departments(db, env, { day, today, people, done, due, rates, mone
   const segs = segmentsOf(crew);
   const typeOf = new Map((await db.prepare("SELECT code, station_type_id AS t FROM plan_stations WHERE deleted_at IS NULL").all()).results.map(r => [r.code, TYPE_GROUP[r.t] || r.t]));
   const nowMin = day === today ? (() => { const [h, m] = localNow(env.TIMEZONE).hm.split(":"); return +h * 60 + +m; })() : null;
-  const R = rates || (money ? await payRates(db, env.ORG_ID) : null);
+  const R = rates || await payRates(db, env.ORG_ID);   // real rates for the target below; $ only go out to Admins
   const H = {}, C = {}, who = {};
   const add = (g, h, c, name) => { H[g] = (H[g] || 0) + h; C[g] = (C[g] || 0) + c; if (h > 0.02) (who[g] = who[g] || new Set()).add(name); };
   for (const p of people) {
@@ -282,8 +282,7 @@ async function departments(db, env, { day, today, people, done, due, rates, mone
     // where the goal was missed: due pieces left, labor over target, or a pace well under the setting
     const miss = [];
     if (!shared && r.left > 0) miss.push(`${r.left} due ${r.left === 1 ? "piece" : "pieces"} not finished`);
-    if (!shared && money && r.pct != null && r.pct > target) miss.push(`labor ${r.pct.toFixed(1)}% of its sales`);
-    if (!shared && r.perHour != null && r.goal && r.perHour < r.goal * 0.9) miss.push(`${r.perHour.toFixed(1)} an hour against ${r.goal}`);
+    // (Neal, Oct 15: no labor % by department — we don't know what each should be; pace shows in its own column)
     r.miss = miss;
     return r;
   };
@@ -293,6 +292,12 @@ async function departments(db, env, { day, today, people, done, due, rates, mone
   const total = { due: due.pieces, finished: due.finished, left: Math.max(0, due.pieces - due.finished), assembled: done.pieces, hours,
     earlier: sum(due.earlier), onDay: sum(due.onDay), noScan: sum(due.noScan), asmFor: { today: sum(done.forQ.today), ahead: sum(done.forQ.ahead), overdue: sum(done.forQ.overdue) }, perHour: hours > 0 ? done.pieces / hours : null,
     ...(money ? { cost, value: valueAll, pct: valueAll > 0 ? cost / valueAll * 100 : null } : {}) };
+  // target pieces per paid hour (Neal, Oct 15): labor % = avg wage ÷ (pieces per hour × avg price per piece), so to hit
+  // the target, pieces per hour = avg wage ÷ (target × avg price). Uses this day's real wage and price mix.
+  { const avgWage = hours > 0 ? cost / hours : null, avgPrice = done.pieces > 0 ? valueAll / done.pieces : null;
+    total.targetPerHour = avgWage && avgPrice ? avgWage / (target / 100 * avgPrice) : null;
+    if (money) { total.avgWage = avgWage; total.avgPrice = avgPrice; } }
+  if (!money) { delete total.cost; }
   total.miss = [...(total.left ? [`${total.left} due ${total.left === 1 ? "piece" : "pieces"} not finished`] : []), ...(money && total.pct != null && total.pct > target ? [`labor ${total.pct.toFixed(1)}%, over the ${target}% target`] : [])];
   const notes = Object.fromEntries((await db.prepare(`SELECT e.key, e.text, e.at, u.display_name AS by FROM plan_events e LEFT JOIN core_users u ON u.id=e.user_id
       WHERE e.org_id=? AND e.day=? AND e.key LIKE 'review:%'`).bind(env.ORG_ID, day).all()).results.map(n => [n.key.slice(7), { text: n.text, at: n.at, by: n.by }]));
