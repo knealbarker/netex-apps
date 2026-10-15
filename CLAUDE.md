@@ -7,7 +7,7 @@ One app per subdomain, all on Cloudflare, one shared database, one sign-in.
 |---|---|
 | `docs/platform.md` | How netexcleaners.com is set up: Cloudflare, sign-in, database, email, secrets, every Worker |
 | `docs/new-app.md` | Adding a new subdomain app, step by step (code + Cloudflare dashboard) |
-| `templates/app/` | A working starter app with sign-in, roles and a test; copy it to `workers/<name>` |
+| `workers/_template/` | A working starter app with sign-in, roles and a test; copy it to `workers/<name>` |
 | `docs/business-rules.md` | Neal's definitions (sales, revenue, labor %, assembled = complete, categories) |
 | `workers/<name>/README.md` | Each app's own details |
 | `db/migrations/` | The database schema; comments in the SQL explain each table |
