@@ -1,0 +1,2 @@
+{ "name": "Supply count", "short_name": "Supplies", "start_url": "/count/", "scope": "/count/", "display": "standalone",
+  "background_color": "#0f1420", "theme_color": "#0f1420", "icons": [{ "src": "/count/icon.svg", "sizes": "any", "type": "image/svg+xml" }] }

@@ -1,0 +1,4359 @@
+{
+ "vendors": [
+  [
+   "fabriclean",
+   "Fabriclean Supply",
+   "Phone / web",
+   ""
+  ],
+  [
+   "janitorial",
+   "Northeast Texas Janitorial",
+   "Phone",
+   ""
+  ],
+  [
+   "cleaners-supply",
+   "Cleaners Supply",
+   "Web (cleanersupply.com)",
+   "Custom-printed items (barcode labels, Eco2Go bags) are ordered by email."
+  ],
+  [
+   "latsons",
+   "Latson's",
+   "Phone / email",
+   "Printed forms, pads, cards and tags."
+  ],
+  [
+   "other",
+   "Other (store run / Amazon)",
+   "Store run or Amazon",
+   "Batteries, tape, water, candy and other odds and ends."
+  ],
+  [
+   "in-house",
+   "In-house (not bought)",
+   "",
+   "Made or kept in-house: cleaning towels returned in the specials bag, new-customer packets, printouts."
+  ]
+ ],
+ "items": [
+  {
+   "name": "Poly shirt mark 40\" big gusset",
+   "vendor": "fabriclean",
+   "sku": null,
+   "category": "Assembly & bagging",
+   "unit": "roll",
+   "bulk": null,
+   "ws": 16,
+   "wsr": null,
+   "st": null,
+   "hub": null,
+   "note": "",
+   "check": "",
+   "sort": 10,
+   "pars": [
+    [
+     "Workshop",
+     16,
+     null,
+     "count"
+    ]
+   ]
+  },
+  {
+   "name": "Poly shirt mark 60\"",
+   "vendor": "fabriclean",
+   "sku": null,
+   "category": "Assembly & bagging",
+   "unit": "roll",
+   "bulk": null,
+   "ws": 3,
+   "wsr": null,
+   "st": null,
+   "hub": null,
+   "note": "",
+   "check": "",
+   "sort": 20,
+   "pars": [
+    [
+     "Workshop",
+     3,
+     null,
+     "count"
+    ]
+   ]
+  },
+  {
+   "name": "Poly shirt mark 72\"",
+   "vendor": "fabriclean",
+   "sku": null,
+   "category": "Assembly & bagging",
+   "unit": "roll",
+   "bulk": null,
+   "ws": 2,
+   "wsr": null,
+   "st": null,
+   "hub": null,
+   "note": "",
+   "check": "",
+   "sort": 30,
+   "pars": [
+    [
+     "Workshop",
+     2,
+     null,
+     "count"
+    ]
+   ]
+  },
+  {
+   "name": "Sultra Soft Deo HC dry clean detergent",
+   "vendor": "fabriclean",
+   "sku": null,
+   "category": "Laundry & dry clean chemicals",
+   "unit": "pail (5 gal)",
+   "bulk": null,
+   "ws": 1,
+   "wsr": null,
+   "st": null,
+   "hub": null,
+   "note": "",
+   "check": "",
+   "sort": 40,
+   "pars": [
+    [
+     "Workshop",
+     1,
+     null,
+     "count"
+    ]
+   ]
+  },
+  {
+   "name": "UNX Liquid Sour Bright",
+   "vendor": "fabriclean",
+   "sku": null,
+   "category": "Laundry & dry clean chemicals",
+   "unit": "drum (15 gal)",
+   "bulk": null,
+   "ws": 1,
+   "wsr": null,
+   "st": null,
+   "hub": null,
+   "note": "",
+   "check": "",
+   "sort": 50,
+   "pars": [
+    [
+     "Workshop",
+     1,
+     null,
+     "count"
+    ]
+   ]
+  },
+  {
+   "name": "Faultless Super Star powder starch",
+   "vendor": "fabriclean",
+   "sku": null,
+   "category": "Laundry & dry clean chemicals",
+   "unit": "bag (50 lb)",
+   "bulk": null,
+   "ws": 3,
+   "wsr": null,
+   "st": null,
+   "hub": null,
+   "note": "",
+   "check": "",
+   "sort": 60,
+   "pars": [
+    [
+     "Workshop",
+     3,
+     null,
+     "count"
+    ]
+   ]
+  },
+  {
+   "name": "Faultless Star Bright liquid starch",
+   "vendor": "fabriclean",
+   "sku": null,
+   "category": "Laundry & dry clean chemicals",
+   "unit": "drum (15 gal)",
+   "bulk": null,
+   "ws": 1,
+   "wsr": null,
+   "st": null,
+   "hub": null,
+   "note": "",
+   "check": "",
+   "sort": 70,
+   "pars": [
+    [
+     "Workshop",
+     1,
+     null,
+     "count"
+    ]
+   ]
+  },
+  {
+   "name": "UNX Spec Tak detergent",
+   "vendor": "fabriclean",
+   "sku": null,
+   "category": "Laundry & dry clean chemicals",
+   "unit": "bag (50 lb)",
+   "bulk": null,
+   "ws": 6,
+   "wsr": null,
+   "st": null,
+   "hub": null,
+   "note": "",
+   "check": "Sheet says 6 x 50-LB \u2014 bags or pails?",
+   "sort": 80,
+   "pars": [
+    [
+     "Workshop",
+     6,
+     null,
+     "count"
+    ]
+   ]
+  },
+  {
+   "name": "UNX Pro Fit Clean",
+   "vendor": "fabriclean",
+   "sku": null,
+   "category": "Laundry & dry clean chemicals",
+   "unit": "pail (5 gal)",
+   "bulk": null,
+   "ws": 1,
+   "wsr": null,
+   "st": null,
+   "hub": null,
+   "note": "",
+   "check": "",
+   "sort": 90,
+   "pars": [
+    [
+     "Workshop",
+     1,
+     null,
+     "count"
+    ]
+   ]
+  },
+  {
+   "name": "UNX Vita-Pro degreaser",
+   "vendor": "fabriclean",
+   "sku": null,
+   "category": "Laundry & dry clean chemicals",
+   "unit": "pail (5 gal)",
+   "bulk": null,
+   "ws": 1,
+   "wsr": null,
+   "st": null,
+   "hub": null,
+   "note": "",
+   "check": "",
+   "sort": 100,
+   "pars": [
+    [
+     "Workshop",
+     1,
+     null,
+     "count"
+    ]
+   ]
+  },
+  {
+   "name": "UNX Pro Fit Body",
+   "vendor": "fabriclean",
+   "sku": null,
+   "category": "Laundry & dry clean chemicals",
+   "unit": "pail (5 gal)",
+   "bulk": null,
+   "ws": 1,
+   "wsr": null,
+   "st": null,
+   "hub": null,
+   "note": "",
+   "check": "",
+   "sort": 110,
+   "pars": [
+    [
+     "Workshop",
+     1,
+     null,
+     "count"
+    ]
+   ]
+  },
+  {
+   "name": "EcoSolv dry clean solvent",
+   "vendor": "fabriclean",
+   "sku": null,
+   "category": "Laundry & dry clean chemicals",
+   "unit": "pail (5 gal)",
+   "bulk": null,
+   "ws": 1,
+   "wsr": null,
+   "st": null,
+   "hub": null,
+   "note": "",
+   "check": "",
+   "sort": 120,
+   "pars": [
+    [
+     "Workshop",
+     1,
+     null,
+     "count"
+    ]
+   ]
+  },
+  {
+   "name": "Dry clean filter \u2014 carbon split",
+   "vendor": "fabriclean",
+   "sku": null,
+   "category": "Laundry & dry clean chemicals",
+   "unit": "filter",
+   "bulk": null,
+   "ws": "AN",
+   "wsr": null,
+   "st": null,
+   "hub": null,
+   "note": "",
+   "check": "",
+   "sort": 130,
+   "pars": [
+    [
+     "Workshop",
+     null,
+     null,
+     "check"
+    ]
+   ]
+  },
+  {
+   "name": "Dry clean filter \u2014 delux split",
+   "vendor": "fabriclean",
+   "sku": null,
+   "category": "Laundry & dry clean chemicals",
+   "unit": "filter",
+   "bulk": null,
+   "ws": "AN",
+   "wsr": null,
+   "st": null,
+   "hub": null,
+   "note": "",
+   "check": "",
+   "sort": 140,
+   "pars": [
+    [
+     "Workshop",
+     null,
+     null,
+     "check"
+    ]
+   ]
+  },
+  {
+   "name": "18\" Ultimate strut hanger (purple box)",
+   "vendor": "fabriclean",
+   "sku": null,
+   "category": "Hangers",
+   "unit": "case (200)",
+   "bulk": null,
+   "ws": 1,
+   "wsr": null,
+   "st": null,
+   "hub": null,
+   "note": "",
+   "check": "",
+   "sort": 150,
+   "pars": [
+    [
+     "Workshop",
+     1,
+     null,
+     "count"
+    ]
+   ]
+  },
+  {
+   "name": "Jeans strut hanger (black/pink box)",
+   "vendor": "fabriclean",
+   "sku": null,
+   "category": "Hangers",
+   "unit": "case (500)",
+   "bulk": null,
+   "ws": 8,
+   "wsr": null,
+   "st": null,
+   "hub": null,
+   "note": "",
+   "check": "",
+   "sort": 160,
+   "pars": [
+    [
+     "Workshop",
+     8,
+     null,
+     "count"
+    ]
+   ]
+  },
+  {
+   "name": "20\" knit standard 14g hanger (black/green box)",
+   "vendor": "fabriclean",
+   "sku": null,
+   "category": "Hangers",
+   "unit": "case (250)",
+   "bulk": null,
+   "ws": 4,
+   "wsr": null,
+   "st": null,
+   "hub": null,
+   "note": "",
+   "check": "",
+   "sort": 170,
+   "pars": [
+    [
+     "Workshop",
+     4,
+     null,
+     "count"
+    ]
+   ]
+  },
+  {
+   "name": "18\" caped plain 13g Ultimate hanger (green/red box)",
+   "vendor": "fabriclean",
+   "sku": null,
+   "category": "Hangers",
+   "unit": "case (500)",
+   "bulk": null,
+   "ws": 4,
+   "wsr": null,
+   "st": null,
+   "hub": null,
+   "note": "",
+   "check": "",
+   "sort": 180,
+   "pars": [
+    [
+     "Workshop",
+     4,
+     null,
+     "count"
+    ]
+   ]
+  },
+  {
+   "name": "16\" caped 13g plain hanger (red box)",
+   "vendor": "fabriclean",
+   "sku": null,
+   "category": "Hangers",
+   "unit": "case",
+   "bulk": null,
+   "ws": 2,
+   "wsr": null,
+   "st": null,
+   "hub": null,
+   "note": "",
+   "check": "Case count not on the sheet.",
+   "sort": 190,
+   "pars": [
+    [
+     "Workshop",
+     2,
+     null,
+     "count"
+    ]
+   ]
+  },
+  {
+   "name": "13\" 13g gold juvenile hanger (plain box)",
+   "vendor": "fabriclean",
+   "sku": null,
+   "category": "Hangers",
+   "unit": "case (500)",
+   "bulk": null,
+   "ws": 1,
+   "wsr": null,
+   "st": null,
+   "hub": null,
+   "note": "",
+   "check": "",
+   "sort": 200,
+   "pars": [
+    [
+     "Workshop",
+     1,
+     null,
+     "count"
+    ]
+   ]
+  },
+  {
+   "name": "18\" shirt hanger Ultimate (blue box)",
+   "vendor": "fabriclean",
+   "sku": null,
+   "category": "Hangers",
+   "unit": "hanger",
+   "bulk": "case (500)",
+   "ws": 10,
+   "wsr": null,
+   "st": null,
+   "hub": 30,
+   "note": "",
+   "check": "Laundry Hub's 'shirt hangers' (30) assumed to be this hanger; the Hub counts hangers, the Workshop counts cases.",
+   "sort": 210,
+   "pars": [
+    [
+     "Workshop",
+     10,
+     null,
+     "count"
+    ],
+    [
+     "Laundry Hub",
+     30,
+     null,
+     "count"
+    ]
+   ]
+  },
+  {
+   "name": "Ammonia 9%",
+   "vendor": "fabriclean",
+   "sku": null,
+   "category": "Spotting",
+   "unit": "gallon",
+   "bulk": null,
+   "ws": 1,
+   "wsr": null,
+   "st": null,
+   "hub": null,
+   "note": "",
+   "check": "",
+   "sort": 220,
+   "pars": [
+    [
+     "Workshop",
+     1,
+     null,
+     "count"
+    ]
+   ]
+  },
+  {
+   "name": "Bongo 12 oz",
+   "vendor": "fabriclean",
+   "sku": null,
+   "category": "Spotting",
+   "unit": "bottle",
+   "bulk": null,
+   "ws": 1,
+   "wsr": 0.5,
+   "st": null,
+   "hub": null,
+   "note": "Goal on sheet: half bottle",
+   "check": "",
+   "sort": 230,
+   "pars": [
+    [
+     "Workshop",
+     1,
+     0.5,
+     "count"
+    ]
+   ]
+  },
+  {
+   "name": "EasyGo gallon",
+   "vendor": "fabriclean",
+   "sku": null,
+   "category": "Spotting",
+   "unit": "bottle",
+   "bulk": null,
+   "ws": 1,
+   "wsr": 0.5,
+   "st": null,
+   "hub": null,
+   "note": "Goal on sheet: half bottle",
+   "check": "",
+   "sort": 240,
+   "pars": [
+    [
+     "Workshop",
+     1,
+     0.5,
+     "count"
+    ]
+   ]
+  },
+  {
+   "name": "Exit deodorizer aerosol",
+   "vendor": "fabriclean",
+   "sku": null,
+   "category": "Spotting",
+   "unit": "can",
+   "bulk": null,
+   "ws": 6,
+   "wsr": null,
+   "st": null,
+   "hub": null,
+   "note": "",
+   "check": "",
+   "sort": 250,
+   "pars": [
+    [
+     "Workshop",
+     6,
+     null,
+     "count"
+    ]
+   ]
+  },
+  {
+   "name": "InkGo 16 oz",
+   "vendor": "fabriclean",
+   "sku": null,
+   "category": "Spotting",
+   "unit": "bottle",
+   "bulk": null,
+   "ws": 1,
+   "wsr": 0.5,
+   "st": null,
+   "hub": null,
+   "note": "Goal on sheet: half bottle",
+   "check": "",
+   "sort": 260,
+   "pars": [
+    [
+     "Workshop",
+     1,
+     0.5,
+     "count"
+    ]
+   ]
+  },
+  {
+   "name": "PSR powder spot remover",
+   "vendor": "fabriclean",
+   "sku": null,
+   "category": "Spotting",
+   "unit": "can",
+   "bulk": null,
+   "ws": 8,
+   "wsr": null,
+   "st": null,
+   "hub": null,
+   "note": "",
+   "check": "",
+   "sort": 270,
+   "pars": [
+    [
+     "Workshop",
+     8,
+     null,
+     "count"
+    ]
+   ]
+  },
+  {
+   "name": "QwikGo 1/2 gallon",
+   "vendor": "fabriclean",
+   "sku": null,
+   "category": "Spotting",
+   "unit": "bottle",
+   "bulk": null,
+   "ws": 1,
+   "wsr": 0.5,
+   "st": null,
+   "hub": null,
+   "note": "Goal on sheet: half bottle",
+   "check": "",
+   "sort": 280,
+   "pars": [
+    [
+     "Workshop",
+     1,
+     0.5,
+     "count"
+    ]
+   ]
+  },
+  {
+   "name": "RiteGo gallon",
+   "vendor": "fabriclean",
+   "sku": null,
+   "category": "Spotting",
+   "unit": "case",
+   "bulk": null,
+   "ws": 1,
+   "wsr": null,
+   "st": null,
+   "hub": null,
+   "note": "",
+   "check": "",
+   "sort": 290,
+   "pars": [
+    [
+     "Workshop",
+     1,
+     null,
+     "count"
+    ]
+   ]
+  },
+  {
+   "name": "RustGo 14 oz",
+   "vendor": "fabriclean",
+   "sku": null,
+   "category": "Spotting",
+   "unit": "bottle",
+   "bulk": null,
+   "ws": 1,
+   "wsr": 0.5,
+   "st": null,
+   "hub": null,
+   "note": "Goal on sheet: half bottle",
+   "check": "",
+   "sort": 300,
+   "pars": [
+    [
+     "Workshop",
+     1,
+     0.5,
+     "count"
+    ]
+   ]
+  },
+  {
+   "name": "Sodium perborate",
+   "vendor": "fabriclean",
+   "sku": null,
+   "category": "Spotting",
+   "unit": "bag",
+   "bulk": null,
+   "ws": 1,
+   "wsr": 0.25,
+   "st": null,
+   "hub": null,
+   "note": "Goal on sheet: quarter bag",
+   "check": "",
+   "sort": 310,
+   "pars": [
+    [
+     "Workshop",
+     1,
+     0.25,
+     "count"
+    ]
+   ]
+  },
+  {
+   "name": "SoGo 1 lb",
+   "vendor": "fabriclean",
+   "sku": null,
+   "category": "Spotting",
+   "unit": "bottle",
+   "bulk": null,
+   "ws": 1,
+   "wsr": 0.5,
+   "st": null,
+   "hub": null,
+   "note": "Goal on sheet: half bottle",
+   "check": "",
+   "sort": 320,
+   "pars": [
+    [
+     "Workshop",
+     1,
+     0.5,
+     "count"
+    ]
+   ]
+  },
+  {
+   "name": "TarGo laundry",
+   "vendor": "fabriclean",
+   "sku": null,
+   "category": "Spotting",
+   "unit": "bottle",
+   "bulk": null,
+   "ws": 1,
+   "wsr": 0.5,
+   "st": null,
+   "hub": null,
+   "note": "Goal on sheet: half bottle",
+   "check": "",
+   "sort": 330,
+   "pars": [
+    [
+     "Workshop",
+     1,
+     0.5,
+     "count"
+    ]
+   ]
+  },
+  {
+   "name": "TarGo EF 16 oz",
+   "vendor": "fabriclean",
+   "sku": null,
+   "category": "Spotting",
+   "unit": "bottle",
+   "bulk": null,
+   "ws": 1,
+   "wsr": 0.5,
+   "st": null,
+   "hub": null,
+   "note": "Goal on sheet: half bottle",
+   "check": "",
+   "sort": 340,
+   "pars": [
+    [
+     "Workshop",
+     1,
+     0.5,
+     "count"
+    ]
+   ]
+  },
+  {
+   "name": "YellowGo gallon",
+   "vendor": "fabriclean",
+   "sku": null,
+   "category": "Spotting",
+   "unit": "bottle",
+   "bulk": null,
+   "ws": 1,
+   "wsr": 0.5,
+   "st": null,
+   "hub": null,
+   "note": "Goal on sheet: half bottle",
+   "check": "",
+   "sort": 350,
+   "pars": [
+    [
+     "Workshop",
+     1,
+     0.5,
+     "count"
+    ]
+   ]
+  },
+  {
+   "name": "Boiler compound",
+   "vendor": "fabriclean",
+   "sku": null,
+   "category": "Boiler & general",
+   "unit": "pail",
+   "bulk": null,
+   "ws": 1,
+   "wsr": 0.25,
+   "st": null,
+   "hub": null,
+   "note": "Goal on sheet: quarter pail",
+   "check": "",
+   "sort": 360,
+   "pars": [
+    [
+     "Workshop",
+     1,
+     0.25,
+     "count"
+    ]
+   ]
+  },
+  {
+   "name": "Spray sizing / starch",
+   "vendor": "fabriclean",
+   "sku": null,
+   "category": "Boiler & general",
+   "unit": "case",
+   "bulk": null,
+   "ws": 1,
+   "wsr": null,
+   "st": null,
+   "hub": null,
+   "note": "",
+   "check": "",
+   "sort": 370,
+   "pars": [
+    [
+     "Workshop",
+     1,
+     null,
+     "count"
+    ]
+   ]
+  },
+  {
+   "name": "Toilet paper",
+   "vendor": "janitorial",
+   "sku": null,
+   "category": "Janitorial",
+   "unit": "roll",
+   "bulk": "case",
+   "ws": 1,
+   "wsr": null,
+   "st": 6,
+   "hub": null,
+   "note": "",
+   "check": "Rolls per case?",
+   "sort": 380,
+   "pars": [
+    [
+     "Workshop",
+     1,
+     null,
+     "count"
+    ],
+    [
+     "Sulphur Springs",
+     6,
+     null,
+     "count"
+    ],
+    [
+     "Greenville",
+     6,
+     null,
+     "count"
+    ],
+    [
+     "Emory",
+     6,
+     null,
+     "count"
+    ],
+    [
+     "Winnsboro",
+     6,
+     null,
+     "count"
+    ],
+    [
+     "Quitman",
+     6,
+     null,
+     "count"
+    ]
+   ]
+  },
+  {
+   "name": "Hand towels",
+   "vendor": "janitorial",
+   "sku": null,
+   "category": "Janitorial",
+   "unit": "pack",
+   "bulk": "case",
+   "ws": 1,
+   "wsr": null,
+   "st": 1,
+   "hub": 1,
+   "note": "",
+   "check": "Stores and the Hub count packs/rolls, the Workshop counts cases.",
+   "sort": 390,
+   "pars": [
+    [
+     "Workshop",
+     1,
+     null,
+     "count"
+    ],
+    [
+     "Sulphur Springs",
+     1,
+     null,
+     "count"
+    ],
+    [
+     "Greenville",
+     1,
+     null,
+     "count"
+    ],
+    [
+     "Emory",
+     1,
+     null,
+     "count"
+    ],
+    [
+     "Winnsboro",
+     1,
+     null,
+     "count"
+    ],
+    [
+     "Quitman",
+     1,
+     null,
+     "count"
+    ],
+    [
+     "Laundry Hub",
+     1,
+     null,
+     "count"
+    ]
+   ]
+  },
+  {
+   "name": "Hand soap",
+   "vendor": "janitorial",
+   "sku": null,
+   "category": "Janitorial",
+   "unit": "bottle",
+   "bulk": "case",
+   "ws": 1,
+   "wsr": null,
+   "st": 1,
+   "hub": null,
+   "note": "",
+   "check": "",
+   "sort": 400,
+   "pars": [
+    [
+     "Workshop",
+     1,
+     null,
+     "count"
+    ],
+    [
+     "Sulphur Springs",
+     1,
+     null,
+     "count"
+    ],
+    [
+     "Greenville",
+     1,
+     null,
+     "count"
+    ],
+    [
+     "Emory",
+     1,
+     null,
+     "count"
+    ],
+    [
+     "Winnsboro",
+     1,
+     null,
+     "count"
+    ],
+    [
+     "Quitman",
+     1,
+     null,
+     "count"
+    ]
+   ]
+  },
+  {
+   "name": "Blue Dawn dish soap",
+   "vendor": "janitorial",
+   "sku": null,
+   "category": "Janitorial",
+   "unit": "gallon",
+   "bulk": null,
+   "ws": 2,
+   "wsr": null,
+   "st": null,
+   "hub": null,
+   "note": "",
+   "check": "",
+   "sort": 410,
+   "pars": [
+    [
+     "Workshop",
+     2,
+     null,
+     "count"
+    ]
+   ]
+  },
+  {
+   "name": "Window cleaner",
+   "vendor": "janitorial",
+   "sku": null,
+   "category": "Janitorial",
+   "unit": "bottle",
+   "bulk": "case",
+   "ws": 1,
+   "wsr": null,
+   "st": 1,
+   "hub": null,
+   "note": "",
+   "check": "",
+   "sort": 420,
+   "pars": [
+    [
+     "Workshop",
+     1,
+     null,
+     "count"
+    ],
+    [
+     "Sulphur Springs",
+     1,
+     null,
+     "count"
+    ],
+    [
+     "Greenville",
+     1,
+     null,
+     "count"
+    ],
+    [
+     "Emory",
+     1,
+     null,
+     "count"
+    ],
+    [
+     "Winnsboro",
+     1,
+     null,
+     "count"
+    ],
+    [
+     "Quitman",
+     1,
+     null,
+     "count"
+    ]
+   ]
+  },
+  {
+   "name": "Surface cleaner",
+   "vendor": "janitorial",
+   "sku": null,
+   "category": "Janitorial",
+   "unit": "bottle",
+   "bulk": "case",
+   "ws": 1,
+   "wsr": null,
+   "st": 1,
+   "hub": null,
+   "note": "",
+   "check": "",
+   "sort": 430,
+   "pars": [
+    [
+     "Workshop",
+     1,
+     null,
+     "count"
+    ],
+    [
+     "Sulphur Springs",
+     1,
+     null,
+     "count"
+    ],
+    [
+     "Greenville",
+     1,
+     null,
+     "count"
+    ],
+    [
+     "Emory",
+     1,
+     null,
+     "count"
+    ],
+    [
+     "Winnsboro",
+     1,
+     null,
+     "count"
+    ],
+    [
+     "Quitman",
+     1,
+     null,
+     "count"
+    ]
+   ]
+  },
+  {
+   "name": "Spray bottles",
+   "vendor": "janitorial",
+   "sku": null,
+   "category": "Janitorial",
+   "unit": "bottle",
+   "bulk": null,
+   "ws": 2,
+   "wsr": null,
+   "st": null,
+   "hub": null,
+   "note": "",
+   "check": "",
+   "sort": 440,
+   "pars": [
+    [
+     "Workshop",
+     2,
+     null,
+     "count"
+    ]
+   ]
+  },
+  {
+   "name": "Liquid Live",
+   "vendor": "janitorial",
+   "sku": null,
+   "category": "Janitorial",
+   "unit": "gallon",
+   "bulk": null,
+   "ws": 1,
+   "wsr": null,
+   "st": null,
+   "hub": null,
+   "note": "",
+   "check": "",
+   "sort": 450,
+   "pars": [
+    [
+     "Workshop",
+     1,
+     null,
+     "count"
+    ]
+   ]
+  },
+  {
+   "name": "Air freshener",
+   "vendor": "janitorial",
+   "sku": null,
+   "category": "Janitorial",
+   "unit": "bottle",
+   "bulk": null,
+   "ws": 4,
+   "wsr": null,
+   "st": 2,
+   "hub": null,
+   "note": "",
+   "check": "",
+   "sort": 460,
+   "pars": [
+    [
+     "Workshop",
+     4,
+     null,
+     "count"
+    ],
+    [
+     "Sulphur Springs",
+     2,
+     null,
+     "count"
+    ],
+    [
+     "Greenville",
+     2,
+     null,
+     "count"
+    ],
+    [
+     "Emory",
+     2,
+     null,
+     "count"
+    ],
+    [
+     "Winnsboro",
+     2,
+     null,
+     "count"
+    ],
+    [
+     "Quitman",
+     2,
+     null,
+     "count"
+    ]
+   ]
+  },
+  {
+   "name": "Hand sanitizer",
+   "vendor": "janitorial",
+   "sku": null,
+   "category": "Janitorial",
+   "unit": "bottle",
+   "bulk": null,
+   "ws": 4,
+   "wsr": null,
+   "st": null,
+   "hub": null,
+   "note": "",
+   "check": "",
+   "sort": 470,
+   "pars": [
+    [
+     "Workshop",
+     4,
+     null,
+     "count"
+    ]
+   ]
+  },
+  {
+   "name": "Gloves \u2014 medium",
+   "vendor": "janitorial",
+   "sku": null,
+   "category": "Janitorial",
+   "unit": "box",
+   "bulk": null,
+   "ws": 1,
+   "wsr": null,
+   "st": 1,
+   "hub": null,
+   "note": "Keep one unopened box",
+   "check": "",
+   "sort": 480,
+   "pars": [
+    [
+     "Workshop",
+     1,
+     null,
+     "count"
+    ],
+    [
+     "Sulphur Springs",
+     1,
+     null,
+     "count"
+    ],
+    [
+     "Greenville",
+     1,
+     null,
+     "count"
+    ],
+    [
+     "Emory",
+     1,
+     null,
+     "count"
+    ],
+    [
+     "Winnsboro",
+     1,
+     null,
+     "count"
+    ],
+    [
+     "Quitman",
+     1,
+     null,
+     "count"
+    ]
+   ]
+  },
+  {
+   "name": "Gloves \u2014 XL",
+   "vendor": "janitorial",
+   "sku": null,
+   "category": "Janitorial",
+   "unit": "box",
+   "bulk": null,
+   "ws": 1,
+   "wsr": null,
+   "st": 1,
+   "hub": null,
+   "note": "Keep one unopened box",
+   "check": "",
+   "sort": 490,
+   "pars": [
+    [
+     "Workshop",
+     1,
+     null,
+     "count"
+    ],
+    [
+     "Sulphur Springs",
+     1,
+     null,
+     "count"
+    ],
+    [
+     "Greenville",
+     1,
+     null,
+     "count"
+    ],
+    [
+     "Emory",
+     1,
+     null,
+     "count"
+    ],
+    [
+     "Winnsboro",
+     1,
+     null,
+     "count"
+    ],
+    [
+     "Quitman",
+     1,
+     null,
+     "count"
+    ]
+   ]
+  },
+  {
+   "name": "Heat seal machine Teflon pad",
+   "vendor": "cleaners-supply",
+   "sku": "HSM2002",
+   "category": "Counter supplies",
+   "unit": "pad",
+   "bulk": null,
+   "ws": "AN",
+   "wsr": null,
+   "st": "AN",
+   "hub": null,
+   "note": "",
+   "check": "",
+   "sort": 500,
+   "pars": [
+    [
+     "Workshop",
+     null,
+     null,
+     "check"
+    ],
+    [
+     "Sulphur Springs",
+     null,
+     null,
+     "check"
+    ],
+    [
+     "Greenville",
+     null,
+     null,
+     "check"
+    ],
+    [
+     "Emory",
+     null,
+     null,
+     "check"
+    ],
+    [
+     "Winnsboro",
+     null,
+     null,
+     "check"
+    ],
+    [
+     "Quitman",
+     null,
+     null,
+     "check"
+    ]
+   ]
+  },
+  {
+   "name": "Laundry pen",
+   "vendor": "cleaners-supply",
+   "sku": "PN1",
+   "category": "Counter supplies",
+   "unit": "pen",
+   "bulk": null,
+   "ws": 12,
+   "wsr": null,
+   "st": 2,
+   "hub": null,
+   "note": "",
+   "check": "",
+   "sort": 510,
+   "pars": [
+    [
+     "Workshop",
+     12,
+     null,
+     "count"
+    ],
+    [
+     "Sulphur Springs",
+     2,
+     null,
+     "count"
+    ],
+    [
+     "Greenville",
+     2,
+     null,
+     "count"
+    ],
+    [
+     "Emory",
+     2,
+     null,
+     "count"
+    ],
+    [
+     "Winnsboro",
+     2,
+     null,
+     "count"
+    ],
+    [
+     "Quitman",
+     2,
+     null,
+     "count"
+    ]
+   ]
+  },
+  {
+   "name": "Button foil 2 3/4\"",
+   "vendor": "cleaners-supply",
+   "sku": "BW1",
+   "category": "Counter supplies",
+   "unit": "roll",
+   "bulk": null,
+   "ws": 2,
+   "wsr": null,
+   "st": 1,
+   "hub": null,
+   "note": "",
+   "check": "",
+   "sort": 520,
+   "pars": [
+    [
+     "Workshop",
+     2,
+     null,
+     "count"
+    ],
+    [
+     "Sulphur Springs",
+     1,
+     null,
+     "count"
+    ],
+    [
+     "Greenville",
+     1,
+     null,
+     "count"
+    ],
+    [
+     "Emory",
+     1,
+     null,
+     "count"
+    ],
+    [
+     "Winnsboro",
+     1,
+     null,
+     "count"
+    ],
+    [
+     "Quitman",
+     1,
+     null,
+     "count"
+    ]
+   ]
+  },
+  {
+   "name": "Barcode heat seal labels (custom)",
+   "vendor": "cleaners-supply",
+   "sku": "EMAIL",
+   "category": "Tags & labels",
+   "unit": "box (2000)",
+   "bulk": null,
+   "ws": 1,
+   "wsr": null,
+   "st": 1,
+   "hub": null,
+   "note": "Order by email",
+   "check": "Sheet: 2,000 at Workshop and 2,000 per store \u2014 assumed boxes of 2,000.",
+   "sort": 530,
+   "pars": [
+    [
+     "Workshop",
+     1,
+     null,
+     "count"
+    ],
+    [
+     "Sulphur Springs",
+     1,
+     null,
+     "count"
+    ],
+    [
+     "Greenville",
+     1,
+     null,
+     "count"
+    ],
+    [
+     "Emory",
+     1,
+     null,
+     "count"
+    ],
+    [
+     "Winnsboro",
+     1,
+     null,
+     "count"
+    ],
+    [
+     "Quitman",
+     1,
+     null,
+     "count"
+    ]
+   ]
+  },
+  {
+   "name": "Receipt paper",
+   "vendor": "cleaners-supply",
+   "sku": "RCT1WH",
+   "category": "Counter supplies",
+   "unit": "roll",
+   "bulk": "case",
+   "ws": 1,
+   "wsr": null,
+   "st": 20,
+   "hub": null,
+   "note": "",
+   "check": "Rolls per case?",
+   "sort": 540,
+   "pars": [
+    [
+     "Workshop",
+     1,
+     null,
+     "count"
+    ],
+    [
+     "Sulphur Springs",
+     20,
+     null,
+     "count"
+    ],
+    [
+     "Greenville",
+     20,
+     null,
+     "count"
+    ],
+    [
+     "Emory",
+     20,
+     null,
+     "count"
+    ],
+    [
+     "Winnsboro",
+     20,
+     null,
+     "count"
+    ],
+    [
+     "Quitman",
+     20,
+     null,
+     "count"
+    ]
+   ]
+  },
+  {
+   "name": "Safe and Secure bags",
+   "vendor": "cleaners-supply",
+   "sku": "SS1",
+   "category": "Counter supplies",
+   "unit": "bag",
+   "bulk": "box",
+   "ws": 1,
+   "wsr": null,
+   "st": 100,
+   "hub": null,
+   "note": "",
+   "check": "Bags per box? Stores answer Out/Low/OK for this one.",
+   "sort": 550,
+   "pars": [
+    [
+     "Workshop",
+     1,
+     null,
+     "count"
+    ],
+    [
+     "Sulphur Springs",
+     100,
+     null,
+     "level"
+    ],
+    [
+     "Greenville",
+     100,
+     null,
+     "level"
+    ],
+    [
+     "Emory",
+     100,
+     null,
+     "level"
+    ],
+    [
+     "Winnsboro",
+     100,
+     null,
+     "level"
+    ],
+    [
+     "Quitman",
+     100,
+     null,
+     "level"
+    ]
+   ]
+  },
+  {
+   "name": "Dennison gun",
+   "vendor": "cleaners-supply",
+   "sku": "DG1",
+   "category": "Counter supplies",
+   "unit": "gun",
+   "bulk": null,
+   "ws": 2,
+   "wsr": null,
+   "st": 1,
+   "hub": null,
+   "note": "",
+   "check": "",
+   "sort": 560,
+   "pars": [
+    [
+     "Workshop",
+     2,
+     null,
+     "count"
+    ],
+    [
+     "Sulphur Springs",
+     1,
+     null,
+     "count"
+    ],
+    [
+     "Greenville",
+     1,
+     null,
+     "count"
+    ],
+    [
+     "Emory",
+     1,
+     null,
+     "count"
+    ],
+    [
+     "Winnsboro",
+     1,
+     null,
+     "count"
+    ],
+    [
+     "Quitman",
+     1,
+     null,
+     "count"
+    ]
+   ]
+  },
+  {
+   "name": "Dennison gun needles",
+   "vendor": "cleaners-supply",
+   "sku": "DN1",
+   "category": "Counter supplies",
+   "unit": "needle",
+   "bulk": null,
+   "ws": 2,
+   "wsr": null,
+   "st": 1,
+   "hub": null,
+   "note": "",
+   "check": "",
+   "sort": 570,
+   "pars": [
+    [
+     "Workshop",
+     2,
+     null,
+     "count"
+    ],
+    [
+     "Sulphur Springs",
+     1,
+     null,
+     "count"
+    ],
+    [
+     "Greenville",
+     1,
+     null,
+     "count"
+    ],
+    [
+     "Emory",
+     1,
+     null,
+     "count"
+    ],
+    [
+     "Winnsboro",
+     1,
+     null,
+     "count"
+    ],
+    [
+     "Quitman",
+     1,
+     null,
+     "count"
+    ]
+   ]
+  },
+  {
+   "name": "Dennison fastener yellow 3/4\"",
+   "vendor": "cleaners-supply",
+   "sku": "DF10YE",
+   "category": "Counter supplies",
+   "unit": "box",
+   "bulk": null,
+   "ws": 1,
+   "wsr": null,
+   "st": null,
+   "hub": null,
+   "note": "",
+   "check": "",
+   "sort": 580,
+   "pars": [
+    [
+     "Workshop",
+     1,
+     null,
+     "count"
+    ]
+   ]
+  },
+  {
+   "name": "Dennison fastener white 3/4\"",
+   "vendor": "cleaners-supply",
+   "sku": null,
+   "category": "Counter supplies",
+   "unit": "box",
+   "bulk": null,
+   "ws": null,
+   "wsr": null,
+   "st": 1,
+   "hub": null,
+   "note": "",
+   "check": "Stores use white (1,000); Workshop sheet lists yellow \u2014 no Cleaners Supply # for white yet. Assumed 1 box = 1,000.",
+   "sort": 590,
+   "pars": [
+    [
+     "Sulphur Springs",
+     1,
+     null,
+     "count"
+    ],
+    [
+     "Greenville",
+     1,
+     null,
+     "count"
+    ],
+    [
+     "Emory",
+     1,
+     null,
+     "count"
+    ],
+    [
+     "Winnsboro",
+     1,
+     null,
+     "count"
+    ],
+    [
+     "Quitman",
+     1,
+     null,
+     "count"
+    ]
+   ]
+  },
+  {
+   "name": "B8 stapler",
+   "vendor": "cleaners-supply",
+   "sku": "B8P",
+   "category": "Counter supplies",
+   "unit": "stapler",
+   "bulk": null,
+   "ws": 2,
+   "wsr": null,
+   "st": null,
+   "hub": null,
+   "note": "",
+   "check": "",
+   "sort": 600,
+   "pars": [
+    [
+     "Workshop",
+     2,
+     null,
+     "count"
+    ]
+   ]
+  },
+  {
+   "name": "Staples B8",
+   "vendor": "cleaners-supply",
+   "sku": "S810",
+   "category": "Counter supplies",
+   "unit": "box (1000)",
+   "bulk": null,
+   "ws": 20,
+   "wsr": null,
+   "st": 1,
+   "hub": null,
+   "note": "",
+   "check": "Sheet: 20,000 at Workshop, 1,000 per store \u2014 assumed boxes of 1,000.",
+   "sort": 610,
+   "pars": [
+    [
+     "Workshop",
+     20,
+     null,
+     "count"
+    ],
+    [
+     "Sulphur Springs",
+     1,
+     null,
+     "count"
+    ],
+    [
+     "Greenville",
+     1,
+     null,
+     "count"
+    ],
+    [
+     "Emory",
+     1,
+     null,
+     "count"
+    ],
+    [
+     "Winnsboro",
+     1,
+     null,
+     "count"
+    ],
+    [
+     "Quitman",
+     1,
+     null,
+     "count"
+    ]
+   ]
+  },
+  {
+   "name": "Instruction tag \"Crease\" white",
+   "vendor": "cleaners-supply",
+   "sku": "IT52",
+   "category": "Tags & labels",
+   "unit": "box (1000)",
+   "bulk": null,
+   "ws": 5,
+   "wsr": null,
+   "st": 1,
+   "hub": null,
+   "note": "",
+   "check": "Sheet: 5,000 at Workshop, 1,000 per store \u2014 assumed boxes of 1,000.",
+   "sort": 620,
+   "pars": [
+    [
+     "Workshop",
+     5,
+     null,
+     "count"
+    ],
+    [
+     "Sulphur Springs",
+     1,
+     null,
+     "count"
+    ],
+    [
+     "Greenville",
+     1,
+     null,
+     "count"
+    ],
+    [
+     "Emory",
+     1,
+     null,
+     "count"
+    ],
+    [
+     "Winnsboro",
+     1,
+     null,
+     "count"
+    ],
+    [
+     "Quitman",
+     1,
+     null,
+     "count"
+    ]
+   ]
+  },
+  {
+   "name": "Instruction tag \"Special Attention\" blue",
+   "vendor": "cleaners-supply",
+   "sku": "IT228",
+   "category": "Tags & labels",
+   "unit": "box (1000)",
+   "bulk": null,
+   "ws": 5,
+   "wsr": null,
+   "st": 1,
+   "hub": null,
+   "note": "",
+   "check": "",
+   "sort": 630,
+   "pars": [
+    [
+     "Workshop",
+     5,
+     null,
+     "count"
+    ],
+    [
+     "Sulphur Springs",
+     1,
+     null,
+     "count"
+    ],
+    [
+     "Greenville",
+     1,
+     null,
+     "count"
+    ],
+    [
+     "Emory",
+     1,
+     null,
+     "count"
+    ],
+    [
+     "Winnsboro",
+     1,
+     null,
+     "count"
+    ],
+    [
+     "Quitman",
+     1,
+     null,
+     "count"
+    ]
+   ]
+  },
+  {
+   "name": "Instruction tag \"Fold\" white",
+   "vendor": "cleaners-supply",
+   "sku": "IT26",
+   "category": "Tags & labels",
+   "unit": "box (1000)",
+   "bulk": null,
+   "ws": 5,
+   "wsr": null,
+   "st": 1,
+   "hub": null,
+   "note": "",
+   "check": "",
+   "sort": 640,
+   "pars": [
+    [
+     "Workshop",
+     5,
+     null,
+     "count"
+    ],
+    [
+     "Sulphur Springs",
+     1,
+     null,
+     "count"
+    ],
+    [
+     "Greenville",
+     1,
+     null,
+     "count"
+    ],
+    [
+     "Emory",
+     1,
+     null,
+     "count"
+    ],
+    [
+     "Winnsboro",
+     1,
+     null,
+     "count"
+    ],
+    [
+     "Quitman",
+     1,
+     null,
+     "count"
+    ]
+   ]
+  },
+  {
+   "name": "Instruction tag \"No Crease / Sin Raya\" white",
+   "vendor": "cleaners-supply",
+   "sku": "IT81WH",
+   "category": "Tags & labels",
+   "unit": "box (1000)",
+   "bulk": null,
+   "ws": 5,
+   "wsr": null,
+   "st": 1,
+   "hub": null,
+   "note": "",
+   "check": "",
+   "sort": 650,
+   "pars": [
+    [
+     "Workshop",
+     5,
+     null,
+     "count"
+    ],
+    [
+     "Sulphur Springs",
+     1,
+     null,
+     "count"
+    ],
+    [
+     "Greenville",
+     1,
+     null,
+     "count"
+    ],
+    [
+     "Emory",
+     1,
+     null,
+     "count"
+    ],
+    [
+     "Winnsboro",
+     1,
+     null,
+     "count"
+    ],
+    [
+     "Quitman",
+     1,
+     null,
+     "count"
+    ]
+   ]
+  },
+  {
+   "name": "Instruction tag \"Rush\" red",
+   "vendor": "cleaners-supply",
+   "sku": "IT51",
+   "category": "Tags & labels",
+   "unit": "box (1000)",
+   "bulk": null,
+   "ws": 5,
+   "wsr": null,
+   "st": null,
+   "hub": null,
+   "note": "",
+   "check": "",
+   "sort": 660,
+   "pars": [
+    [
+     "Workshop",
+     5,
+     null,
+     "count"
+    ]
+   ]
+  },
+  {
+   "name": "Instruction tag \"Prespot\" yellow",
+   "vendor": "cleaners-supply",
+   "sku": "IT25YE",
+   "category": "Tags & labels",
+   "unit": "box (1000)",
+   "bulk": null,
+   "ws": 5,
+   "wsr": null,
+   "st": 1,
+   "hub": null,
+   "note": "",
+   "check": "",
+   "sort": 670,
+   "pars": [
+    [
+     "Workshop",
+     5,
+     null,
+     "count"
+    ],
+    [
+     "Sulphur Springs",
+     1,
+     null,
+     "count"
+    ],
+    [
+     "Greenville",
+     1,
+     null,
+     "count"
+    ],
+    [
+     "Emory",
+     1,
+     null,
+     "count"
+    ],
+    [
+     "Winnsboro",
+     1,
+     null,
+     "count"
+    ],
+    [
+     "Quitman",
+     1,
+     null,
+     "count"
+    ]
+   ]
+  },
+  {
+   "name": "Instruction tag \"Received in Damage\" blue",
+   "vendor": "cleaners-supply",
+   "sku": "IT47",
+   "category": "Tags & labels",
+   "unit": "box (1000)",
+   "bulk": null,
+   "ws": 5,
+   "wsr": null,
+   "st": 1,
+   "hub": null,
+   "note": "",
+   "check": "",
+   "sort": 680,
+   "pars": [
+    [
+     "Workshop",
+     5,
+     null,
+     "count"
+    ],
+    [
+     "Sulphur Springs",
+     1,
+     null,
+     "count"
+    ],
+    [
+     "Greenville",
+     1,
+     null,
+     "count"
+    ],
+    [
+     "Emory",
+     1,
+     null,
+     "count"
+    ],
+    [
+     "Winnsboro",
+     1,
+     null,
+     "count"
+    ],
+    [
+     "Quitman",
+     1,
+     null,
+     "count"
+    ]
+   ]
+  },
+  {
+   "name": "Instruction tag \"Do-Over\" white",
+   "vendor": "cleaners-supply",
+   "sku": "IT13",
+   "category": "Tags & labels",
+   "unit": "box (1000)",
+   "bulk": null,
+   "ws": 5,
+   "wsr": null,
+   "st": null,
+   "hub": null,
+   "note": "",
+   "check": "",
+   "sort": 690,
+   "pars": [
+    [
+     "Workshop",
+     5,
+     null,
+     "count"
+    ]
+   ]
+  },
+  {
+   "name": "Instruction tag \"Sizing\" lavender",
+   "vendor": "cleaners-supply",
+   "sku": "IT20",
+   "category": "Tags & labels",
+   "unit": "box (1000)",
+   "bulk": null,
+   "ws": 5,
+   "wsr": null,
+   "st": 1,
+   "hub": null,
+   "note": "",
+   "check": "",
+   "sort": 700,
+   "pars": [
+    [
+     "Workshop",
+     5,
+     null,
+     "count"
+    ],
+    [
+     "Sulphur Springs",
+     1,
+     null,
+     "count"
+    ],
+    [
+     "Greenville",
+     1,
+     null,
+     "count"
+    ],
+    [
+     "Emory",
+     1,
+     null,
+     "count"
+    ],
+    [
+     "Winnsboro",
+     1,
+     null,
+     "count"
+    ],
+    [
+     "Quitman",
+     1,
+     null,
+     "count"
+    ]
+   ]
+  },
+  {
+   "name": "Tag stain sticker",
+   "vendor": "cleaners-supply",
+   "sku": "ID1",
+   "category": "Tags & labels",
+   "unit": "box (1000)",
+   "bulk": null,
+   "ws": 5,
+   "wsr": null,
+   "st": 1,
+   "hub": null,
+   "note": "",
+   "check": "",
+   "sort": 710,
+   "pars": [
+    [
+     "Workshop",
+     5,
+     null,
+     "count"
+    ],
+    [
+     "Sulphur Springs",
+     1,
+     null,
+     "count"
+    ],
+    [
+     "Greenville",
+     1,
+     null,
+     "count"
+    ],
+    [
+     "Emory",
+     1,
+     null,
+     "count"
+    ],
+    [
+     "Winnsboro",
+     1,
+     null,
+     "count"
+    ],
+    [
+     "Quitman",
+     1,
+     null,
+     "count"
+    ]
+   ]
+  },
+  {
+   "name": "Plastic holder with loop",
+   "vendor": "cleaners-supply",
+   "sku": "ET3",
+   "category": "Counter supplies",
+   "unit": "each",
+   "bulk": null,
+   "ws": 200,
+   "wsr": null,
+   "st": 25,
+   "hub": null,
+   "note": "",
+   "check": "",
+   "sort": 720,
+   "pars": [
+    [
+     "Workshop",
+     200,
+     null,
+     "count"
+    ],
+    [
+     "Sulphur Springs",
+     25,
+     null,
+     "count"
+    ],
+    [
+     "Greenville",
+     25,
+     null,
+     "count"
+    ],
+    [
+     "Emory",
+     25,
+     null,
+     "count"
+    ],
+    [
+     "Winnsboro",
+     25,
+     null,
+     "count"
+    ],
+    [
+     "Quitman",
+     25,
+     null,
+     "count"
+    ]
+   ]
+  },
+  {
+   "name": "Eco2Go standard counter bags (yellow logo)",
+   "vendor": "cleaners-supply",
+   "sku": "EMAIL",
+   "category": "Bags",
+   "unit": "bag",
+   "bulk": null,
+   "ws": 200,
+   "wsr": null,
+   "st": 25,
+   "hub": null,
+   "note": "Order by email",
+   "check": "",
+   "sort": 730,
+   "pars": [
+    [
+     "Workshop",
+     200,
+     null,
+     "count"
+    ],
+    [
+     "Sulphur Springs",
+     25,
+     null,
+     "count"
+    ],
+    [
+     "Greenville",
+     25,
+     null,
+     "count"
+    ],
+    [
+     "Emory",
+     25,
+     null,
+     "count"
+    ],
+    [
+     "Winnsboro",
+     25,
+     null,
+     "count"
+    ],
+    [
+     "Quitman",
+     25,
+     null,
+     "count"
+    ]
+   ]
+  },
+  {
+   "name": "Eco2Go 20 gal wash & fold bags (yellow logo)",
+   "vendor": "cleaners-supply",
+   "sku": "EMAIL",
+   "category": "Bags",
+   "unit": "bag",
+   "bulk": null,
+   "ws": 50,
+   "wsr": null,
+   "st": 10,
+   "hub": null,
+   "note": "Order by email",
+   "check": "",
+   "sort": 740,
+   "pars": [
+    [
+     "Workshop",
+     50,
+     null,
+     "count"
+    ],
+    [
+     "Sulphur Springs",
+     10,
+     null,
+     "count"
+    ],
+    [
+     "Greenville",
+     10,
+     null,
+     "count"
+    ],
+    [
+     "Emory",
+     10,
+     null,
+     "count"
+    ],
+    [
+     "Winnsboro",
+     10,
+     null,
+     "count"
+    ],
+    [
+     "Quitman",
+     10,
+     null,
+     "count"
+    ]
+   ]
+  },
+  {
+   "name": "Eco2Go 30 gal wash & fold bags (white logo)",
+   "vendor": "cleaners-supply",
+   "sku": "EMAIL",
+   "category": "Bags",
+   "unit": "bag",
+   "bulk": null,
+   "ws": 50,
+   "wsr": null,
+   "st": 10,
+   "hub": null,
+   "note": "Order by email",
+   "check": "",
+   "sort": 750,
+   "pars": [
+    [
+     "Workshop",
+     50,
+     null,
+     "count"
+    ],
+    [
+     "Sulphur Springs",
+     10,
+     null,
+     "count"
+    ],
+    [
+     "Greenville",
+     10,
+     null,
+     "count"
+    ],
+    [
+     "Emory",
+     10,
+     null,
+     "count"
+    ],
+    [
+     "Winnsboro",
+     10,
+     null,
+     "count"
+    ],
+    [
+     "Quitman",
+     10,
+     null,
+     "count"
+    ]
+   ]
+  },
+  {
+   "name": "Auto carrier hooks",
+   "vendor": "cleaners-supply",
+   "sku": "CAR1CIT",
+   "category": "Counter supplies",
+   "unit": "hook",
+   "bulk": null,
+   "ws": 30,
+   "wsr": null,
+   "st": 10,
+   "hub": null,
+   "note": "",
+   "check": "",
+   "sort": 760,
+   "pars": [
+    [
+     "Workshop",
+     30,
+     null,
+     "count"
+    ],
+    [
+     "Sulphur Springs",
+     10,
+     null,
+     "count"
+    ],
+    [
+     "Greenville",
+     10,
+     null,
+     "count"
+    ],
+    [
+     "Emory",
+     10,
+     null,
+     "count"
+    ],
+    [
+     "Winnsboro",
+     10,
+     null,
+     "count"
+    ],
+    [
+     "Quitman",
+     10,
+     null,
+     "count"
+    ]
+   ]
+  },
+  {
+   "name": "Collar Styx",
+   "vendor": "cleaners-supply",
+   "sku": "STX1",
+   "category": "Assembly & bagging",
+   "unit": "each",
+   "bulk": "box",
+   "ws": 600,
+   "wsr": null,
+   "st": null,
+   "hub": null,
+   "note": "",
+   "check": "600 on the sheet \u2014 loose count or boxes?",
+   "sort": 770,
+   "pars": [
+    [
+     "Workshop",
+     600,
+     null,
+     "count"
+    ]
+   ]
+  },
+  {
+   "name": "Comforter bag extra large (navy)",
+   "vendor": "cleaners-supply",
+   "sku": "COMF26NV",
+   "category": "Bags",
+   "unit": "bag",
+   "bulk": null,
+   "ws": 24,
+   "wsr": null,
+   "st": null,
+   "hub": 24,
+   "note": "",
+   "check": "",
+   "sort": 780,
+   "pars": [
+    [
+     "Workshop",
+     24,
+     null,
+     "count"
+    ],
+    [
+     "Laundry Hub",
+     24,
+     null,
+     "count"
+    ]
+   ]
+  },
+  {
+   "name": "Comforter bag large (navy)",
+   "vendor": "cleaners-supply",
+   "sku": "COMF24NV",
+   "category": "Bags",
+   "unit": "bag",
+   "bulk": null,
+   "ws": 24,
+   "wsr": null,
+   "st": null,
+   "hub": 24,
+   "note": "",
+   "check": "",
+   "sort": 790,
+   "pars": [
+    [
+     "Workshop",
+     24,
+     null,
+     "count"
+    ],
+    [
+     "Laundry Hub",
+     24,
+     null,
+     "count"
+    ]
+   ]
+  },
+  {
+   "name": "Comforter bag medium (navy)",
+   "vendor": "cleaners-supply",
+   "sku": "COMF20NV",
+   "category": "Bags",
+   "unit": "bag",
+   "bulk": null,
+   "ws": 24,
+   "wsr": null,
+   "st": null,
+   "hub": 24,
+   "note": "",
+   "check": "",
+   "sort": 800,
+   "pars": [
+    [
+     "Workshop",
+     24,
+     null,
+     "count"
+    ],
+    [
+     "Laundry Hub",
+     24,
+     null,
+     "count"
+    ]
+   ]
+  },
+  {
+   "name": "Comforter bag small (navy)",
+   "vendor": "cleaners-supply",
+   "sku": "COMF15NV",
+   "category": "Bags",
+   "unit": "bag",
+   "bulk": null,
+   "ws": 24,
+   "wsr": null,
+   "st": null,
+   "hub": 24,
+   "note": "",
+   "check": "",
+   "sort": 810,
+   "pars": [
+    [
+     "Workshop",
+     24,
+     null,
+     "count"
+    ],
+    [
+     "Laundry Hub",
+     24,
+     null,
+     "count"
+    ]
+   ]
+  },
+  {
+   "name": "Comforter bag extra small (navy)",
+   "vendor": "cleaners-supply",
+   "sku": "COMF3NV",
+   "category": "Bags",
+   "unit": "bag",
+   "bulk": null,
+   "ws": 24,
+   "wsr": null,
+   "st": null,
+   "hub": 24,
+   "note": "",
+   "check": "",
+   "sort": 820,
+   "pars": [
+    [
+     "Workshop",
+     24,
+     null,
+     "count"
+    ],
+    [
+     "Laundry Hub",
+     24,
+     null,
+     "count"
+    ]
+   ]
+  },
+  {
+   "name": "Standard foamies (yellow)",
+   "vendor": "cleaners-supply",
+   "sku": "FC2YE",
+   "category": "Assembly & bagging",
+   "unit": "each",
+   "bulk": null,
+   "ws": 500,
+   "wsr": null,
+   "st": null,
+   "hub": null,
+   "note": "",
+   "check": "",
+   "sort": 830,
+   "pars": [
+    [
+     "Workshop",
+     500,
+     null,
+     "count"
+    ]
+   ]
+  },
+  {
+   "name": "Thick foamies (blue)",
+   "vendor": "cleaners-supply",
+   "sku": "FC500BL",
+   "category": "Assembly & bagging",
+   "unit": "each",
+   "bulk": null,
+   "ws": 200,
+   "wsr": null,
+   "st": null,
+   "hub": null,
+   "note": "",
+   "check": "",
+   "sort": 840,
+   "pars": [
+    [
+     "Workshop",
+     200,
+     null,
+     "count"
+    ]
+   ]
+  },
+  {
+   "name": "Conveyor wheels",
+   "vendor": "cleaners-supply",
+   "sku": "TRB1",
+   "category": "Boiler & general",
+   "unit": "wheel",
+   "bulk": null,
+   "ws": 20,
+   "wsr": null,
+   "st": null,
+   "hub": null,
+   "note": "",
+   "check": "",
+   "sort": 850,
+   "pars": [
+    [
+     "Workshop",
+     20,
+     null,
+     "count"
+    ]
+   ]
+  },
+  {
+   "name": "Lint roller handles",
+   "vendor": "cleaners-supply",
+   "sku": "LR2000",
+   "category": "Assembly & bagging",
+   "unit": "handle",
+   "bulk": null,
+   "ws": 6,
+   "wsr": null,
+   "st": null,
+   "hub": null,
+   "note": "",
+   "check": "",
+   "sort": 860,
+   "pars": [
+    [
+     "Workshop",
+     6,
+     null,
+     "count"
+    ]
+   ]
+  },
+  {
+   "name": "Lint roller refills",
+   "vendor": "cleaners-supply",
+   "sku": "LR15",
+   "category": "Assembly & bagging",
+   "unit": "roll",
+   "bulk": null,
+   "ws": 12,
+   "wsr": null,
+   "st": null,
+   "hub": null,
+   "note": "",
+   "check": "",
+   "sort": 870,
+   "pars": [
+    [
+     "Workshop",
+     12,
+     null,
+     "count"
+    ]
+   ]
+  },
+  {
+   "name": "Plastic clip short hangers",
+   "vendor": "cleaners-supply",
+   "sku": "HNG104",
+   "category": "Hangers",
+   "unit": "hanger",
+   "bulk": null,
+   "ws": 200,
+   "wsr": null,
+   "st": null,
+   "hub": null,
+   "note": "",
+   "check": "",
+   "sort": 880,
+   "pars": [
+    [
+     "Workshop",
+     200,
+     null,
+     "count"
+    ]
+   ]
+  },
+  {
+   "name": "5\" seam ripper",
+   "vendor": "cleaners-supply",
+   "sku": "SR1",
+   "category": "Assembly & bagging",
+   "unit": "each",
+   "bulk": null,
+   "ws": 10,
+   "wsr": null,
+   "st": null,
+   "hub": null,
+   "note": "",
+   "check": "",
+   "sort": 890,
+   "pars": [
+    [
+     "Workshop",
+     10,
+     null,
+     "count"
+    ]
+   ]
+  },
+  {
+   "name": "Special attention tags",
+   "vendor": "cleaners-supply",
+   "sku": "HT10",
+   "category": "Tags & labels",
+   "unit": "tag",
+   "bulk": null,
+   "ws": 1000,
+   "wsr": null,
+   "st": null,
+   "hub": null,
+   "note": "",
+   "check": "",
+   "sort": 900,
+   "pars": [
+    [
+     "Workshop",
+     1000,
+     null,
+     "count"
+    ]
+   ]
+  },
+  {
+   "name": "Standard bust forms",
+   "vendor": "cleaners-supply",
+   "sku": "BUS50",
+   "category": "Assembly & bagging",
+   "unit": "each",
+   "bulk": null,
+   "ws": 25,
+   "wsr": null,
+   "st": null,
+   "hub": null,
+   "note": "",
+   "check": "",
+   "sort": 910,
+   "pars": [
+    [
+     "Workshop",
+     25,
+     null,
+     "count"
+    ]
+   ]
+  },
+  {
+   "name": "Heavy weight bust forms",
+   "vendor": "cleaners-supply",
+   "sku": "BUS3",
+   "category": "Assembly & bagging",
+   "unit": "each",
+   "bulk": null,
+   "ws": 25,
+   "wsr": null,
+   "st": null,
+   "hub": null,
+   "note": "",
+   "check": "",
+   "sort": 920,
+   "pars": [
+    [
+     "Workshop",
+     25,
+     null,
+     "count"
+    ]
+   ]
+  },
+  {
+   "name": "General release forms",
+   "vendor": "cleaners-supply",
+   "sku": "RF1",
+   "category": "Forms & print",
+   "unit": "form",
+   "bulk": null,
+   "ws": 1000,
+   "wsr": null,
+   "st": null,
+   "hub": null,
+   "note": "",
+   "check": "",
+   "sort": 930,
+   "pars": [
+    [
+     "Workshop",
+     1000,
+     null,
+     "count"
+    ]
+   ]
+  },
+  {
+   "name": "Steam iron hose",
+   "vendor": "cleaners-supply",
+   "sku": "TEF7",
+   "category": "Boiler & general",
+   "unit": "hose",
+   "bulk": null,
+   "ws": 1,
+   "wsr": null,
+   "st": null,
+   "hub": null,
+   "note": "",
+   "check": "",
+   "sort": 940,
+   "pars": [
+    [
+     "Workshop",
+     1,
+     null,
+     "count"
+    ]
+   ]
+  },
+  {
+   "name": "Tie boards",
+   "vendor": "cleaners-supply",
+   "sku": "BB2",
+   "category": "Assembly & bagging",
+   "unit": "each",
+   "bulk": null,
+   "ws": 50,
+   "wsr": null,
+   "st": null,
+   "hub": null,
+   "note": "",
+   "check": "",
+   "sort": 950,
+   "pars": [
+    [
+     "Workshop",
+     50,
+     null,
+     "count"
+    ]
+   ]
+  },
+  {
+   "name": "Shirt carrying bags",
+   "vendor": "cleaners-supply",
+   "sku": "SH1300",
+   "category": "Bags",
+   "unit": "bag",
+   "bulk": null,
+   "ws": 50,
+   "wsr": null,
+   "st": null,
+   "hub": null,
+   "note": "",
+   "check": "",
+   "sort": 960,
+   "pars": [
+    [
+     "Workshop",
+     50,
+     null,
+     "count"
+    ]
+   ]
+  },
+  {
+   "name": "Hot head mitt",
+   "vendor": "cleaners-supply",
+   "sku": "HM1",
+   "category": "Assembly & bagging",
+   "unit": "each",
+   "bulk": null,
+   "ws": 1,
+   "wsr": null,
+   "st": null,
+   "hub": null,
+   "note": "",
+   "check": "",
+   "sort": 970,
+   "pars": [
+    [
+     "Workshop",
+     1,
+     null,
+     "count"
+    ]
+   ]
+  },
+  {
+   "name": "Spotting brush \u2014 white",
+   "vendor": "cleaners-supply",
+   "sku": "BH1WH",
+   "category": "Spotting",
+   "unit": "brush",
+   "bulk": null,
+   "ws": 1,
+   "wsr": null,
+   "st": null,
+   "hub": null,
+   "note": "",
+   "check": "",
+   "sort": 980,
+   "pars": [
+    [
+     "Workshop",
+     1,
+     null,
+     "count"
+    ]
+   ]
+  },
+  {
+   "name": "Spotting brush \u2014 black",
+   "vendor": "cleaners-supply",
+   "sku": "BH1BK",
+   "category": "Spotting",
+   "unit": "brush",
+   "bulk": null,
+   "ws": 1,
+   "wsr": null,
+   "st": null,
+   "hub": null,
+   "note": "",
+   "check": "",
+   "sort": 990,
+   "pars": [
+    [
+     "Workshop",
+     1,
+     null,
+     "count"
+    ]
+   ]
+  },
+  {
+   "name": "Safety pins",
+   "vendor": "cleaners-supply",
+   "sku": "SP1",
+   "category": "Assembly & bagging",
+   "unit": "box",
+   "bulk": null,
+   "ws": 1,
+   "wsr": null,
+   "st": null,
+   "hub": null,
+   "note": "",
+   "check": "",
+   "sort": 1000,
+   "pars": [
+    [
+     "Workshop",
+     1,
+     null,
+     "count"
+    ]
+   ]
+  },
+  {
+   "name": "Fabric shaver",
+   "vendor": "cleaners-supply",
+   "sku": "BH26",
+   "category": "Assembly & bagging",
+   "unit": "each",
+   "bulk": null,
+   "ws": 1,
+   "wsr": null,
+   "st": null,
+   "hub": null,
+   "note": "",
+   "check": "",
+   "sort": 1010,
+   "pars": [
+    [
+     "Workshop",
+     1,
+     null,
+     "count"
+    ]
+   ]
+  },
+  {
+   "name": "Alterations order pad",
+   "vendor": "latsons",
+   "sku": null,
+   "category": "Forms & print",
+   "unit": "pad",
+   "bulk": null,
+   "ws": "AN",
+   "wsr": null,
+   "st": null,
+   "hub": null,
+   "note": "",
+   "check": "No goal on the sheet yet.",
+   "sort": 1020,
+   "pars": [
+    [
+     "Workshop",
+     null,
+     null,
+     "check"
+    ]
+   ]
+  },
+  {
+   "name": "Cobbler order pad",
+   "vendor": "latsons",
+   "sku": null,
+   "category": "Forms & print",
+   "unit": "pad",
+   "bulk": null,
+   "ws": "AN",
+   "wsr": null,
+   "st": null,
+   "hub": null,
+   "note": "",
+   "check": "No goal on the sheet yet.",
+   "sort": 1030,
+   "pars": [
+    [
+     "Workshop",
+     null,
+     null,
+     "check"
+    ]
+   ]
+  },
+  {
+   "name": "Leather care order pad",
+   "vendor": "latsons",
+   "sku": null,
+   "category": "Forms & print",
+   "unit": "pad",
+   "bulk": null,
+   "ws": "AN",
+   "wsr": null,
+   "st": null,
+   "hub": null,
+   "note": "",
+   "check": "No goal on the sheet yet.",
+   "sort": 1040,
+   "pars": [
+    [
+     "Workshop",
+     null,
+     null,
+     "check"
+    ]
+   ]
+  },
+  {
+   "name": "Wedding dress order pad",
+   "vendor": "latsons",
+   "sku": null,
+   "category": "Forms & print",
+   "unit": "pad",
+   "bulk": null,
+   "ws": "AN",
+   "wsr": null,
+   "st": null,
+   "hub": null,
+   "note": "",
+   "check": "No goal on the sheet yet.",
+   "sort": 1050,
+   "pars": [
+    [
+     "Workshop",
+     null,
+     null,
+     "check"
+    ]
+   ]
+  },
+  {
+   "name": "WDF order pad",
+   "vendor": "latsons",
+   "sku": null,
+   "category": "Forms & print",
+   "unit": "pad",
+   "bulk": null,
+   "ws": "AN",
+   "wsr": null,
+   "st": null,
+   "hub": null,
+   "note": "",
+   "check": "No goal on the sheet yet.",
+   "sort": 1060,
+   "pars": [
+    [
+     "Workshop",
+     null,
+     null,
+     "check"
+    ]
+   ]
+  },
+  {
+   "name": "Our Services card",
+   "vendor": "latsons",
+   "sku": null,
+   "category": "Forms & print",
+   "unit": "pack",
+   "bulk": null,
+   "ws": "AN",
+   "wsr": null,
+   "st": null,
+   "hub": null,
+   "note": "",
+   "check": "No goal on the sheet yet.",
+   "sort": 1070,
+   "pars": [
+    [
+     "Workshop",
+     null,
+     null,
+     "check"
+    ]
+   ]
+  },
+  {
+   "name": "Welcome coupon",
+   "vendor": "latsons",
+   "sku": null,
+   "category": "Forms & print",
+   "unit": "pack",
+   "bulk": null,
+   "ws": "AN",
+   "wsr": null,
+   "st": null,
+   "hub": null,
+   "note": "",
+   "check": "No goal on the sheet yet.",
+   "sort": 1080,
+   "pars": [
+    [
+     "Workshop",
+     null,
+     null,
+     "check"
+    ]
+   ]
+  },
+  {
+   "name": "New customer info pad",
+   "vendor": "latsons",
+   "sku": null,
+   "category": "Forms & print",
+   "unit": "pad",
+   "bulk": null,
+   "ws": "AN",
+   "wsr": null,
+   "st": null,
+   "hub": null,
+   "note": "",
+   "check": "No goal on the sheet yet.",
+   "sort": 1090,
+   "pars": [
+    [
+     "Workshop",
+     null,
+     null,
+     "check"
+    ]
+   ]
+  },
+  {
+   "name": "Tag PNC bag",
+   "vendor": "latsons",
+   "sku": null,
+   "category": "Forms & print",
+   "unit": "pack",
+   "bulk": null,
+   "ws": "AN",
+   "wsr": null,
+   "st": null,
+   "hub": null,
+   "note": "",
+   "check": "No goal on the sheet yet.",
+   "sort": 1100,
+   "pars": [
+    [
+     "Workshop",
+     null,
+     null,
+     "check"
+    ]
+   ]
+  },
+  {
+   "name": "Letter from Neal",
+   "vendor": "latsons",
+   "sku": null,
+   "category": "Forms & print",
+   "unit": "pack",
+   "bulk": null,
+   "ws": "AN",
+   "wsr": null,
+   "st": null,
+   "hub": null,
+   "note": "",
+   "check": "No goal on the sheet yet.",
+   "sort": 1110,
+   "pars": [
+    [
+     "Workshop",
+     null,
+     null,
+     "check"
+    ]
+   ]
+  },
+  {
+   "name": "Retail lot tags",
+   "vendor": "latsons",
+   "sku": null,
+   "category": "Forms & print",
+   "unit": "tag",
+   "bulk": null,
+   "ws": "AN",
+   "wsr": null,
+   "st": 100,
+   "hub": null,
+   "note": "",
+   "check": "",
+   "sort": 1120,
+   "pars": [
+    [
+     "Workshop",
+     null,
+     null,
+     "check"
+    ],
+    [
+     "Sulphur Springs",
+     100,
+     null,
+     "level"
+    ],
+    [
+     "Greenville",
+     100,
+     null,
+     "level"
+    ],
+    [
+     "Emory",
+     100,
+     null,
+     "level"
+    ],
+    [
+     "Winnsboro",
+     100,
+     null,
+     "level"
+    ],
+    [
+     "Quitman",
+     100,
+     null,
+     "level"
+    ]
+   ]
+  },
+  {
+   "name": "AA batteries",
+   "vendor": "other",
+   "sku": null,
+   "category": "Store extras",
+   "unit": "battery",
+   "bulk": null,
+   "ws": 10,
+   "wsr": null,
+   "st": "AN",
+   "hub": null,
+   "note": "",
+   "check": "",
+   "sort": 1130,
+   "pars": [
+    [
+     "Workshop",
+     10,
+     null,
+     "count"
+    ],
+    [
+     "Sulphur Springs",
+     null,
+     null,
+     "check"
+    ],
+    [
+     "Greenville",
+     null,
+     null,
+     "check"
+    ],
+    [
+     "Emory",
+     null,
+     null,
+     "check"
+    ],
+    [
+     "Winnsboro",
+     null,
+     null,
+     "check"
+    ],
+    [
+     "Quitman",
+     null,
+     null,
+     "check"
+    ]
+   ]
+  },
+  {
+   "name": "AAA batteries",
+   "vendor": "other",
+   "sku": null,
+   "category": "Store extras",
+   "unit": "battery",
+   "bulk": null,
+   "ws": 10,
+   "wsr": null,
+   "st": "AN",
+   "hub": null,
+   "note": "",
+   "check": "",
+   "sort": 1140,
+   "pars": [
+    [
+     "Workshop",
+     10,
+     null,
+     "count"
+    ],
+    [
+     "Sulphur Springs",
+     null,
+     null,
+     "check"
+    ],
+    [
+     "Greenville",
+     null,
+     null,
+     "check"
+    ],
+    [
+     "Emory",
+     null,
+     null,
+     "check"
+    ],
+    [
+     "Winnsboro",
+     null,
+     null,
+     "check"
+    ],
+    [
+     "Quitman",
+     null,
+     null,
+     "check"
+    ]
+   ]
+  },
+  {
+   "name": "Packing tape",
+   "vendor": "other",
+   "sku": null,
+   "category": "Store extras",
+   "unit": "roll",
+   "bulk": null,
+   "ws": "AN",
+   "wsr": null,
+   "st": "AN",
+   "hub": null,
+   "note": "",
+   "check": "",
+   "sort": 1150,
+   "pars": [
+    [
+     "Workshop",
+     null,
+     null,
+     "check"
+    ],
+    [
+     "Sulphur Springs",
+     null,
+     null,
+     "check"
+    ],
+    [
+     "Greenville",
+     null,
+     null,
+     "check"
+    ],
+    [
+     "Emory",
+     null,
+     null,
+     "check"
+    ],
+    [
+     "Winnsboro",
+     null,
+     null,
+     "check"
+    ],
+    [
+     "Quitman",
+     null,
+     null,
+     "check"
+    ]
+   ]
+  },
+  {
+   "name": "Bottled water for the store",
+   "vendor": "other",
+   "sku": null,
+   "category": "Store extras",
+   "unit": "case",
+   "bulk": null,
+   "ws": "AN",
+   "wsr": null,
+   "st": 2,
+   "hub": null,
+   "note": "",
+   "check": "",
+   "sort": 1160,
+   "pars": [
+    [
+     "Workshop",
+     null,
+     null,
+     "check"
+    ],
+    [
+     "Sulphur Springs",
+     2,
+     null,
+     "count"
+    ],
+    [
+     "Greenville",
+     2,
+     null,
+     "count"
+    ],
+    [
+     "Emory",
+     2,
+     null,
+     "count"
+    ],
+    [
+     "Winnsboro",
+     2,
+     null,
+     "count"
+    ],
+    [
+     "Quitman",
+     2,
+     null,
+     "count"
+    ]
+   ]
+  },
+  {
+   "name": "Candy",
+   "vendor": "other",
+   "sku": null,
+   "category": "Store extras",
+   "unit": "large bag",
+   "bulk": null,
+   "ws": "AN",
+   "wsr": null,
+   "st": 2,
+   "hub": null,
+   "note": "",
+   "check": "",
+   "sort": 1170,
+   "pars": [
+    [
+     "Workshop",
+     null,
+     null,
+     "check"
+    ],
+    [
+     "Sulphur Springs",
+     2,
+     null,
+     "count"
+    ],
+    [
+     "Greenville",
+     2,
+     null,
+     "count"
+    ],
+    [
+     "Emory",
+     2,
+     null,
+     "count"
+    ],
+    [
+     "Winnsboro",
+     2,
+     null,
+     "count"
+    ],
+    [
+     "Quitman",
+     2,
+     null,
+     "count"
+    ]
+   ]
+  },
+  {
+   "name": "Detergent pods \u2014 regular scent",
+   "vendor": "other",
+   "sku": null,
+   "category": "Laundry Hub",
+   "unit": "pod",
+   "bulk": "tub",
+   "ws": "AN",
+   "wsr": null,
+   "st": null,
+   "hub": 200,
+   "note": "",
+   "check": "Vendor? Hub counts pods; Workshop counts tubs/boxes.",
+   "sort": 1180,
+   "pars": [
+    [
+     "Workshop",
+     null,
+     null,
+     "check"
+    ],
+    [
+     "Laundry Hub",
+     200,
+     null,
+     "level"
+    ]
+   ]
+  },
+  {
+   "name": "Detergent pods \u2014 unscented",
+   "vendor": "other",
+   "sku": null,
+   "category": "Laundry Hub",
+   "unit": "pod",
+   "bulk": "tub",
+   "ws": "AN",
+   "wsr": null,
+   "st": null,
+   "hub": 200,
+   "note": "",
+   "check": "Vendor? Hub counts pods; Workshop counts tubs/boxes.",
+   "sort": 1190,
+   "pars": [
+    [
+     "Workshop",
+     null,
+     null,
+     "check"
+    ],
+    [
+     "Laundry Hub",
+     200,
+     null,
+     "level"
+    ]
+   ]
+  },
+  {
+   "name": "Dryer sheets \u2014 regular scent",
+   "vendor": "other",
+   "sku": null,
+   "category": "Laundry Hub",
+   "unit": "sheet",
+   "bulk": "box",
+   "ws": "AN",
+   "wsr": null,
+   "st": null,
+   "hub": 200,
+   "note": "",
+   "check": "Vendor?",
+   "sort": 1200,
+   "pars": [
+    [
+     "Workshop",
+     null,
+     null,
+     "check"
+    ],
+    [
+     "Laundry Hub",
+     200,
+     null,
+     "level"
+    ]
+   ]
+  },
+  {
+   "name": "Dryer sheets \u2014 unscented",
+   "vendor": "other",
+   "sku": null,
+   "category": "Laundry Hub",
+   "unit": "sheet",
+   "bulk": "box",
+   "ws": "AN",
+   "wsr": null,
+   "st": null,
+   "hub": 200,
+   "note": "",
+   "check": "Vendor?",
+   "sort": 1210,
+   "pars": [
+    [
+     "Workshop",
+     null,
+     null,
+     "check"
+    ],
+    [
+     "Laundry Hub",
+     200,
+     null,
+     "level"
+    ]
+   ]
+  },
+  {
+   "name": "Wash & fold liner bags",
+   "vendor": "other",
+   "sku": null,
+   "category": "Laundry Hub",
+   "unit": "case",
+   "bulk": null,
+   "ws": "AN",
+   "wsr": null,
+   "st": null,
+   "hub": 0.5,
+   "note": "",
+   "check": "Vendor? Hub goal is half a case.",
+   "sort": 1220,
+   "pars": [
+    [
+     "Workshop",
+     null,
+     null,
+     "check"
+    ],
+    [
+     "Laundry Hub",
+     0.5,
+     null,
+     "count"
+    ]
+   ]
+  },
+  {
+   "name": "Cleaning towels (return dirty ones in the specials bag)",
+   "vendor": "in-house",
+   "sku": null,
+   "category": "Janitorial",
+   "unit": "towel",
+   "bulk": null,
+   "ws": null,
+   "wsr": null,
+   "st": 10,
+   "hub": 5,
+   "note": "",
+   "check": "",
+   "sort": 1230,
+   "pars": [
+    [
+     "Sulphur Springs",
+     10,
+     null,
+     "count"
+    ],
+    [
+     "Greenville",
+     10,
+     null,
+     "count"
+    ],
+    [
+     "Emory",
+     10,
+     null,
+     "count"
+    ],
+    [
+     "Winnsboro",
+     10,
+     null,
+     "count"
+    ],
+    [
+     "Quitman",
+     10,
+     null,
+     "count"
+    ],
+    [
+     "Laundry Hub",
+     5,
+     null,
+     "count"
+    ]
+   ]
+  },
+  {
+   "name": "Cobblers Direct order forms",
+   "vendor": "in-house",
+   "sku": null,
+   "category": "Forms & print",
+   "unit": "form",
+   "bulk": null,
+   "ws": null,
+   "wsr": null,
+   "st": 20,
+   "hub": null,
+   "note": "From Cobblers Direct",
+   "check": "",
+   "sort": 1240,
+   "pars": [
+    [
+     "Sulphur Springs",
+     20,
+     null,
+     "count"
+    ],
+    [
+     "Greenville",
+     20,
+     null,
+     "count"
+    ],
+    [
+     "Emory",
+     20,
+     null,
+     "count"
+    ],
+    [
+     "Winnsboro",
+     20,
+     null,
+     "count"
+    ],
+    [
+     "Quitman",
+     20,
+     null,
+     "count"
+    ]
+   ]
+  },
+  {
+   "name": "Arrow Leather order forms",
+   "vendor": "in-house",
+   "sku": null,
+   "category": "Forms & print",
+   "unit": "form",
+   "bulk": null,
+   "ws": null,
+   "wsr": null,
+   "st": 20,
+   "hub": null,
+   "note": "From Arrow Leather",
+   "check": "",
+   "sort": 1250,
+   "pars": [
+    [
+     "Sulphur Springs",
+     20,
+     null,
+     "count"
+    ],
+    [
+     "Greenville",
+     20,
+     null,
+     "count"
+    ],
+    [
+     "Emory",
+     20,
+     null,
+     "count"
+    ],
+    [
+     "Winnsboro",
+     20,
+     null,
+     "count"
+    ],
+    [
+     "Quitman",
+     20,
+     null,
+     "count"
+    ]
+   ]
+  },
+  {
+   "name": "Temp tag material",
+   "vendor": "in-house",
+   "sku": null,
+   "category": "Tags & labels",
+   "unit": "pack",
+   "bulk": null,
+   "ws": null,
+   "wsr": null,
+   "st": "AN",
+   "hub": null,
+   "note": "",
+   "check": "",
+   "sort": 1260,
+   "pars": [
+    [
+     "Sulphur Springs",
+     null,
+     null,
+     "check"
+    ],
+    [
+     "Greenville",
+     null,
+     null,
+     "check"
+    ],
+    [
+     "Emory",
+     null,
+     null,
+     "check"
+    ],
+    [
+     "Winnsboro",
+     null,
+     null,
+     "check"
+    ],
+    [
+     "Quitman",
+     null,
+     null,
+     "check"
+    ]
+   ]
+  },
+  {
+   "name": "New customer packets",
+   "vendor": "in-house",
+   "sku": null,
+   "category": "Forms & print",
+   "unit": "packet",
+   "bulk": null,
+   "ws": null,
+   "wsr": null,
+   "st": 20,
+   "hub": null,
+   "note": "Put together at the office",
+   "check": "",
+   "sort": 1270,
+   "pars": [
+    [
+     "Sulphur Springs",
+     20,
+     null,
+     "count"
+    ],
+    [
+     "Greenville",
+     20,
+     null,
+     "count"
+    ],
+    [
+     "Emory",
+     20,
+     null,
+     "count"
+    ],
+    [
+     "Winnsboro",
+     20,
+     null,
+     "count"
+    ],
+    [
+     "Quitman",
+     20,
+     null,
+     "count"
+    ]
+   ]
+  },
+  {
+   "name": "Supply list printout",
+   "vendor": "in-house",
+   "sku": null,
+   "category": "Forms & print",
+   "unit": "sheet",
+   "bulk": null,
+   "ws": null,
+   "wsr": null,
+   "st": 10,
+   "hub": null,
+   "note": "",
+   "check": "",
+   "sort": 1280,
+   "pars": [
+    [
+     "Sulphur Springs",
+     10,
+     null,
+     "count"
+    ],
+    [
+     "Greenville",
+     10,
+     null,
+     "count"
+    ],
+    [
+     "Emory",
+     10,
+     null,
+     "count"
+    ],
+    [
+     "Winnsboro",
+     10,
+     null,
+     "count"
+    ],
+    [
+     "Quitman",
+     10,
+     null,
+     "count"
+    ]
+   ]
+  },
+  {
+   "name": "Prespot bottles",
+   "vendor": "in-house",
+   "sku": null,
+   "category": "Counter supplies",
+   "unit": "bottle",
+   "bulk": null,
+   "ws": null,
+   "wsr": null,
+   "st": 1,
+   "hub": null,
+   "note": "",
+   "check": "",
+   "sort": 1290,
+   "pars": [
+    [
+     "Sulphur Springs",
+     1,
+     null,
+     "count"
+    ],
+    [
+     "Greenville",
+     1,
+     null,
+     "count"
+    ],
+    [
+     "Emory",
+     1,
+     null,
+     "count"
+    ],
+    [
+     "Winnsboro",
+     1,
+     null,
+     "count"
+    ],
+    [
+     "Quitman",
+     1,
+     null,
+     "count"
+    ]
+   ]
+  }
+ ]
+}

@@ -3,3 +3,4 @@ node_modules/
 .dev.vars
 workers/planner/test/shots/
 workers/retail/test/shots/
+workers/supplies/test/shots/
