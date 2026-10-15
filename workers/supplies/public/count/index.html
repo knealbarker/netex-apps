@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Supply count</title>
+  <meta name="color-scheme" content="dark light">
+  <meta name="theme-color" content="#0f1420">
+  <link rel="icon" href="/count/icon.svg" type="image/svg+xml">
+  <link rel="manifest" href="/count/manifest.webmanifest">
+  <link rel="stylesheet" href="/count/count.css">
+  <link rel="stylesheet" href="/count/form.css">
+  <script type="module" src="/count/count.js"></script>
+</head>
+<body class="count-page">
+  <header class="ct-top">
+    <svg class="mark" viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" rx="9" fill="currentColor" stroke="none"/><path d="M9 12.5 16 9l7 3.5v8L16 24l-7-3.5zM9 12.5l7 3.5 7-3.5M16 16v8" fill="none" stroke="var(--bg)" stroke-width="2.2"/></svg>
+    <div class="ct-title"><b id="locName">Supply count</b><small id="sub">Town &amp; Country Cleaners</small></div>
+  </header>
+  <main id="main" tabindex="-1"><div class="loading" aria-live="polite"><span class="spin"></span>Loading…</div></main>
+  <div class="toasts" id="toasts" aria-live="polite"></div>
+  <noscript><p class="noscript">The supply count needs JavaScript turned on.</p></noscript>
+</body>
+</html>

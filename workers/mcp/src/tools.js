@@ -50,6 +50,18 @@ export const TABLE_NOTES = {
   plan_person_prefs: "Usual days/clock-in/hours, must-leave-by, SLB goal per person.",
   plan_station_tally: "Starch-bottoms pairs counted on the station tablets (SLB 1 / SLB 2).",
   plan_followups: "Follow-ups the planner asked for (due date moved, piece moved, overdue) and their reasons.",
+  supply_locations: "Supplies: the 7 places that keep supplies; role warehouse (Workshop) or store (restocked by the shuttle).",
+  supply_vendors: "Supplies: vendors, how ordered, lead_days (business days), min_order_cents.",
+  supply_items: "Supplies: every supply item. unit = what stores count/receive; bulk_unit = what the Workshop counts and orders. unit_cost_cents per bulk unit.",
+  supply_pars: "Supplies: item kept at a location: par (keep this many), reorder_at, mode count/level (Out/Low/OK)/check (Need any?).",
+  supply_counters: "Supplies: people approved to send counts (first name + last initial).",
+  supply_requests: "Supplies: the supply manager asking a location to count; done_at when a count came in.",
+  supply_counts: "Supplies: each count sent from a location (who, when, items answered, items short).",
+  supply_count_lines: "Supplies: one answer per item per count: qty or level, the par then, and need (how many short).",
+  supply_shipments: "Supplies: shuttle lists per store; status open/sent/replaced (a newer count came in)/cancelled.",
+  supply_shipment_lines: "Supplies: items on a shuttle list: need (asked for) and send_qty (what was sent; null = the need).",
+  supply_orders: "Supplies: vendor orders placed by the supply manager; status ordered/received/cancelled, expected_on.",
+  supply_order_lines: "Supplies: items and quantities (bulk units) on a vendor order.",
   mcp_tool_log: "This connector's own call log: which tools, which live SMRT topics, how often.",
 };
 

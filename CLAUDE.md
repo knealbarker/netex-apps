@@ -20,6 +20,7 @@ One app per subdomain, all on Cloudflare, one shared database, one sign-in.
 | `sync` (netex-sync) | none (cron + email only) | Copies SMRT (POS) and Rippling (time clock) into the database |
 | `auth` (netex-auth) | auth.netexcleaners.com | "Text me a code" sign-in (an OIDC provider inside Cloudflare Access) |
 | `mcp` (netex-mcp) | mcp.netexcleaners.com/mcp | Read-only Claude connector (OAuth) over the database and SMRT |
+| `supplies` (netex-supplies) | supplies.netexcleaners.com | Supply counts on store devices (/count), shuttle lists, vendor orders |
 
 ## Rules that are easy to break
 - **Never put secrets in GitHub.** Keys go in Workers › Settings › Variables and Secrets, entered by Neal. Code reads `env.X`.

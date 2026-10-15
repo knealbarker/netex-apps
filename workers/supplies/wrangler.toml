@@ -1,0 +1,37 @@
+name = "netex-supplies"
+main = "src/index.js"
+compatibility_date = "2026-09-01"
+account_id = "61c6ba95bfea0222857214634869b20a"
+workers_dev = false    # only reachable at supplies.netexcleaners.com
+preview_urls = false
+
+# Cloudflare Access: the "Netex apps" application (*.netexcleaners.com) signs the supply manager in for everything here,
+# EXCEPT supplies.netexcleaners.com/count — that path needs its own Self-hosted app with a Bypass policy (like prodplanner .../station),
+# because store devices count without signing in. The Worker checks the device's paired cookie there instead.
+routes = [{ pattern = "supplies.netexcleaners.com", custom_domain = true }]
+
+[assets]
+directory = "./public"
+binding = "ASSETS"
+run_worker_first = true   # the Worker checks the sign-in (or the paired device) before any file is served
+
+[[d1_databases]]
+binding = "DB"
+database_name = "netex-apps"
+database_id = "1657081e-9193-4636-a12b-88e0f1f86438"
+migrations_dir = "../../db/migrations"
+
+[observability]
+enabled = true
+
+[vars]
+ORG_ID = "tcc"
+APP_ID = "supplies"
+ACCOUNT_ID = "61c6ba95bfea0222857214634869b20a"
+TIMEZONE = "America/Chicago"
+TEAM_DOMAIN = "https://netexcleaners.cloudflareaccess.com"
+ACCESS_AUD = "c8867e4f1d945bfb7fc6b393e7f40f0c3bb050846ca416789136186e32e5de57"
+ACCESS_GROUP_ID = "2c00c66c-8c20-44bd-95b1-07639add45ab"
+
+# Secrets (Workers > netex-supplies > Settings > Variables and Secrets). Never in GitHub.
+#   CF_API_TOKEN  - optional; same token as the planner's, lets Users & access keep the "Netex users" group in step

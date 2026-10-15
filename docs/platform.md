@@ -24,6 +24,7 @@ Cloudflare for domain, DNS, sign-in (Zero Trust Access), hosting (Workers) and d
   | **Netex apps** | `*.netexcleaners.com` | **Staff** (Allow, rule group "Netex users", 1-month session) |
   | Netex sign-in (public) | `auth.netexcleaners.com` | Netex sign-in (public): Bypass |
   | Station tablets (public) | `prodplanner.netexcleaners.com/station` | Tablets bypass: Bypass (tablets use their own device cookie) |
+  | Supply count (public) | `supplies.netexcleaners.com/count` | Tablets bypass: Bypass (count devices use their own device cookie) |
   | Netex MCP (public endpoints) | `mcp.netexcleaners.com` paths `/mcp`, `/token`, `/register`, `/revoke`, `/.well-known` | Netex sign-in (public): Bypass |
   A more specific application (hostname or path) wins over the wildcard. **A new subdomain is covered by "Netex apps" automatically.**
   Only add a Bypass app for paths that machines call without a person's login, and then the Worker must guard those paths itself.
@@ -43,7 +44,7 @@ Cloudflare for domain, DNS, sign-in (Zero Trust Access), hosting (Workers) and d
 ## Database: D1 `netex-apps` (ID `1657081e-9193-4636-a12b-88e0f1f86438`)
 - One database for every app, binding `DB`. Schema in `db/migrations/*.sql` (comments explain each table). Prefixes:
   `core_` shared (org, locations, departments, people, users, apps, roles, settings, audit log) · `int_` integrations and sync runs ·
-  `pos_` full copy of SMRT orders and pieces · `labor_` Rippling hours and pay rates · `plan_` planner · `auth_` text sign-in ·
+  `pos_` full copy of SMRT orders and pieces · `labor_` Rippling hours and pay rates · `plan_` planner · `supply_` supplies · `auth_` text sign-in ·
   `mcp_` Claude connector.
 - Org id is `'tcc'` (`env.ORG_ID`). IDs are ULIDs (`ulid()` in `workers/planner/src/util.js`); small lookups use readable ids.
 - Each app is a row in `core_apps` (`id`, `name`, `subdomain`); a person's access to it is a row in `core_user_app_roles`.
