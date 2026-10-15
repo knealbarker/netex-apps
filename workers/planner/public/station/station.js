@@ -62,16 +62,14 @@ function draw() {
     <main class="main">
       ${offline ? `<div class="banner bad">No connection — counts can't be saved right now. They'll work again as soon as the internet is back.</div>` : ""}
       <div class="tile ${T.color} ${T.boost > 0 ? "boost" : ""}" style="${boostVars(T.boost)}" aria-label="Station today">
-        <div class="lbl"><span>${esc(S.station.label)} today</span><span>Goal ${esc(goal(T.goal))}/hr</span></div>
         <div class="nums">
-          <div class="big">${T.count}</div>
-          <div class="rate">${esc(rate(T.perHour))}<em>/hr</em></div>
-          <div class="big-sub">pairs</div>
-          <div class="rate-sub">${T.pct != null ? `${Math.round(T.pct * 100)}% of goal` : "per hour"}</div>
+          <div class="cell"><div class="big">${T.count}</div><div class="big-sub">pairs today</div></div>
+          <div class="cell"><div class="big">${esc(rate(T.perHour))}</div><div class="big-sub">per hour${T.pct != null ? ` · ${Math.round(T.pct * 100)}% of goal` : ""}</div></div>
         </div>
         <div class="foot">
           ${T.lastHour ? `<span class="hour"><i class="${T.lastHour.color}"></i>Last hour ${esc(rate(T.lastHour.perHour))}/hr</span>` : ""}
           <span class="stale">${T.lastMin == null ? "Starts with the first batch to IAB" : `Last count ${clock(T.lastMin)}${sinceLast > 1 ? ` · ${sinceLast} min ago` : ""}`}</span>
+          <span class="goal">Goal ${esc(goal(T.goal))}/hr</span>
         </div>
       </div>
       <div class="bar">

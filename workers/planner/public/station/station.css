@@ -10,7 +10,7 @@ html, body { height: 100%; }
 body { margin: 0; background: var(--bg); color: var(--text); font: 18px/1.35 var(--font); font-feature-settings: "tnum" 1; -webkit-font-smoothing: antialiased;
   user-select: none; -webkit-user-select: none; -webkit-tap-highlight-color: transparent; overflow: hidden; touch-action: manipulation; }
 button { font: inherit; color: inherit; cursor: pointer; }
-.app { height: 100vh; height: 100dvh; display: grid; grid-template-rows: auto 1fr; padding: 14px 18px 16px; gap: 14px; }
+.app { height: 100vh; height: 100dvh; display: grid; grid-template-rows: auto 1fr; padding: 10px 14px 12px; gap: 10px; }
 .boot { display: grid; place-items: center; height: 100%; color: var(--muted); font-size: 24px; }
 
 /* header: station and who's on it */
@@ -27,31 +27,31 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .dot.bad { background: var(--yellow); }
 
 /* body: numbers on the left, keypad on the right */
-.main { display: grid; grid-template-rows: auto minmax(0, 1fr) auto; gap: 14px; min-height: 0; }
+.main { display: grid; grid-template-rows: auto minmax(0, 1fr) auto; gap: 10px; min-height: 0; }
 .main > .tile { grid-row: 2; }
 .left { display: grid; grid-template-rows: 1fr auto; gap: 14px; min-height: 0; }
 
-.tile { position: relative; border-radius: 22px; padding: 18px 24px 20px; display: grid; grid-template-rows: auto 1fr auto; min-height: 0; overflow: hidden;
+.tile { position: relative; border-radius: 22px; padding: 14px 28px 16px; display: grid; grid-template-rows: 1fr auto; min-height: 0; overflow: hidden;
   background: var(--none); color: var(--text); transition: background-color .4s; }
 .tile.green { background: var(--green); color: var(--green-ink); }
 .tile.yellow { background: var(--yellow); color: var(--yellow-ink); }
 .tile.red { background: var(--red); color: var(--red-ink); }
-.tile .lbl { font-size: 20px; font-weight: 700; text-transform: uppercase; letter-spacing: .08em; opacity: .85; display: flex; justify-content: space-between; gap: 12px; }
-.tile .nums { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: end; gap: 8px 28px; align-self: center; }
-.big { font-size: clamp(110px, 21vw, 300px); font-weight: 900; line-height: .9; letter-spacing: -.03em; transform-origin: left bottom; }
-.big-sub { font-size: 26px; font-weight: 700; opacity: .9; grid-column: 1; }
-.rate { grid-row: 1; grid-column: 2; font-size: clamp(64px, 10vw, 150px); font-weight: 900; line-height: .95; transform-origin: left bottom; white-space: nowrap; }
-.rate em { font-style: normal; font-size: .42em; font-weight: 800; opacity: .9; margin-left: 4px; }
-.rate-sub { grid-row: 2; grid-column: 2; font-size: 22px; font-weight: 700; opacity: .9; }
-.tile .foot { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; font-size: 22px; font-weight: 700; }
+.tile .lbl { font-size: 24px; font-weight: 700; text-transform: uppercase; letter-spacing: .08em; opacity: .85; display: flex; justify-content: space-between; gap: 12px; }
+/* the two numbers fill the whole tile, side by side, sized to the tile itself so they read from ~20 ft (Neal, Oct 15) */
+.tile .nums { container-type: size; min-height: 0; height: 100%; display: grid; grid-template-columns: 1fr 1fr; gap: 0 3cqw; align-items: center; }
+.cell { display: grid; justify-items: start; align-content: center; min-width: 0; }
+.big { font-size: min(74cqh, 20.5cqw); font-weight: 900; line-height: .86; letter-spacing: -.04em; transform-origin: left center; white-space: nowrap; }
+.big-sub { font-size: min(9cqh, 3.4cqw); font-weight: 800; opacity: .92; margin-top: 1.5cqh; white-space: nowrap; }
+.tile .foot { display: flex; align-items: center; gap: 18px; flex-wrap: wrap; font-size: 30px; font-weight: 800; }
 .hour { display: inline-flex; align-items: center; gap: 10px; padding: 6px 14px 6px 10px; border-radius: 12px; background: rgba(0, 0, 0, .22); }
 .tile.yellow .hour { background: rgba(0, 0, 0, .12); }
-.hour i { width: 16px; height: 16px; border-radius: 50%; border: 2px solid rgba(255, 255, 255, .9); }
+.hour i { width: 22px; height: 22px; border-radius: 50%; border: 2px solid rgba(255, 255, 255, .9); }
 .hour i.green { background: #22c55e; } .hour i.yellow { background: #fde047; } .hour i.red { background: #ef4444; } .hour i.none { background: transparent; }
-.foot .stale { opacity: .85; font-weight: 600; font-size: 19px; }
+.foot .goal { margin-left: auto; opacity: .9; font-size: 26px; letter-spacing: .04em; text-transform: uppercase; }
+.foot .stale { opacity: .85; font-weight: 700; font-size: 24px; }
 
 /* above the goal: the numbers pulse, faster and bigger the further over (Neal) */
-.tile.boost .big, .tile.boost .rate { animation: pulse var(--dur, 1.4s) ease-in-out infinite; }
+.tile.boost .big { animation: pulse var(--dur, 1.4s) ease-in-out infinite; }
 @keyframes pulse { 0%, 100% { transform: scale(var(--s0, 1)); } 50% { transform: scale(var(--s1, 1.05)); } }
 .tile.boost::after { content: ""; position: absolute; inset: 0; border-radius: 22px; box-shadow: inset 0 0 0 6px rgba(255, 255, 255, .55); animation: glow var(--dur, 1.4s) ease-in-out infinite; pointer-events: none; }
 @keyframes glow { 0%, 100% { opacity: .15; } 50% { opacity: 1; } }
@@ -123,12 +123,15 @@ button { font: inherit; color: inherit; cursor: pointer; }
   .who b { font-size: 32px; }
   .main { grid-template-rows: auto auto auto; align-content: start; }
   .tile { min-height: 64vh; }
+  .tile .nums { grid-template-columns: 1fr; grid-template-rows: 1fr 1fr; gap: 2cqh 0; }
+  .big { font-size: min(36cqh, 38cqw); }
+  .big-sub { font-size: min(5cqh, 6cqw); }
   .right { grid-template-rows: auto auto auto auto; }
   .keys { grid-auto-rows: 86px; }
 }
 
 /* bottom bar: the person's own line, the last counts, and the button that opens the number pad */
-.bar { grid-row: 3; display: flex; align-items: stretch; gap: 12px; min-height: 84px; }
+.bar { grid-row: 3; display: flex; align-items: stretch; gap: 12px; min-height: 76px; }
 .bar .mine { flex: 1 1 auto; }
 .bar .recent { flex: 0 1 360px; align-content: center; max-height: none; }
 .enter { flex: 0 0 auto; margin-left: auto; display: flex; flex-direction: column; justify-content: center; align-items: center; min-width: 260px; padding: 10px 28px; border: 0; border-radius: 18px;
