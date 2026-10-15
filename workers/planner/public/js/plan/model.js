@@ -395,6 +395,20 @@ export function breaksOf(R) {
   for (const r of R.rows) if (r.staffed && r.brkS != null && r.emp) out[r.emp.empId] = { s: r.brkS, e: r.brkS + (r.x.b || 0) };
   return out;
 }
+/** A person's latest time-clock punch on the plan's day: { kind: "in" | "out", h }, or null (Neal, Oct 15). */
+export function lastPunchOf(P, id) {
+  let best = null;
+  for (const c of P.clock || []) {
+    if (c.personId !== id) continue;
+    for (const [kind, t] of [["in", c.clockIn], ["out", c.clockOut]]) {
+      const s = String(t || "").slice(0, 16); if (s.length < 16) continue;
+      if (!best || s > best.s || (s === best.s && kind === "out")) best = { kind, s };
+    }
+  }
+  if (!best) return null;
+  const [H, Mi] = best.s.slice(11, 16).split(":");
+  return { kind: best.kind, h: +H + (+Mi || 0) / 60 };
+}
 export function clockInOf(P) {
   const out = {};
   if (!P.isToday) return out;

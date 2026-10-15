@@ -846,6 +846,10 @@ button.tl-lab { cursor: pointer; } button.tl-lab:hover { background: var(--hover
 .tl-bar:hover { background: color-mix(in srgb, var(--c) 50%, var(--card)); }
 .tl-bar.ot { background: repeating-linear-gradient(-45deg, color-mix(in srgb, var(--c) 34%, var(--card)) 0 5px, color-mix(in srgb, var(--warn) 34%, var(--card)) 5px 10px); }
 .tl-bar.idle { background: transparent; border: 1px dashed var(--line2); color: var(--muted); }
+/* last time-clock punch next to a name: green = in, red = out (Neal, Oct 15) */
+.tl-punch { display: inline-block; margin-left: 5px; padding: 0 5px; border-radius: 999px; font: 700 11px/16px var(--font); white-space: nowrap; vertical-align: 1px; background: var(--card); border: 1px solid currentColor; }
+.tl-punch.in { color: var(--good); } .tl-punch.out { color: var(--bad); }
+.tl-bar .tl-punch { margin-left: 4px; line-height: 14px; }
 .tl-bar.gone { background: color-mix(in srgb, var(--faint) 18%, var(--card)); border-left-color: var(--faint); color: var(--faint); }
 .tl-bar.noshow { background: repeating-linear-gradient(-45deg, color-mix(in srgb, var(--c) 16%, var(--card)) 0 5px, var(--card) 5px 10px); border: 1px dashed var(--bad); color: var(--bad); }
 .tl-brk { position: absolute; height: 28px; border-radius: 4px; background: repeating-linear-gradient(-45deg, var(--bg2) 0 3px, var(--line2) 3px 6px); pointer-events: none; }

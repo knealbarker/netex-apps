@@ -282,6 +282,25 @@ await t("Team: a manager sets someone's usual schedule and must-leave-by", async
   await p.click('dialog button[type="submit"]'); await p.waitForSelector("dialog", { state: "detached" });
   ok(await p.isVisible("text=/Mon–Fri.*leaves by 2:45 PM \\(School pickup\\)/"), "summary on the row");
 });
+await t("Plan board: each person's last time-clock punch, green in / red out, by station and by person", async () => {
+  if (DAY !== today) return;   // punches only exist for today
+  const punch = (pid, i, o) => sqlite.prepare("INSERT INTO labor_clock_today(id, person_id, clock_in, clock_out) VALUES(?,?,?,?)").run(Math.random().toString(36).slice(2), pid, `${DAY}T${i}:00`, o ? `${DAY}T${o}:00` : null);
+  punch(ids.Ana, "05:02", "08:00"); punch(ids.Ana, "08:30", null);    // back from break: in 8:30
+  punch(ids.Beto, "05:31", "10:15");                                   // gone: out 10:15
+  const m = await page({ width: 1194, height: 834 });
+  await m.p.goto(url + "/#/plan"); await m.p.waitForSelector("#pl-board .tl-bar");
+  const tags = await m.p.$$eval("#pl-board .tl-bar .tl-punch", els => els.map(e => e.className + " " + e.textContent));
+  ok(tags.some(x => /in 8:30/.test(x)) && tags.some(x => /out 10:15/.test(x)), `bar tags: ${tags.join(", ")}`);
+  const tip = await m.p.$eval(`#pl-board .tl-bar[data-emp="${ids.Beto}"]`, e => e.title);
+  ok(/last punch: clocked out 10:15 AM/.test(tip), `hover: ${tip}`);
+  await m.p.locator(".pv-board").screenshot({ path: join(SHOTS, "e11-punch-stations.png") });
+  await m.p.click('.tl-view button:has-text("People")'); await m.p.waitForSelector(".tl-lab .tl-punch");
+  const labs = await m.p.$$eval("#pl-board .tl-lab .tl-punch", els => els.map(e => e.className + " " + e.textContent));
+  ok(labs.some(x => /in 8:30/.test(x)) && labs.some(x => /out 10:15/.test(x)), `name tags: ${labs.join(", ")}`);
+  await m.p.locator(".pv-board").screenshot({ path: join(SHOTS, "e11b-punch-people.png") });
+  await m.p.click('.tl-view button:has-text("Stations")');
+  await m.ctx.close();
+});
 await t("Tablet: the plan fits, and a person's sheet opens with their times", async () => {
   const m = await page({ width: 1194, height: 834 });
   await m.p.goto(url + "/#/plan"); await m.p.waitForSelector("#pl-board .tl-row");

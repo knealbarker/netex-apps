@@ -362,6 +362,10 @@ export async function render(main, ctx) {
     const now = P.isToday && P.now != null ? P.now : null;
     // people: clocked out (gray from then on), not clocked in yet, on break
     const info = {}; for (const code of Object.keys(st.crew)) { const pi = personInfo(X, code); if (pi) info[pi.id] = pi; }
+    // last time-clock punch next to each name: green = clocked in, red = clocked out (Neal, Oct 15)
+    const punchOf = id => M.lastPunchOf(P, id);
+    const punchTxt = pu => pu ? `${pu.kind === "in" ? "clocked in" : "clocked out"} ${fmtClock(pu.h)}` : "";
+    const punchTag = pu => pu ? html`<span class="tl-punch ${pu.kind}">${hmShort(pu.h)}</span>` : "";
     // 5 AM to 4 PM, wider only for real production clock time today: an earlier clock-in, or someone still on (or out) later (Neal, Oct 13)
     let a = 5, b = 16;
     if (P.isToday) for (const c of P.clock || []) {
@@ -390,16 +394,17 @@ export async function render(main, ctx) {
     const barHtml = (g, l, lane = l.lane) => {
       const pi = info[l.empId], nm = pi ? pi.first : first(M.nameOf(P, l.empId));
       const cut = pi && pi.state === "gone" && pi.outAt != null ? pi.outAt : null, noshow = pi && pi.state === "missing";
+      const pu = people ? null : punchOf(l.empId), puTip = pu ? ` · last punch: ${punchTxt(pu)}` : "";
       const out = [];
       l.bars.forEach((x, i) => {
         let f = q(x.from), t = Math.max(q(x.to), f + 0.25);
         const parts = cut == null || t <= cut ? [[f, t, false]] : f >= cut ? [[f, t, true]] : [[f, q(cut), false], [q(cut), t, true]].filter(p => p[1] > p[0]);
-        for (const [pf, pt, gone] of parts) {
+        for (const [pf, pt, gone, k] of parts.map((p, k) => [...p, k])) {
           if (x.brk) { out.push(html`<i class="tl-brk" style="left:${pct(pf)};width:${wid(pf, pt)};top:${lane * 32 + 6}px" title="${nm}: break ${fmtClock(x.from)}–${fmtClock(x.to)}"></i>`); continue; }
           const label = people ? x.label : nm;
           const tip = people ? `${pi?.name || nm}: ${x.label} ${fmtClock(x.from)}–${fmtClock(x.to)}${x.ot ? " (overtime)" : ""}${gone ? ` — clocked out ${fmtClock(cut)}` : noshow ? " — not clocked in" : x.idle ? " — nothing to do" : ""}`
-            : `${pi?.name || nm}: ${g.label}${l.code !== g.code && g.code ? ` (from ${(POS.find(p => p.id === l.code) || {}).label || l.code})` : ""} ${fmtClock(x.from)}–${fmtClock(x.to)}${x.ot ? " (overtime)" : ""}${gone ? ` — clocked out ${fmtClock(cut)}` : noshow ? " — not clocked in" : x.idle ? " — nothing to do" : ""}`;
-          out.push(html`<button type="button" class="tl-bar ${x.ot ? "ot" : ""} ${gone ? "gone" : ""} ${noshow ? "noshow" : ""} ${x.idle ? "idle" : ""}" data-emp="${l.empId}" data-stn="${people ? x.stn : g.code}" data-at="${x.from}" style="left:${pct(pf)};width:${wid(pf, pt)};top:${lane * 32 + 6}px;--c:${COLOR[x.key || g.key] || COLOR.ops}" title="${tip}" aria-label="${tip}">${label ? raw(html`<b>${label}</b>`) : ""}</button>`);
+            : `${pi?.name || nm}: ${g.label}${l.code !== g.code && g.code ? ` (from ${(POS.find(p => p.id === l.code) || {}).label || l.code})` : ""} ${fmtClock(x.from)}–${fmtClock(x.to)}${x.ot ? " (overtime)" : ""}${gone ? ` — clocked out ${fmtClock(cut)}` : noshow ? " — not clocked in" : x.idle ? " — nothing to do" : ""}${puTip}`;
+          out.push(html`<button type="button" class="tl-bar ${x.ot ? "ot" : ""} ${gone ? "gone" : ""} ${noshow ? "noshow" : ""} ${x.idle ? "idle" : ""}" data-emp="${l.empId}" data-stn="${people ? x.stn : g.code}" data-at="${x.from}" style="left:${pct(pf)};width:${wid(pf, pt)};top:${lane * 32 + 6}px;--c:${COLOR[x.key || g.key] || COLOR.ops}" title="${tip}" aria-label="${tip}">${label ? raw(html`<b>${label}</b>`) : ""}${k === 0 ? raw(punchTag(pu)) : ""}</button>`);
         }
       });
       return out.join("");
@@ -412,9 +417,10 @@ export async function render(main, ctx) {
         const free = !people && !st.crew[g.code].emp, lanes = g.nLanes, add = can && free && !reorder;
         if (people) {   // a person's line: their name, their own station and hours; tap = the move sheet
           const pi = info[g.empId], sub = `${((POS.find(p => p.id === g.code) || {}).label || g.code).replace(/Starch Laundry/i, "SL").replace(/Dry Cleaning/i, "DC")}${pi ? ` · ${hmShort(pi.startH)}–${hmShort(pi.end)}` : ""}`;
-          const plab = html`<i class="sw" style="--c:${COLOR[g.key] || COLOR.ops}"></i><span class="tl-name"><b>${g.label}</b><small>${sub}</small></span>`;
+          const pu = punchOf(g.empId), ptitle = pu ? `${g.name} · ${punchTxt(pu)}` : g.name;
+          const plab = html`<i class="sw" style="--c:${COLOR[g.key] || COLOR.ops}"></i><span class="tl-name"><b>${g.label}${raw(punchTag(pu))}</b><small>${sub}</small></span>`;
           return raw(html`<div class="tl-row ${g.first ? "first" : "sub"}" data-g="${g.key}" data-code="${g.code}">
-            ${can ? raw(html`<button type="button" class="tl-lab" data-emp="${g.empId}" aria-label="Move ${g.name}" title="${g.name}">${raw(plab)}</button>`) : raw(html`<div class="tl-lab">${raw(plab)}</div>`)}
+            ${can ? raw(html`<button type="button" class="tl-lab" data-emp="${g.empId}" aria-label="Move ${g.name}" title="${ptitle}">${raw(plab)}</button>`) : raw(html`<div class="tl-lab" title="${ptitle}">${raw(plab)}</div>`)}
             <div class="tl-track" style="height:32px">${raw(g.lanes.map(l => barHtml(g, l)).join(""))}${raw(nowLine)}${raw(finLine(g.key))}</div>
           </div>`);
         }
@@ -463,12 +469,13 @@ export async function render(main, ctx) {
     const sg = segs[i], last = i === segs.length - 1;
     const pi = personInfo(X, code);
     const stateTxt = pi && pi.state === "gone" ? ` · clocked out ${fmtClock(pi.outAt)}` : pi && pi.state === "break" ? " · on break" : pi && pi.state === "missing" ? " · not clocked in yet" : pi && pi.state === "in" ? " · on the clock" : "";
+    const lp = M.lastPunchOf(P, empId), punchLine = lp ? ` · last punch: ${lp.kind === "in" ? "in" : "out"} ${fmtClock(lp.h)}` : "";
     const trainedTxt = id => (X.E.rankOf(e, id) ? "" : " (not trained)");
     const others = POS.filter(p => p.id !== sg.stn && (p.type === "ops") === (POS.find(x => x.id === code)?.type === "ops"));
     const dayTxt = P.isToday ? "today" : new Date(pick + "T12:00:00").toLocaleDateString(undefined, { weekday: "short", month: "numeric", day: "numeric" });
     openDialog({
       title: `${name} · ${posLabel(sg.stn)}`, submitLabel: "Save",
-      body: html`<p class="dlg-lead">In ${fmtClock(sh.start)} · out ${fmtClock(sh.end)}${sh.brk ? ` · break ${fmtClock(sh.brk[0])}–${fmtClock(sh.brk[1])}` : " · no break set"}${stateTxt}${segs.length > 1 ? ` · ${segs.map(g => posLabel(g.stn)).join(" → ")}` : ""}</p>
+      body: html`<p class="dlg-lead">In ${fmtClock(sh.start)} · out ${fmtClock(sh.end)}${sh.brk ? ` · break ${fmtClock(sh.brk[0])}–${fmtClock(sh.brk[1])}` : " · no break set"}${stateTxt}${punchLine}${segs.length > 1 ? ` · ${segs.map(g => posLabel(g.stn)).join(" → ")}` : ""}</p>
         <fieldset class="pe-edit"><legend>On ${posLabel(sg.stn)}</legend>
           <div class="pe-times"><label class="field"><span>${i === 0 ? "Clock in" : "From"}</span>${raw(tIn("from", sg.from, "required"))}</label>
           <label class="field"><span>${last ? "Clock out" : "Until"}</span>${raw(tIn("to", sg.to, "required"))}</label></div></fieldset>
