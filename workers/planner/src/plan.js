@@ -89,7 +89,7 @@ function cleanCrew(crew, stations, people) {
     seen.add(c.personId);
     if (!TIME.test(c.start || "")) throw new HttpError(400, `Clock-in for ${code} must be a time like 05:30.`);
     if (c.stop && !TIME.test(c.stop)) throw new HttpError(400, `Hard stop for ${code} must be a time like 14:00.`);
-    if (c.brk && !TIME.test(c.brk)) throw new HttpError(400, `Break for ${code} must be a time like 09:00.`);
+    if (c.brk && !/^\d{2}:\d{2}(-\d{2}:\d{2})?$/.test(c.brk)) throw new HttpError(400, `Break for ${code} must be times like 09:00-09:30.`);
     const hours = +c.hours; if (!(hours >= 0 && hours <= 16)) throw new HttpError(400, `Hours for ${code} must be between 0 and 16.`);
     out.push({ stationId: st, personId: c.personId, start: c.start, hours, stop: c.stop || null, source: c.source === "suggested" ? "suggested" : c.source === "clock" ? "clock" : "user",
       moves: cleanMoves(c.moves, stations, code), brk: c.brk || null });

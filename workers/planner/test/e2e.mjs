@@ -135,15 +135,23 @@ await t("Settings: summary email card with recipients, preview, Rippling pay-rat
   await p.click('dialog button[type="submit"]');
   ok(!(await p.isVisible("#notifyLine")), "no shuttle alert settings while shuttles are off");
 });
-await t("Plan: suggested crew, keep it, washers and Changes today", async () => {
+await t("Plan (manual, Oct 14): a new day copies the last plan; tap a bar to set times, a break and a move", async () => {
   await p.goto(url + "/#/plan"); await p.waitForSelector("#pl-board .tl-row");
-  await p.click("#pl-keep"); await saved();
-  // move someone from a station card: the sheet shows what changes, Move saves it
+  await p.waitForSelector("#pl-note >> text=Copied from"); await saved();
+  for (const id of ["#pl-suggest", "#pl-neck", "#pl-replan"]) ok(!(await p.$(id)), id + " is gone (no predictions)");
+  ok(!/done about/.test(await p.textContent("#pl-status")), "no predicted finish in the status line");
+  // Cora on DCT 1: 6:30–14:00, break 9:00–9:30, then SLB 1 from 11:00
   await p.click('#pl-board .tl-row[data-g="dct"] .tl-bar[data-emp="' + ids.Cora + '"] >> nth=0');
-  await p.waitForSelector("dialog.sheet #ms-impact div");
-  await p.click('dialog.sheet .ms-opt:has(input[value="slb"])'); await p.waitForSelector("dialog.sheet #ms-impact div");
-  await p.click('dialog.sheet button[type="submit"]'); await saved();
-  ok(await p.locator('#pl-board .tl-row[data-g="slb"] .tl-bar[data-emp]').count() >= 1, "now on starch bottoms");
+  await p.waitForSelector('dialog.sheet input[name="from"]');
+  await p.fill('dialog.sheet input[name="from"]', "06:30"); await p.fill('dialog.sheet input[name="to"]', "14:00");
+  await p.fill('dialog.sheet input[name="b0"]', "09:00"); await p.dispatchEvent('dialog.sheet input[name="b0"]', "change");
+  ok(await p.inputValue('dialog.sheet input[name="b1"]') === "09:30", "break end fills in");
+  await p.selectOption('dialog.sheet select[name="mv"]', "slb1"); await p.fill('dialog.sheet input[name="mvat"]', "11:00");
+  await p.click('dialog.sheet button[type="submit"]'); await p.waitForSelector("dialog", { state: "detached" }); await saved();
+  const cora = Object.values((await api("GET", `/plan/${DAY}`)).body.crew).find(c => c.personId === ids.Cora);
+  ok(cora.start === "06:30" && cora.stop === "14:00" && cora.brk === "09:00-09:30" && cora.moves.some(m => m.to === "slb1" && m.at === "11:00"), JSON.stringify(cora));
+  ok(await p.locator('#pl-board .tl-row[data-g="slb"] .tl-bar[data-emp]').count() >= 1, "now on starch bottoms too");
+  ok(await p.locator("#pl-board .tl-brk").count() >= 1, "break shows");
   ok(!(await p.isVisible("#pl-full")) && !(await p.isVisible("#pl-auto")), "Auto-assign and All full day are gone");
   for (const id of ["#pl-checks", "#pl-waves", "#pl-money", "#pl-wash"]) ok(!(await p.$(id)), id + " is off the Plan");
   // stations top to bottom: Reorder moves a row, saved for everyone
@@ -162,11 +170,11 @@ await t("Plan: suggested crew, keep it, washers and Changes today", async () => 
   await p.click('dialog button[type="submit"]'); await p.waitForSelector("dialog", { state: "detached" }); await saved();
   ok(Object.values((await api("GET", `/plan/${DAY}`)).body.crew).some(c => c.personId === who && c.stop === "12:30"), "hard stop saved");
   await p.click("#pl-chg-box summary"); await p.waitForSelector("#pl-chg .chg-list li");
-  ok(await p.isVisible('#pl-chg >> text=/moved from|moves to/'), "change logged");
+  ok(await p.isVisible('#pl-chg >> text=/moved from|moves to|break/'), "change logged");
   ok(await p.isVisible('#pl-chg >> text=Neal Barker'), "who");
   await shot(p, "e3-plan.png");
 });
-await t("Plan: Publish has a ? that explains it; today shows the starch bottoms card", async () => {
+await t("Plan: Publish has a ? that explains it; no bottleneck card", async () => {
   for (const id of ["publish"]) {
     await p.click(`.pv-foot [data-help="${id}"]`);
     await p.waitForSelector("dialog.help-dlg");
@@ -175,9 +183,7 @@ await t("Plan: Publish has a ? that explains it; today shows the starch bottoms 
     await p.click('dialog.help-dlg button[type="submit"]');
     await p.waitForSelector("dialog", { state: "detached" });
   }
-  if (isWorkDay) {
-    ok(await p.isVisible("#pl-neck"), "starch bottoms card"); ok(/Starch bottoms/.test(await p.textContent("#pl-neck")));
-    await p.locator("#pl-neck").screenshot({ path: join(SHOTS, "e3c-neck.png") }); }
+  ok(!(await p.$("#pl-neck")), "no bottleneck card");
 });
 await t("Plan: Print builds a one-page timeline", async () => {
   await p.evaluate(() => { window.print = () => { window.__printed = true; }; });
@@ -193,9 +199,8 @@ await t("Plan: Print builds a one-page timeline", async () => {
 await t("Plan: another date from the picker gets its own tab and saves on its own", async () => {
   await p.fill("#pl-date", later); await p.dispatchEvent("#pl-date", "change");
   await p.waitForSelector(`[data-day="${later}"].custom[aria-selected="true"]`);
-  await p.waitForSelector("#pl-board .tl-row");
-  await p.click("#pl-keep"); await saved();
-  ok((await api("GET", `/plan/${later}`)).body.rev === 1, "saved for the later day");
+  await p.waitForSelector("#pl-board .tl-row"); await saved();
+  ok((await api("GET", `/plan/${later}`)).body.rev >= 1, "copied and saved for the later day");
   await p.goto(url + `/#/plan?day=${LAST}`); await p.waitForSelector("#pl-board .tl-row");
   ok(await p.isVisible("text=This day is over"), "past day banner"); ok(!(await p.isVisible("#pl-pub")), "read-only");
   ok(!(await p.$("#pl-board .tl-lab[data-add]")), "no adding on a past day");
@@ -277,12 +282,12 @@ await t("Team: a manager sets someone's usual schedule and must-leave-by", async
   await p.click('dialog button[type="submit"]'); await p.waitForSelector("dialog", { state: "detached" });
   ok(await p.isVisible("text=/Mon–Fri.*leaves by 2:45 PM \\(School pickup\\)/"), "summary on the row");
 });
-await t("Tablet: the plan fits, and a person's sheet opens with what changes", async () => {
+await t("Tablet: the plan fits, and a person's sheet opens with their times", async () => {
   const m = await page({ width: 1194, height: 834 });
   await m.p.goto(url + "/#/plan"); await m.p.waitForSelector("#pl-board .tl-row");
   ok(await m.p.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1), "no sideways scroll");
   await m.p.screenshot({ path: join(SHOTS, "e9-plan-tablet.png") });
-  await m.p.click("#pl-board .tl-bar[data-emp]"); await m.p.waitForSelector("dialog.sheet #ms-impact div");
+  await m.p.click("#pl-board .tl-bar[data-emp]"); await m.p.waitForSelector('dialog.sheet input[name="from"]');
   await m.p.screenshot({ path: join(SHOTS, "e9b-move-sheet.png") });
   await m.p.keyboard.press("Escape"); await m.p.waitForSelector("dialog", { state: "detached" });
   await m.p.goto(url + `/#/plan?day=${later}`); await m.p.waitForSelector("#pl-board .tl-bar");
@@ -290,7 +295,7 @@ await t("Tablet: the plan fits, and a person's sheet opens with what changes", a
   await m.ctx.close();
   const ph = await page({ width: 390, height: 844 });
   await ph.p.goto(url + "/#/plan"); await ph.p.waitForSelector("#pl-board .tl-row");
-  await ph.p.click("#pl-board .tl-bar[data-emp]"); await ph.p.waitForSelector("dialog.sheet #ms-impact div");
+  await ph.p.click("#pl-board .tl-bar[data-emp]"); await ph.p.waitForSelector('dialog.sheet input[name="from"]');
   await ph.p.screenshot({ path: join(SHOTS, "e9c-move-phone.png") });
   await ph.p.keyboard.press("Escape"); await ph.p.waitForSelector("dialog", { state: "detached" });
   await ph.p.goto(url + `/#/plan?day=${later}`); await ph.p.waitForSelector("#pl-board .tl-bar");

@@ -84,8 +84,22 @@ export function createEngine(S) {
     return { start, staffedLo, loads, laundryDone: lastOf(["slt", "slb"]), tcDone: lastOf(["tc"]), comfDone: lastOf(["comf"]),
       ready: (ty, t) => { let n = 0; for (const x of loads) if (x.type === ty && x.to <= t + 1e-9) n += x.n; return n; } };
   }
+  // ---------- manual plans (Neal, Oct 14: "remove all predictive planning ... let the user manually create a plan")
+  // With s.manual the plan is exactly what the manager entered: each position's clock-in (start), clock-out (stop),
+  // station moves and one break ("HH:MM-HH:MM", or "HH:MM" for a break of s.breakMin). Nothing is simulated.
+  const MANUAL = !!s.manual;
+  function manualTimes(id) {
+    const c = s.crew[id] || {}, start = parseTime(c.start) ?? parseTime(s.defStart) ?? 7;
+    const bm = String(c.brk || "").match(/^(\d{1,2}:\d{2})(?:-(\d{1,2}:\d{2}))?$/);
+    let brk = null;
+    if (bm) { const b0 = parseTime(bm[1]), b1 = bm[2] ? parseTime(bm[2]) : b0 + (s.breakMin || 0) / 60; if (b1 > b0) brk = [b0, b1]; }
+    const bl = brk ? brk[1] - brk[0] : 0;
+    let end = parseTime(c.stop); if (end == null || end <= start) end = start + Math.max(0, +c.hrs || 0) + bl;
+    return { start, end, brk, bl, work: Math.max(0, end - start - bl) };
+  }
   // clock-in, working hours (after any hard stop) and hard stop for one position
   function crewTimes(id) {
+    if (MANUAL) { const m = manualTimes(id); return { start: m.start, a: (s.crew[id] || {}).emp ? m.work : 0, stop: m.end }; }
     const c = s.crew[id] || {}; const start = parseTime(c.start) ?? parseTime(s.defStart) ?? 7;
     let a = c.emp ? Math.max(0, +c.hrs || 0) : 0; const stop = parseTime(c.stop);
     if (stop != null && stop > start) { const el = stop - start, b = s.breakMin / 60; const fit = el - b > s.breakAfter + EPS ? el - b : (el > s.breakAfter + EPS ? Math.min(el, s.breakAfter) : el); a = Math.min(a, Math.max(0, fit)); }
@@ -125,6 +139,14 @@ export function createEngine(S) {
     return out;
   }
   function stationInfo() {
+    if (MANUAL) {
+      const out = {};
+      for (const st of STATIONS) {
+        const m = manualTimes(st.id), on = !!(s.crew[st.id] || {}).emp;
+        out[st.id] = { ...st, a: on ? m.work : 0, start: m.start, b: m.bl, ot: 0, stop: m.end, off: m.start, schedEnd: m.end, brkS: m.brk ? m.brk[0] : null };
+      }
+      return out;
+    }
     const out = {}, BP = breakPlan();
     for (const st of STATIONS) {
       const { start, a, stop } = crewTimes(st.id);
@@ -317,7 +339,38 @@ export function createEngine(S) {
     return { I, emps, pool, init, A, WP, TL };
   }
 
+  // the day as entered: each person on their station from clock-in, moving at each move's time, out at clock-out
+  function manualPlan(q) {
+    const I = stationInfo(), rows = [], totalPieces = CATS.reduce((t, k) => t + (q[k] || 0), 0);
+    for (const st of STATIONS) {
+      const x = I[st.id], c = s.crew[st.id] || {};
+      if (!c.emp || !(x.schedEnd > x.start)) { rows.push({ st, x, staffed: false, segs: [], tasks: [], work: 0, comf: 0, active: 0, finish: null, clockOut: null, ot: 0, idle: 0, regPaid: 0, early: 0, moved: false }); continue; }
+      const m = manualTimes(st.id);
+      const all = (c.moves || []).map(v => ({ at: parseTime(v.at), to: v.to })).filter(v => v.at != null && TYPE_OF[v.to]).sort((a, b) => a.at - b.at);
+      const first = all.filter(v => v.at <= m.start + EPS).pop();   // a move at clock-in: that's where they start
+      const moves = all.filter(v => v.at > m.start + EPS && v.at < m.end - EPS);
+      const cuts = [{ at: m.start, to: first ? first.to : st.id }, ...moves], segs = [];
+      cuts.forEach((v, i) => {
+        const from = v.at, to = i + 1 < cuts.length ? cuts[i + 1].at : m.end;
+        const parts = m.brk && m.brk[1] > from && m.brk[0] < to ? [[from, m.brk[0]], [m.brk[1], to]] : [[from, to]];
+        for (const [f, t] of parts) if (t - f > EPS) segs.push({ stn: v.to, from: f, to: t, pcs: 0 });
+      });
+      const tasks = segs.map(g => ({ stn: g.stn, from: g.from, to: g.to, hours: g.to - g.from, pcs: 0 }));
+      const work = segs.reduce((a, g) => a + g.to - g.from, 0);
+      rows.push({ st, x, staffed: true, emp: { empId: c.emp, pos0: st.id }, segs, brkS: m.brk ? m.brk[0] : null, brkE: m.brk ? m.brk[1] : null, brkTaken: m.bl, tasks, work, comf: 0, active: work,
+        finish: m.end, clockOut: m.end, ot: 0, idle: 0, regPaid: m.end - m.start, paid: m.end - m.start, early: 0, moved: segs.some(g => g.stn !== st.id), gap: 0 });
+    }
+    const st2 = rows.filter(r => r.staffed), opsOn = opsInfo().filter(o => o.on);
+    if (!st2.length && !opsOn.length) return { empty: true, I, noCrew: totalPieces > 0 };
+    const starts = [...st2.map(r => r.x.start), ...opsOn.map(o => o.start)], ends = [...st2.map(r => r.clockOut), ...opsOn.map(o => o.end)];
+    const cover = {}; for (const st of STATIONS) cover[st.id] = [];
+    for (const rw of st2) for (const tk of rw.tasks) if (cover[tk.stn]) cover[tk.stn].push({ row: rw, hours: tk.hours, pcs: 0, from: tk.from });
+    const short = { slt: 0, slb: 0, dct: 0, dcb: 0, tc: 0, comf: 0, asm: 0 };
+    return { manual: true, P: { short, shortTotal: 0, A: 0 }, I, rows, end: Math.max(...ends), firstStart: Math.min(...starts), spread: 0, done: totalPieces,
+      labor: st2.reduce((a, r) => a + r.work, 0), otTotal: 0, totalPieces, staffedN: st2.length, cover, W: null, TL: [] };
+  }
   function buildPlan(q) {
+    if (MANUAL) return manualPlan(q);
     const I = stationInfo();
     const staffed = Object.values(I).filter(x => x.a > EPS);
     const totalPieces = q.dct + q.dcb + q.slt + q.slb + q.comf + q.tc;
@@ -369,6 +422,10 @@ export function createEngine(S) {
 
   const payRate = posId => { const e = empById((s.crew[posId] || {}).emp); return (e && +e.rate > 0) ? +e.rate : s.payAvg; };
   function opsInfo() {
+    if (MANUAL) return OPS.map(o => {
+      const c = s.crew[o.id] || {}, m = manualTimes(o.id), on = !!c.emp && m.end > m.start;
+      return { o, on, hrs: on ? m.work : 0, start: m.start, b: m.bl, end: m.end, brkS: m.brk ? m.brk[0] : null };
+    });
     const BP = breakPlan();
     return OPS.map(o => {
       const c = s.crew[o.id] || {}; const ct = crewTimes(o.id); const on = !!c.emp && ct.a > 0; const hrs = on ? ct.a : 0;

@@ -1,4 +1,4 @@
-// Plan: pieces from SMRT, the crew on each station, the day simulated minute by minute, and publishing.
+// Plan: pieces from SMRT, the crew on each station as the manager enters it (no predictions, Neal Oct 14), and publishing.
 // Changes save on their own (a second PC that saved in between wins and this one is refreshed with its plan).
 import { api } from "../api.js";
 import { html, raw, ago, toast, openDialog, RANK } from "../ui.js";
@@ -20,19 +20,10 @@ const first = n => String(n || "").split(" ")[0];
 const store = { get: k => { try { return localStorage.getItem(k); } catch { return null; } }, set: (k, v) => { try { localStorage.setItem(k, v); } catch {} } };
 
 const groupOf = M.groupOf;
-let neckT = null; // the bottleneck card's move search runs just after drawing
 let pick = null; // the day being looked at, kept while moving between sections
 
 // What each button at the top of the Plan does (the "?" next to it opens this).
 const HELP = {
-  suggest: { title: "Suggest from history", body: `<p>Builds a whole crew for this day:</p>
-    <ul><li><b>Who:</b> everyone on Team who isn't marked <b>out</b> (and whose usual days include this day).</li>
-    <li><b>When:</b> each person's usual clock-in for that weekday. Anyone marked late on Team starts at their late time.</li>
-    <li><b>Where:</b> the station depth chart on Team. Operators first; with more starch bottoms than one presser can do, both SLB presses next; then each station with work, busiest first, gets its #1, or the next person down its list.</li>
-    <li>Comforters and Tablecloths aren't starting stations; people move there later. SLT 2 opens for heavy starch tops, or for a spare person.</li>
-    <li>Someone in early covers a late person's station until they arrive (e.g. Maria on SLB 2 until Diana), shown as moves.</li></ul>
-    <p><b>It replaces the crew</b> for this day, including changes you made by hand. Undo (Ctrl+Z) brings the old crew back. Nothing reaches the floor until you Publish.</p>
-    <p>Best for starting a day. To change one or two things, edit the crew directly.</p>` },
   undo: { title: "Undo", body: `<p>Takes back the last change to the crew or the piece counts on this screen (also Ctrl+Z). It goes back up to 60 steps, until you leave the Plan.</p>
     <p>It doesn't undo time off, call-outs or publishing.</p>` },
   print: { title: "Print", body: `<p>Prints the plan on one page: crew with times, and each person's moves and breaks. Choose "Save as PDF" in the print window to keep a copy.</p>` },
@@ -79,7 +70,7 @@ export async function render(main, ctx) {
     can = canRole && !isPast() && !ctx.offline;
     adopt(plan);
     st.undo = [];
-    if (!plan.rev && !Object.keys(plan.crew).length && !isPast()) suggest("open");
+    if (!plan.rev && !Object.keys(plan.crew).length && !isPast()) await copyPrev();
     drawPage();
     loadChanges();
     st.tally = null; loadTally();
@@ -100,11 +91,18 @@ export async function render(main, ctx) {
     return { s, ...pos, people, crew: st.crew, q, waves: dp.waves, day: pick, today: st.V.today, isToday: dp.isToday, now: dp.isToday ? nowH() : null,
       callouts: st.plan.callouts, late: st.plan.late || [], history: st.plan.history, clock: st.plan.clock, clockAsOf: st.plan.clockAsOf || null, published: st.plan.published, admin, expected: dp.expected && !Object.keys(st.overrides).length, dp };
   }
-  function suggest(why) {
-    const P = makeP(), E = M.evaluate(P).E;
-    const r = M.suggestCrew(P, E);
-    st.crew = r.crew;
-    st.note = { basis: r.basis, left: r.left.map(e => e.name), why };
+  // a new day starts as a copy of the last saved plan (Neal, Oct 14), without anyone who's out that day
+  async function copyPrev() {
+    for (let k = 1; k <= 10; k++) {
+      const d = new Date(Date.parse(pick + "T12:00:00Z") - k * 864e5).toISOString().slice(0, 10);
+      let p; try { p = await api(`/plan/${d}`); } catch { continue; }
+      if (!p || !p.rev || !Object.keys(p.crew || {}).length) continue;
+      const out = new Set((st.plan.callouts || []).map(c => c.personId));
+      st.crew = M.copyCrew(p.crew, POS, s, out);
+      st.note = { copied: d, left: [...out].filter(id => Object.values(p.crew).some(c => c.personId === id)).map(id => M.nameOf({ people }, id)) };
+      if (can) { st.dirty = true; setTimeout(save, 0); }
+      return;
+    }
   }
 
   // ------------------------------------------------------------ editing, undo and saving
@@ -190,14 +188,13 @@ export async function render(main, ctx) {
         <div class="pv-tools">
           <span class="saved-note" id="pl-save" aria-live="polite"></span>
           ${can ? raw(html`<button class="btn ghost small pv-tool" id="pl-undo" title="Undo (Ctrl+Z)" aria-label="Undo" disabled><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 14 4 9l5-5"/><path d="M4 9h10a6 6 0 0 1 0 12h-3"/></svg><span>Undo</span></button>
-            <button class="btn ghost small pv-tool" id="pl-suggest" title="Build the crew from who usually works this weekday" aria-label="Suggest from history"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 4v5h5"/><path d="M12 7v5l3 2"/></svg><span>Suggest</span></button>`) : ""}
+`) : ""}
           <button class="btn ghost small pv-tool" id="pl-print" title="Print the plan, or save it as a PDF" aria-label="Print"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 9V3h10v6"/><rect x="3" y="9" width="18" height="8" rx="2"/><path d="M7 14h10v7H7z"/></svg><span>Print</span></button>
         </div>
       </div>
       <div class="pv-status" id="pl-status" aria-live="polite"></div>
       ${isPast() ? raw(html`<div class="banner info"><b>This day is over.</b> The plan is shown as it was saved (read-only). <a href="#/review?day=${pick}">See how it went in Review</a>.</div>`) : ""}
       <div id="pl-note"></div>
-      <section class="pv-neck" id="pl-neck" aria-label="The bottleneck"></section>
       <section class="pv-presses" id="pl-presses" aria-label="Starch bottoms presses" hidden></section>
       <section class="pv-work" id="pl-work" aria-label="The rest of the work"></section>
       <section class="pv-board" aria-label="Stations">
@@ -208,7 +205,7 @@ export async function render(main, ctx) {
         <div class="pv-away" id="pl-away"></div>
       </section>
       <section class="card pl-card"><details id="pl-chg-box"><summary class="pl-cardhead"><div><h2>Changes today <span class="count soft" id="pl-chg-n"></span></h2><p>Who changed what.</p></div></summary><div id="pl-chg"></div></details></section>
-      ${can ? raw(html`<div class="pv-foot">${P0isToday() ? raw('<button class="btn" id="pl-replan">Re-plan from now</button>') : ""}<button class="btn primary" id="pl-pub"></button>${raw(helpBtn("publish"))}</div>`) : ""}
+      ${can ? raw(html`<div class="pv-foot"><button class="btn primary" id="pl-pub"></button>${raw(helpBtn("publish"))}</div>`) : ""}
     </div><div id="pl-print-sheet" class="print-sheet" aria-hidden="true"></div>`;
     main.querySelectorAll("[data-day]").forEach(b => b.addEventListener("click", async () => {
       if (b.dataset.day === pick) return;
@@ -230,19 +227,13 @@ export async function render(main, ctx) {
     chg.addEventListener("toggle", () => { store.set("pl-chg-open", chg.open ? "1" : "0"); if (chg.open) loadChanges(); });
     if (can) {
       main.querySelector("#pl-undo").addEventListener("click", undo);
-      main.querySelector("#pl-suggest").addEventListener("click", () => openDialog({
-        title: "Suggest a crew?", submitLabel: "Replace the crew",
-        body: html`<p class="dlg-lead">Replaces the crew for ${longDay(pick)} with everyone who isn't out that day (Team's usual days count), at their usual clock-in, on the stations they're usually on. You can undo it.</p>`,
-        onSubmit: () => edit(() => suggest("button"), { keepNote: true }),
-      }));
       main.querySelector("#pl-pub").addEventListener("click", publishDialog);
-      main.querySelector("#pl-replan")?.addEventListener("click", replanSheet);
     }
     main.querySelector("#pl-board").addEventListener("click", ev => {
       const up = ev.target.closest("[data-up],[data-down]");
       if (up) return moveRow(up.dataset.up || up.dataset.down, up.dataset.up ? -1 : 1);
       const b = ev.target.closest("[data-emp],[data-add]"); if (!b || !can || reorder) return;
-      if (b.dataset.add) addSheet(b.dataset.add, b.dataset.code); else personSheet(b.dataset.emp);
+      if (b.dataset.add) addSheet(b.dataset.add, b.dataset.code); else personSheet(b.dataset.emp, b.dataset.stn || null, b.dataset.at != null ? +b.dataset.at : null);
     });
     main.querySelector("#pl-reorder")?.addEventListener("click", e => {
       reorder = !reorder; e.currentTarget.setAttribute("aria-pressed", String(reorder)); e.currentTarget.textContent = reorder ? "Done" : "Reorder";
@@ -271,21 +262,18 @@ export async function render(main, ctx) {
   }
   function drawNote() {
     const el = document.getElementById("pl-note"); if (!el) return;
-    if (!st.note) { el.innerHTML = ""; return; }
-    el.innerHTML = html`<div class="banner info"><b>Suggested crew.</b> Everyone who isn't out (Team's usual days count), at their usual clock-in, on the stations they're usually on — starch bottoms presses first; SLT 2, then the second assembly spot, are the ones left empty when there aren't enough people.${st.note.left.length ? ` Not placed: ${st.note.left.join(", ")}.` : ""}
-      ${can && !st.rev ? raw(html` <button class="linkish" id="pl-keep">Keep this crew</button>`) : ""}</div>`;
-    el.querySelector("#pl-keep")?.addEventListener("click", () => { st.dirty = true; save(); st.note = null; drawNote(); });
+    if (!st.note || !st.note.copied) { el.innerHTML = ""; return; }
+    el.innerHTML = html`<div class="banner info"><b>Copied from ${longDay(st.note.copied)}.</b> Same people, stations, times and breaks — change anything by tapping it.${st.note.left.length ? ` Left off (out today): ${st.note.left.join(", ")}.` : ""}</div>`;
   }
 
   /** Runs the plan and redraws everything that depends on it. */
   function update() {
     if (!alive()) return;
     const X = st.X = M.evaluate(makeP());
-    const L = st.L = X.P.isToday ? M.liveSuggestions(X, new Set(st.plan.hidden || [])) : null;
+    const L = st.L = null;   // no predictions (Neal, Oct 14)
     // the production day is over: what's left waits for later or for a manager, so nothing more is planned (Neal, Oct 13)
     st.over = M.productionDone(X.P, X.P.dp?.D?.lastAsm, M.breaksOf(X.R));
-    drawNote(); drawStatus(X, L); drawNeck(X, L); drawPresses(); drawWork(X, L); drawBoard(X, L); drawAway(X.P);
-    const rp = document.getElementById("pl-replan"); if (rp) rp.hidden = !!st.over;
+    drawNote(); drawStatus(X, L); drawPresses(); drawWork(X, L); drawBoard(X, L); drawAway(X.P);
     drawPub(X); saveStatus();
   }
 
@@ -298,15 +286,14 @@ export async function render(main, ctx) {
       const left = leftovers(P), n = left.reduce((t, x) => t + x.n, 0);
       cls = "good done";
       txt = raw(html`<b>Production day complete</b> · ${st.over.why === "out" ? `everyone clocked out by ${hm(st.over.at)}` : `nothing assembled since ${hm(st.over.at)}`}${n ? ` · ${fmtN(n)} ${n === 1 ? "piece" : "pieces"} left for later` : " · everything's done"}`);
-    } else if (X.R.empty) txt = X.R.noCrew ? "No one is on a station yet — tap + Add on a station, or Suggest." : "Nothing to plan yet.";
-    else if (L && L.on && L.fromNow) {
-      const f = L.fromNow, left = Math.round(f.left), ot = left > 0 && (f.ot || f.otH > 0.04);
-      cls = left <= 0 ? "good" : ot ? "warn" : "good";
-      txt = left <= 0 ? raw(html`<b>Everything's done</b> · ${fmtN(tot)} pieces`) : raw(html`<b>${fmtN(left)}</b> pieces left · ${f.people} working · done about <b>${f.etc != null ? hm(f.etc) : "—"}</b>${ot ? ` · ${fmtH(f.otH)} overtime` : ""}`);
-    } else {
-      const ot = X.R.otTotal > 0.04, people = X.R.rows.filter(r => r.staffed).length + X.E.opsInfo().filter(x => x.on).length;
-      cls = ot ? "warn" : "good";
-      txt = raw(html`<b>${P.expected ? "~" : ""}${fmtN(tot)}</b> pieces · ${people} people · done about <b>${hm(X.R.end)}</b>${ot ? ` · ${fmtH(X.R.otTotal)} overtime` : ""}`);
+    } else if (X.R.empty) txt = "No one is on a station yet — tap a station to add someone.";
+    else {
+      // facts only (Neal, Oct 14): pieces (left today), people, and the planned hours
+      const people = X.R.rows.filter(r => r.staffed).length + X.E.opsInfo().filter(x => x.on).length;
+      const hrs = X.R.rows.filter(r => r.staffed).reduce((a, r) => a + r.work, 0) + X.E.opsInfo().filter(x => x.on).reduce((a, x) => a + x.hrs, 0);
+      const D = P.dp?.D, left = P.isToday && D ? leftovers(P).reduce((t, x) => t + x.n, 0) : null;
+      cls = "good";
+      txt = raw(html`${left != null ? raw(html`<b>${fmtN(left)}</b> of ${fmtN(tot)} pieces left`) : raw(html`<b>${P.expected ? "~" : ""}${fmtN(tot)}</b> pieces`)} · ${people} people · ${fmtH(hrs)} planned · in ${hm(X.R.firstStart)}–${hm(X.R.end)}`);
     }
     el.className = `pv-status ${cls}`;
     el.innerHTML = html`<span class="pv-dot" aria-hidden="true"></span><span>${txt}</span><span id="pl-smrt"></span>`;
@@ -337,44 +324,15 @@ export async function render(main, ctx) {
         </div>`); })}</div>`;
   }
 
-  // ---- the bottleneck: starch bottoms (Neal: the main reason for the planner)
-  function drawNeck(X, L) {
-    const el = document.getElementById("pl-neck"); if (!el) return;
-    const B = st.over ? null : M.bottleneck(X, L);
-    if (!B) { el.hidden = true; el.innerHTML = ""; return; }
-    el.hidden = false;
-    const done = B.left < 0.5, behind = !done && B.expected > 0 && B.needed > 0 && B.needed > B.expected + 0.5;
-    el.className = `pv-neck ${done ? "good" : B.ot || behind ? "warn" : ""}`;
-    const live = X.P.isToday && L && L.on;
-    el.innerHTML = html`<div class="nk-head"><i class="sw" style="--c:${CAT_COLOR[B.k]}"></i><h2>${TILE[B.k]}</h2><span class="nk-tag">${B.k === "slb" ? "The bottleneck" : "Finishes last"}</span></div>
-      <div class="nk-nums">
-        <div><b>${fmtN(B.left)}</b><span>${live ? "left" : "to do"}${live && B.done ? ` · ${fmtN(B.done)} done` : ""}</span></div>
-        <div><b>${done || !B.presses || !B.needed ? "—" : `${Math.round(B.needed)}/hr`}</b><span>${!done && B.presses && B.needed ? `needed by ${hm(B.shiftEnd)}` : !done && B.presses ? "shifts are over" : "needed"}</span></div>
-        <div><b class="${behind || (!B.presses && !done) ? "warn-txt" : ""}">${B.presses ? `${Math.round(B.expected)}/hr` : "No one"}</b><span>${B.presses ? `${B.presses} ${B.presses === 1 ? "press" : "presses"} at ${Math.round(B.perPress)}` : "on it right now"}</span></div>
-      </div>
-      <p class="nk-line">${done ? "All done." : raw(html`At this pace ${TILE[B.k].toLowerCase()} finish about <b class="${B.ot ? "warn-txt" : ""}">${B.etc != null ? hm(B.etc) : "—"}</b>${B.ot ? " — past the end of the shifts" : ""}.`)}</p>
-      <div class="nk-fix" id="pl-neck-fix"></div>`;
-    clearTimeout(neckT);
-    if (!can || done) return;
-    // trying moves runs the plan a few times: do it just after the page is drawn
-    neckT = setTimeout(() => {
-      if (!alive() || st.X !== X) return;
-      const mv = M.bottleneckMoves(X, L, { max: 1 })[0], box = document.getElementById("pl-neck-fix"); if (!box) return;
-      if (!mv) { box.innerHTML = ""; return; }
-      box.innerHTML = html`<button class="btn nk-btn" id="pl-neck-go">Move ${first(mv.name)} to ${TILE[mv.k].toLowerCase()} at ${hm(parseTime(mv.at))} → done ${hm(mv.kAfter)}</button>`;
-      box.querySelector("#pl-neck-go").addEventListener("click", () => edit(() => { st.crew = M.applyMove(st.crew, POS, mv.empId, mv.k, mv.at); }, { msg: `${first(mv.name)} moves to ${TILE[mv.k].toLowerCase()} at ${hm(parseTime(mv.at))}. Publish when you're ready.` }));
-    }, 60);
-  }
-
-  // ---- the rest of the work, small: left (or due) and when it's done
-  function drawWork(X, L) {
+  // ---- the work: pieces due and (today) done, by kind of work. Counts only — no finish times (Neal, Oct 14)
+  function drawWork(X) {
     const el = document.getElementById("pl-work"); if (!el) return;
-    const P = X.P, D = P.dp.D, live = P.isToday && L && L.on && L.cats, ends = M.catEnds(X.E, X.R), neck = st.over ? null : M.bottleneck(X, L)?.k;
-    const cells = CATS.filter(k => k !== neck && (P.q[k] || 0) > 0.5).map(k => {
-      const left = live ? Math.round(L.cats[k].left) : Math.round(P.q[k]), etc = live ? L.cats[k].etc : ends[k], ot = live ? L.cats[k].ot : M.catOvertime(X.E, X.R, k);
+    const P = X.P, D = P.dp.D, live = P.isToday && D;
+    const cells = CATS.filter(k => (P.q[k] || 0) > 0.5).map(k => {
+      const left = live ? Math.max(0, Math.round(P.q[k] - (D.done[k] || 0))) : Math.round(P.q[k]);
       const over = st.overrides[k] != null;
       const line = left <= 0 ? raw('<span class="good-txt">done</span>') : st.over ? raw(html`<span class="muted">${fmtN(left)} for later</span>`)
-        : raw(html`<span class="${ot ? "bad-txt" : live ? "warn-txt" : ""}">${fmtN(left)}${etc != null ? ` by ${hmShort(etc)}` : ""}</span>`);
+        : raw(html`<span>${fmtN(left)} ${live ? "left" : "to do"}</span>`);
       return html`<${can ? "button" : "div"} class="wk ${over ? "typed" : ""}" ${can ? raw(`type="button" data-cat="${k}" title="Change the number to plan with"`) : ""}><span class="wk-l"><i class="sw" style="--c:${CAT_COLOR[k]}"></i>${TILE[k]}</span>
         <span class="wk-n">${live ? `${fmtN(D.done[k] || 0)} of ${fmtN(P.q[k])}` : `${P.expected ? "~" : ""}${fmtN(P.q[k])}`}${over ? " · typed" : ""}</span><span class="wk-t">${line}</span></${can ? "button" : "div"}>`;
     });
@@ -396,7 +354,7 @@ export async function render(main, ctx) {
   // ---- stations, top to bottom (order set with Reorder), and the whole day across in 15-minute steps (Neal, Oct 13)
   function boardHint() {
     const h = document.getElementById("pl-board-hint"); if (!h) return;
-    h.textContent = reorder ? "Move a station up or down. Everyone sees the same order." : !can ? "" : boardView === "people" ? "Each bar is the station they're on · tap to move them" : "Tap a person to move them · tap a station to add someone";
+    h.textContent = reorder ? "Move a station up or down. Everyone sees the same order." : !can ? "" : boardView === "people" ? "Each bar is the station they're on · tap one to set times, a break or a move" : "Tap a person to set their times, break or a move · tap a station to add someone";
   }
   function drawBoard(X, L) {
     const el = document.getElementById("pl-board"); if (!el) return;
@@ -416,16 +374,10 @@ export async function render(main, ctx) {
     const pct = h => ((h - a) / (b - a) * 100).toFixed(3) + "%", wid = (f, t) => ((t - f) / (b - a) * 100).toFixed(3) + "%";
     const ticks = []; for (let t = a; t < b; t++) ticks.push(html`<span style="left:${pct(t)}">${(t % 12) || 12}${t === 12 ? raw("<small>PM</small>") : t === a ? raw(`<small>${t < 12 ? "AM" : "PM"}</small>`) : ""}</span>`);
     const nowLine = now != null && now > a && now < b ? html`<i class="tl-now" style="left:${pct(now)}" aria-hidden="true"></i>` : "";
-    const statusOf = g => {
-      const k = g.cat;
-      if (k && (P.q[k] || 0) > 0.5) {
-        const left = live ? Math.round(L.cats[k].left) : Math.round(P.q[k]), etc = live ? L.cats[k].etc : ends[k], ot = live ? L.cats[k].ot : M.catOvertime(X.E, X.R, k);
-        if (left <= 0) return html`<span class="good-txt">done</span>`;
-        if (st.over) return html`<span class="muted">${fmtN(left)} for later</span>`;
-        return html`<span class="${ot ? "bad-txt" : ""}">${fmtN(left)}${etc != null ? ` · ${hmShort(etc)}` : " · no one"}</span>`;
-      }
-      if (g.key === "asm" && ends.asm) return html`<span class="muted">until ${hmShort(ends.asm)}</span>`;
-      return "";
+    const statusOf = g => {   // pieces of that kind still to do (today: left) — counts only
+      const k = g.cat; if (!k || !((P.q[k] || 0) > 0.5)) return "";
+      const D = P.dp?.D, left = P.isToday && D ? Math.max(0, Math.round(P.q[k] - (D.done?.[k] || 0))) : Math.round(P.q[k]);
+      return left <= 0 ? html`<span class="good-txt">done</span>` : html`<span>${fmtN(left)} ${P.isToday ? "left" : "to do"}</span>`;
     };
     const barHtml = (g, l, lane = l.lane) => {
       const pi = info[l.empId], nm = pi ? pi.first : first(M.nameOf(P, l.empId));
@@ -439,7 +391,7 @@ export async function render(main, ctx) {
           const label = people ? x.label : nm;
           const tip = people ? `${pi?.name || nm}: ${x.label} ${fmtClock(x.from)}–${fmtClock(x.to)}${x.ot ? " (overtime)" : ""}${gone ? ` — clocked out ${fmtClock(cut)}` : noshow ? " — not clocked in" : x.idle ? " — nothing to do" : ""}`
             : `${pi?.name || nm}: ${g.label}${l.code !== g.code && g.code ? ` (from ${(POS.find(p => p.id === l.code) || {}).label || l.code})` : ""} ${fmtClock(x.from)}–${fmtClock(x.to)}${x.ot ? " (overtime)" : ""}${gone ? ` — clocked out ${fmtClock(cut)}` : noshow ? " — not clocked in" : x.idle ? " — nothing to do" : ""}`;
-          out.push(html`<button type="button" class="tl-bar ${x.ot ? "ot" : ""} ${gone ? "gone" : ""} ${noshow ? "noshow" : ""} ${x.idle ? "idle" : ""}" data-emp="${l.empId}" style="left:${pct(pf)};width:${wid(pf, pt)};top:${lane * 32 + 6}px;--c:${COLOR[x.key || g.key] || COLOR.ops}" title="${tip}" aria-label="${tip}">${label ? raw(html`<b>${label}</b>`) : ""}</button>`);
+          out.push(html`<button type="button" class="tl-bar ${x.ot ? "ot" : ""} ${gone ? "gone" : ""} ${noshow ? "noshow" : ""} ${x.idle ? "idle" : ""}" data-emp="${l.empId}" data-stn="${people ? x.stn : g.code}" data-at="${x.from}" style="left:${pct(pf)};width:${wid(pf, pt)};top:${lane * 32 + 6}px;--c:${COLOR[x.key || g.key] || COLOR.ops}" title="${tip}" aria-label="${tip}">${label ? raw(html`<b>${label}</b>`) : ""}</button>`);
         }
       });
       return out.join("");
@@ -485,167 +437,113 @@ export async function render(main, ctx) {
     const out = P.callouts || [], late = P.late || [];
     el.innerHTML = html`${out.length ? raw(html`<span>Out: ${out.map(c => M.nameOf(P, c.personId)).join(", ")}</span>`) : ""}
       ${late.length ? raw(html`<span>In late: ${late.map(l => `${M.nameOf(P, l.personId)} ${fmtClock(parseTime(l.at))}`).join(", ")}</span>`) : ""}
-      ${can ? raw('<button class="linkish" id="pl-away-btn">Out, late or hard stop…</button>') : ""}<a class="linkish" href="#/team">Team</a>`;
+      ${can ? raw('<button class="linkish" id="pl-away-btn">Out or late…</button>') : ""}<a class="linkish" href="#/team">Team</a>`;
     el.querySelector("#pl-away-btn")?.addEventListener("click", () => awayDialog(makeP()));
   }
 
-  // ---- move a person: where, from when, and what changes
-  function timeChoices(P, startH) {
-    if (P.isToday && P.now != null) { const n = Math.ceil(P.now * 12) / 12; return [["Now", hhmm(n)], ...[0.5, 1, 2].map(d => { const t = Math.ceil((P.now + d) * 2) / 2; return [hm(t), hhmm(t)]; })]; }
-    return [["All day", hhmm(startH)], ...[9, 10.5, 12].filter(t => t > startH + 0.25).map(t => [hm(t), hhmm(t)])];
-  }
-  function personSheet(empId) {
+  // ---- a person on the plan (Neal, Oct 14): tap a bar to set when they're on that station, their break, or move them
+  const posLabel = code => code === "comf" ? "Comforters" : (POS.find(p => p.id === code) || {}).label || code;
+  const tIn = (name, h, extra = "") => `<input class="input" type="time" step="300" name="${name}" value="${h != null ? hhmm(h) : ""}" ${extra}>`;
+  function personSheet(empId, stn = null, at = null) {
     const X = st.X, P = X.P, code = Object.keys(st.crew).find(k => st.crew[k].emp === empId); if (!code) return;
-    const pi = personInfo(X, code), e = people.find(p => p.id === empId), groups = M.boardGroups(POS, order()).filter(g => g.key !== "ops" || g.codes.includes(code));
-    const curKey = groupOf(POS.find(p => p.id === M.stationAt(st.crew[code], code, P.isToday && P.now != null ? P.now : pi.startH))?.type);
-    const rankIn = g => Math.min(...g.codes.map(c => X.E.rankOf(e, c) || 99));
-    const opts = groups.filter(g => g.key !== curKey).sort((a, b) => rankIn(a) - rankIn(b));
-    const T = timeChoices(P, pi.startH);
-    const state = { to: opts.find(g => rankIn(g) < 99)?.key || opts[0]?.key, at: T[0][1] };
-    const brkAt = M.breaksOf(X.R)[empId]?.s ?? X.E.opsInfo().find(o => o.o.id === code)?.brkS;
-    const stateTxt = (brkAt != null && !pi.state ? `Break ${fmtClock(brkAt)}${st.crew[code].brk ? " (set)" : ""} · ` : "") + (pi.state === "gone" ? `Clocked out ${fmtClock(pi.outAt)} · gone for the day` : pi.state === "break" ? `On break since ${fmtClock(pi.outAt)}` : pi.state === "missing" ? "Not clocked in yet" : pi.state === "in" ? "On the clock" : `Planned ${fmtClock(pi.startH)}–${fmtClock(pi.end)}`);
-    const dlg = openDialog({
-      title: `Move ${pi.name}`, submitLabel: "Move",
-      body: html`<p class="dlg-lead">Now on <b>${M.GROUP_LABEL[curKey] || ""}</b> · ${stateTxt}${pi.standing ? ` · must leave by ${fmtClock(parseTime(pi.standing))}` : ""}</p>
-        <fieldset class="ms-opts"><legend>To</legend>${opts.map(g => raw(html`<label class="ms-opt"><input type="radio" name="to" value="${g.key}" ${g.key === state.to ? "checked" : ""}>
-          <i class="sw" style="--c:${COLOR[g.key] || COLOR.ops}"></i><b>${g.label}</b><small>${rankIn(g) < 99 ? `trained · ${ORD(rankIn(g))}` : "not trained"}</small></label>`))}</fieldset>
-        <fieldset class="ms-times"><legend>From</legend>${T.map(([l, v], i) => raw(html`<label class="ms-time"><input type="radio" name="at" value="${v}" ${i === 0 ? "checked" : ""}><span>${l}</span></label>`))}
-          <label class="ms-time other"><span class="sr">Another time</span><input class="input" type="time" step="300" name="atx"></label></fieldset>
-        <div class="ms-impact" id="ms-impact" aria-live="polite"></div>
-        <div class="ms-more"><span class="muted small">${P.isToday ? "Today" : new Date(pick + "T12:00:00").toLocaleDateString(undefined, { weekday: "short", month: "numeric", day: "numeric" })} only:</span>
-          <button type="button" class="btn small ghost" data-act="brk">Break at…</button>
-          <button type="button" class="btn small ghost" data-act="home">Send home…</button><button type="button" class="btn small ghost" data-act="longer">Stay 1 hour longer</button>
-          <button type="button" class="btn small ghost" data-act="off">Off the plan</button><button type="button" class="btn small ghost" data-act="away">Out, late or hard stop…</button></div>`,
+    const c = st.crew[code], name = M.nameOf(P, empId), fn = first(name), e = people.find(p => p.id === empId);
+    const segs = M.segmentsOf(c, code, s.breakMin), sh = M.shiftOf(c, s.breakMin);
+    const near = t => segs.findIndex(g => t >= g.from - 1e-6 && t < g.to - 1e-6);
+    let i = stn != null && at != null ? segs.findIndex(g => g.stn === stn && at >= g.from - 0.02 && at < g.to + 0.02) : -1;
+    if (i < 0 && P.isToday && P.now != null) i = near(P.now);
+    if (i < 0) i = 0;
+    const sg = segs[i], last = i === segs.length - 1;
+    const pi = personInfo(X, code);
+    const stateTxt = pi && pi.state === "gone" ? ` · clocked out ${fmtClock(pi.outAt)}` : pi && pi.state === "break" ? " · on break" : pi && pi.state === "missing" ? " · not clocked in yet" : pi && pi.state === "in" ? " · on the clock" : "";
+    const trainedTxt = id => (X.E.rankOf(e, id) ? "" : " (not trained)");
+    const others = POS.filter(p => p.id !== sg.stn && (p.type === "ops") === (POS.find(x => x.id === code)?.type === "ops"));
+    const dayTxt = P.isToday ? "today" : new Date(pick + "T12:00:00").toLocaleDateString(undefined, { weekday: "short", month: "numeric", day: "numeric" });
+    openDialog({
+      title: `${name} · ${posLabel(sg.stn)}`, submitLabel: "Save",
+      body: html`<p class="dlg-lead">In ${fmtClock(sh.start)} · out ${fmtClock(sh.end)}${sh.brk ? ` · break ${fmtClock(sh.brk[0])}–${fmtClock(sh.brk[1])}` : " · no break set"}${stateTxt}${segs.length > 1 ? ` · ${segs.map(g => posLabel(g.stn)).join(" → ")}` : ""}</p>
+        <fieldset class="pe-edit"><legend>On ${posLabel(sg.stn)}</legend>
+          <div class="pe-times"><label class="field"><span>${i === 0 ? "Clock in" : "From"}</span>${raw(tIn("from", sg.from, "required"))}</label>
+          <label class="field"><span>${last ? "Clock out" : "Until"}</span>${raw(tIn("to", sg.to, "required"))}</label></div></fieldset>
+        <fieldset class="pe-edit"><legend>Break</legend>
+          <div class="pe-times"><label class="field"><span>Starts</span>${raw(tIn("b0", sh.brk ? sh.brk[0] : null))}</label>
+          <label class="field"><span>Ends</span>${raw(tIn("b1", sh.brk ? sh.brk[1] : null))}</label></div>
+          <p class="muted small">Leave both empty for no break. Ends fills in ${s.breakMin} minutes after it starts.</p></fieldset>
+        <fieldset class="pe-edit"><legend>Move to another station <em>(optional)</em></legend>
+          <div class="pe-times"><label class="field"><span>Station</span><select class="input" name="mv"><option value="">— Stay here —</option>
+            ${others.map(p => raw(html`<option value="${p.id}">${posLabel(p.id)}${trainedTxt(p.id)}</option>`))}</select></label>
+          <label class="field"><span>At</span>${raw(tIn("mvat", null))}</label></div></fieldset>
+        <div class="ms-more"><span class="muted small">${dayTxt} only:</span>
+          ${i > 0 ? raw('<button type="button" class="btn small ghost" data-act="drop">Remove this station</button>') : ""}
+          <button type="button" class="btn small ghost" data-act="off">Off the plan</button><button type="button" class="btn small ghost" data-act="away">Out or late…</button></div>`,
       onOpen: (form, d) => {
         d.classList.add("sheet");
-        const read = () => { state.to = form.to?.value || state.to; state.at = form.atx.value || form.at.value; };
-        const show = () => {
-          read(); const box = d.querySelector("#ms-impact");
-          if (!state.to) { box.innerHTML = ""; return; }
-          const crew = M.applyMove(st.crew, POS, empId, state.to, state.at), X2 = M.evaluate({ ...makeP(), crew });
-          const live = P.isToday && P.now != null, L2 = live ? M.liveSuggestions(X2, new Set()) : null;
-          const endOf = (XX, LL, k) => LL && LL.on ? LL.cats[k]?.etc : M.catEnds(XX.E, XX.R)[k];
-          const all = (XX, LL) => LL && LL.on ? LL.fromNow.etc : XX.R.end;
-          const rows = [];
-          for (const k of [state.to, curKey].filter((k, i, a) => CATS.includes(k) && a.indexOf(k) === i)) {
-            const a = endOf(X, st.L, k), b = endOf(X2, L2, k);
-            if (a != null || b != null) rows.push([`${TILE[k]} done`, a, b]);
-          }
-          rows.push(["Everyone done", all(X, st.L), all(X2, L2)]);
-          box.innerHTML = html`<b>What changes</b>${rows.map(([l, a, b]) => raw(html`<div><span>${l}</span><span class="${b != null && a != null ? (b < a - 0.05 ? "good-txt" : b > a + 0.05 ? "warn-txt" : "") : ""}">${a != null ? hm(a) : "—"} → ${b != null ? hm(b) : "—"}</span></div>`))}`;
-        };
-        form.addEventListener("change", show); show();
+        form.b0.addEventListener("change", () => { const h = parseTime(form.b0.value); if (h != null && !form.b1.value) form.b1.value = hhmm(h + s.breakMin / 60); });
+        form.mv.addEventListener("change", () => { if (form.mv.value && !form.mvat.value) form.mvat.value = hhmm(P.isToday && P.now != null ? Math.max(sg.from, Math.ceil(P.now * 4) / 4) : Math.min(sg.to - 0.25, sg.from + 2)); });
         d.querySelectorAll("[data-act]").forEach(b => b.addEventListener("click", () => {
           const act = b.dataset.act; d.close();
-          if (act === "home") return homeSheet(code);
-          if (act === "brk") return breakSheet(code);
-          if (act === "longer") return edit(() => { st.crew[code] = { ...st.crew[code], hrs: Math.min(16, (+st.crew[code].hrs || 0) + 1), stop: "", source: "user" }; }, { msg: `${pi.first} stays an hour longer.` });
-          if (act === "off") return edit(() => { st.crew[code] = { ...st.crew[code], emp: "", stop: "", moves: [], source: "" }; }, { msg: `${pi.first} is off the plan.` });
+          if (act === "drop") return edit(() => { st.crew = M.dropSegment(st.crew, code, i, s.breakMin); }, { msg: `${fn} is off ${posLabel(sg.stn)}.` });
+          if (act === "off") return edit(() => { st.crew[code] = { ...st.crew[code], emp: "", stop: "", moves: [], brk: "", source: "" }; }, { msg: `${fn} is off the plan.` });
           if (act === "away") return awayDialog(makeP(), empId);
         }));
       },
       onSubmit: form => {
-        const at = form.atx.value || form.at.value, to = form.to?.value;
-        if (!to) throw new Error("Pick where they go.");
-        edit(() => { st.crew = M.applyMove(st.crew, POS, empId, to, at); }, { msg: `${pi.first} → ${M.GROUP_LABEL[to]} ${parseTime(at) <= pi.startH + 1e-6 ? "for the day" : `at ${hm(parseTime(at))}`}. Publish when you're ready.` });
-      },
-    });
-    return dlg;
-  }
-  // ---- a break time for one person that day (Neal, Oct 14); "Automatic" gives it back to the planner
-  function breakSheet(code) {
-    const c = st.crew[code], X = st.X, P = makeP(), name = first(M.nameOf(P, c.emp));
-    const auto = M.breaksOf(X.R)[c.emp]?.s ?? X.E.opsInfo().find(o => o.o.id === code)?.brkS ?? (parseTime(c.start) ?? 7) + 3;
-    openDialog({
-      title: `${name}'s break`, submitLabel: "Save",
-      body: html`<p class="dlg-lead">For ${longDay(pick)} only. ${c.brk ? `Set to ${fmtClock(parseTime(c.brk))}.` : `The planner has it at ${fmtClock(auto)}.`} Everyone else's breaks work around it.</p>
-        <label class="field"><span>Break starts at</span><input class="input" type="time" step="300" name="t" value="${c.brk || hhmm(auto)}" required></label>
-        ${c.brk ? raw('<button type="button" class="btn ghost small" data-auto>Back to automatic</button>') : ""}`,
-      onOpen: (form, d) => {
-        d.classList.add("sheet");
-        d.querySelector("[data-auto]")?.addEventListener("click", () => { d.close(); edit(() => { st.crew[code] = { ...st.crew[code], brk: "", source: "user" }; }, { msg: `${name}'s break is placed by the planner again.` }); });
-      },
-      onSubmit: form => {
-        const t = form.t.value; if (!t) throw new Error("Pick a time.");
-        const h = parseTime(t), s0 = parseTime(c.start) ?? 0;
-        if (h < s0 + 0.25 || h > s0 + (+c.hrs || 0) + 0.5) throw new Error(`Pick a time during ${name}'s shift.`);
-        edit(() => { st.crew[code] = { ...st.crew[code], brk: t, source: "user" }; }, { msg: `${name} breaks at ${fmtClock(h)}.` });
+        const from = parseTime(form.from.value), to = parseTime(form.to.value);
+        if (from == null || to == null) throw new Error("Fill in both times.");
+        let C = st.crew; const done = [];
+        if (Math.abs(from - sg.from) > 1e-6 || Math.abs(to - sg.to) > 1e-6) { C = M.setSegment(C, code, i, from, to, s.breakMin); done.push(`${posLabel(sg.stn)} ${hm(from)}–${hm(to)}`); }
+        const b0 = parseTime(form.b0.value), b1 = parseTime(form.b1.value) ?? (b0 != null ? b0 + s.breakMin / 60 : null);
+        const had = M.breakOf(C[code], s.breakMin);
+        if (b0 == null && had) { C = M.setBreak(C, code, null, null, s.breakMin); done.push("no break"); }
+        else if (b0 != null && (!had || Math.abs(had[0] - b0) > 1e-6 || Math.abs(had[1] - b1) > 1e-6)) { C = M.setBreak(C, code, b0, b1, s.breakMin); done.push(`break ${hm(b0)}–${hm(b1)}`); }
+        if (form.mv.value) {
+          const mat = parseTime(form.mvat.value); if (mat == null) throw new Error("Pick the time they move.");
+          const code2 = Object.keys(C).find(k => C[k].emp === empId) || code;
+          C = M.moveAt(C, code2, form.mv.value, mat, s.breakMin); done.push(`→ ${posLabel(form.mv.value)} at ${hm(mat)}`);
+        }
+        if (!done.length) return;
+        edit(() => { st.crew = C; }, { msg: `${fn}: ${done.join(" · ")}` });
       },
     });
   }
-  function homeSheet(code) {
-    const c = st.crew[code], P = makeP(), name = first(M.nameOf(P, c.emp));
-    const n = P.isToday && P.now != null ? Math.ceil(P.now * 4) / 4 : (parseTime(c.start) ?? 7) + 4;
-    openDialog({
-      title: `Send ${name} home`, submitLabel: "Save",
-      body: html`<p class="dlg-lead">For ${longDay(pick)} only. Their usual schedule is on Team.</p><label class="field"><span>Leaves at</span><input class="input" type="time" step="300" name="t" value="${hhmm(n)}" required></label>`,
-      onOpen: (form, d) => d.classList.add("sheet"),
-      onSubmit: form => { const t = form.t.value; if (!t) throw new Error("Pick a time."); edit(() => { st.crew[code] = { ...st.crew[code], stop: t, source: "user" }; }, { msg: `${name} goes home at ${fmtClock(parseTime(t))}.` }); },
-    });
-  }
-  // ---- add someone to a station: people not on the plan first, then people moving over
+  // ---- add someone to a station: people not on the plan (with their times), or someone on the plan moving over
   function addSheet(key, code = null) {
     const X = st.X, P = X.P, g0 = M.boardGroups(POS, order()).find(x => x.key === key); if (!g0) return;
-    // one station (a row of the board) or any spot of that kind of work
     const one = code && g0.codes.includes(code) ? code : null;
-    const g = one ? { ...g0, codes: [one], label: (POS.find(p => p.id === one) || {}).label || g0.label } : g0;
-    const out = new Set((P.callouts || []).map(c => c.personId)), onCrew = new Map(Object.entries(st.crew).filter(([, c]) => c.emp).map(([code, c]) => [c.emp, code]));
+    const g = one ? { ...g0, codes: [one], label: posLabel(one) } : g0;
+    const out = new Set((P.callouts || []).map(c => c.personId)), onCrew = new Map(Object.entries(st.crew).filter(([, c]) => c.emp).map(([cd, c]) => [c.emp, cd]));
     const rk = e => Math.min(...g.codes.map(c => X.E.rankOf(e, c) || 99));
-    const brks = M.breaksOf(X.R);
-    const list = people.filter(e => !out.has(e.id) && !g.codes.includes(onCrew.get(e.id)) && !(P.isToday && P.now != null && M.clockState(P, e.id, P.now, brks[e.id]) === "gone"))
+    const list = people.filter(e => !out.has(e.id) && !g.codes.includes(onCrew.get(e.id)))
       .sort((a, b) => (onCrew.has(a.id) - onCrew.has(b.id)) || rk(a) - rk(b) || a.name.localeCompare(b.name));
     if (!list.length) return toast("Everyone available is already here.", "warn");
-    const T = timeChoices(P, parseTime(s.defStart) ?? 5);
+    const d0 = list[0], u0 = parseTime(M.notBeforeLate(P, d0.id, d0.start || s.defStart)) ?? 7;
     openDialog({
       title: `Add to ${g.label}`, submitLabel: "Add",
-      body: html`<fieldset class="ms-opts"><legend>Who</legend>${list.map((e, i) => raw(html`<label class="ms-opt"><input type="radio" name="who" value="${e.id}" ${i === 0 ? "checked" : ""}>
-          <b>${e.name}</b><small>${rk(e) < 99 ? `trained · ${ORD(rk(e))}` : "not trained"}${onCrew.has(e.id) ? ` · now on ${M.GROUP_LABEL[groupOf(POS.find(p => p.id === onCrew.get(e.id))?.type)] || ""}` : " · not on the plan"}</small></label>`))}</fieldset>
-        <fieldset class="ms-times"><legend>From</legend>${T.map(([l, v], i) => raw(html`<label class="ms-time"><input type="radio" name="at" value="${v}" ${i === 0 ? "checked" : ""}><span>${l === "All day" ? "Their usual start" : l}</span></label>`))}</fieldset>`,
-      onOpen: (form, d) => d.classList.add("sheet"),
+      body: html`<label class="field"><span>Who</span><select class="input" name="who" required>${list.map(e => raw(html`<option value="${e.id}">${e.name}${rk(e) < 99 ? "" : " (not trained)"}${onCrew.has(e.id) ? ` · now on ${posLabel(onCrew.get(e.id))}` : ""}</option>`))}</select></label>
+        <div class="pe-times"><label class="field"><span id="ad-l0">Clock in</span>${raw(tIn("t0", u0, "required"))}</label><label class="field"><span id="ad-l1">Clock out</span>${raw(tIn("t1", u0 + (d0.hours || s.fullDay) + s.breakMin / 60))}</label></div>
+        <p class="muted small" id="ad-hint">Someone already on the plan moves here at the first time and stays until they clock out (or their next move).</p>`,
+      onOpen: (form, d) => {
+        d.classList.add("sheet");
+        const sync = () => {
+          const e = people.find(p => p.id === form.who.value), on = onCrew.has(e.id);
+          d.querySelector("#ad-l0").textContent = on ? "Moves here at" : "Clock in"; d.querySelector("#ad-l1").parentElement.hidden = on;
+          if (on) { const t = P.isToday && P.now != null ? Math.ceil(P.now * 4) / 4 : 9; form.t0.value = hhmm(t); }
+          else { const u = parseTime(M.notBeforeLate(P, e.id, e.start || s.defStart)) ?? 7; form.t0.value = hhmm(u); form.t1.value = hhmm(u + (e.hours || s.fullDay) + s.breakMin / 60); }
+        };
+        form.who.addEventListener("change", sync); sync();
+      },
       onSubmit: form => {
-        const id = form.who.value, at = form.at.value; if (!id) throw new Error("Pick someone.");
-        const e = people.find(p => p.id === id), name = first(e.name);
-        if (onCrew.has(id)) { edit(() => { st.crew = M.applyMove(st.crew, POS, id, key, at, one); }, { msg: `${name} → ${g.label} at ${hm(parseTime(at))}.` }); return; }
-        const spot = g.codes.find(c => !st.crew[c].emp); if (!spot) throw new Error(`Every ${g.label.toLowerCase()} spot is taken. Move someone off first.`);
-        const usual = M.notBeforeLate(P, id, e.start || s.defStart);
-        const start = P.isToday && P.now != null ? (at > usual ? at : usual) : (T[0][1] === at ? usual : at);
-        edit(() => { st.crew[spot] = { emp: id, start, hrs: e.hours || s.fullDay, stop: "", source: "user", moves: [] }; }, { msg: `${name} on ${g.label} from ${fmtClock(parseTime(start))}.` });
-      },
-    });
-  }
-  // ---- re-plan from now: moves and fixes, checked ones applied together
-  function replanSheet() {
-    const X = st.X, L = st.L; if (!X || !L || !L.on) return toast(L?.why || "Re-planning starts once the day has started.", "warn");
-    const moves = M.bottleneckMoves(X, L, { max: 2 });
-    const items = [
-      ...moves.map(m => ({ key: `move:${m.empId}:${m.at}`, title: `${m.name} → ${TILE[m.k].toLowerCase()} now`, text: `${TILE[m.k]} done ${hm(m.kBefore)} → ${hm(m.kAfter)}; everyone ${hm(m.endBefore)} → ${hm(m.endAfter)}.`, on: true, run: () => { st.crew = M.applyMove(st.crew, POS, m.empId, m.k, m.at); } })),
-      ...L.list.map(x => ({ key: x.key, title: x.title, text: x.text, on: !x.key.startsWith("home:"), sugg: x, run: x.apply ? () => x.apply(st) : null })),
-    ];
-    const f = L.fromNow;
-    openDialog({
-      title: `Re-plan from ${fmtClock(X.P.now)}`, submitLabel: items.length ? "Apply and publish" : "Close",
-      body: html`<div class="rp-sum"><div><b>${f.people}</b><span>working</span></div><div><b>${fmtN(f.left)}</b><span>pieces left</span></div><div><b class="${f.ot ? "warn-txt" : ""}">${f.etc != null ? hm(f.etc) : "—"}</b><span>done, as is</span></div></div>
-        ${items.length ? raw(html`<fieldset class="ms-opts"><legend>Proposed</legend>${items.map((x, i) => raw(html`<label class="ms-opt rp"><input type="checkbox" name="i${i}" ${x.on ? "checked" : ""}><span><b>${x.title}</b><small>${x.text}</small></span></label>`))}</fieldset>`)
-        : raw('<p class="muted">Nothing to change right now — the plan still works from here.</p>')}`,
-      onOpen: (form, d) => d.classList.add("sheet"),
-      onSubmit: async form => {
-        if (!items.length) return;
-        const chosen = items.filter((x, i) => form[`i${i}`]?.checked); if (!chosen.length) throw new Error("Tick at least one, or Cancel.");
-        for (const x of chosen.filter(x => x.sugg?.act?.out)) {
-          if (st.dirty) await save();
-          const r = await api("/timeoff", { method: "POST", body: { personId: x.sugg.act.out, kind: "out", fromDay: pick, toDay: pick, note: "No clock-in" } });
-          st.plan.callouts = [...(st.plan.callouts || []), { id: r.id, timeOff: true, personId: x.sugg.act.out, station: null, note: "No clock-in", fromDay: pick, toDay: pick }];
+        const id = form.who.value, e = people.find(p => p.id === id), fn = first(e.name), t0 = parseTime(form.t0.value);
+        if (t0 == null) throw new Error("Pick a time.");
+        if (onCrew.has(id)) {
+          const from = onCrew.get(id), target = g.codes.find(c => !st.crew[c].emp || c === one) || g.codes[0];
+          const C = M.moveAt(st.crew, from, target, t0, s.breakMin);
+          edit(() => { st.crew = C; }, { msg: `${fn} → ${posLabel(target)} at ${hm(t0)}.` }); return;
         }
-        for (const x of chosen) if (x.sugg) hideSugg(x.sugg, "accept");
-        edit(() => { for (const x of chosen) x.run && x.run(); }, { msg: `${chosen.length} ${chosen.length === 1 ? "change" : "changes"} made.` });
-        setTimeout(publishDialog, 50);
+        const spot = g.codes.find(c => !st.crew[c].emp); if (!spot) throw new Error(`Every ${g.label} spot is taken. Move someone off first.`);
+        const t1 = parseTime(form.t1.value); if (t1 == null || t1 <= t0 + 0.25) throw new Error("Clock out has to be after clock in.");
+        edit(() => { st.crew[spot] = { emp: id, start: hhmm(t0), stop: hhmm(t1), hrs: Math.round((t1 - t0) * 100) / 100, brk: "", source: "user", moves: [] }; }, { msg: `${fn} on ${posLabel(spot)} ${hm(t0)}–${hm(t1)}. Tap their bar to set a break.` });
       },
     });
-  }
-  function hideSugg(x, how) {
-    st.plan.hidden = [...(st.plan.hidden || []), x.key];
-    api("/events", { method: "POST", body: { day: pick, key: `${how}:${x.key}`, kind: "note", text: how === "accept" ? `Suggestion accepted: ${x.accept || x.title}` : `Suggestion dismissed: ${x.title}` } })
-      .then(() => loadChanges()).catch(() => { /* still hidden on this PC */ });
   }
   function showHelp(id) {
     const h = HELP[id]; if (!h) return;
@@ -728,7 +626,7 @@ export async function render(main, ctx) {
     openDialog({
       title: `Publish the plan for ${longDay(pick)}?`, submitLabel: st.plan.published ? "Publish changes" : "Publish",
       body: html`<p class="dlg-lead">The Floor screens show it right away. You can keep changing the plan and publish again.</p>
-        <div class="pub-sum"><div><b>${hm(X.R.end)}</b><span>everyone done</span></div><div><b>${people}</b><span>people</span></div><div><b>${X.R.otTotal > 0.04 ? fmtH(X.R.otTotal) : "None"}</b><span>overtime</span></div></div>
+        <div class="pub-sum"><div><b>${people}</b><span>people</span></div><div><b>${hm(X.R.firstStart)}</b><span>first in</span></div><div><b>${hm(X.R.end)}</b><span>last out</span></div></div>
 `,
       onSubmit: async () => {
         st.conflict = false;
@@ -777,8 +675,8 @@ export async function render(main, ctx) {
     const money = admin && SET.groups.money.pdfMoney && X.M ? html`<span>Labor ${X.M.pct != null ? X.M.pct.toFixed(1) + "%" : "—"} · ${fmt$(X.M.total)} of ${fmt$(X.M.revenue)}</span>` : "";
     const sheet = document.getElementById("pl-print-sheet");
     sheet.innerHTML = html`<header class="ps-head"><div><b>${SET.groups.business.name || "Production plan"}</b><span>Production plan · ${longDay(pick)}</span></div>
-        <div class="ps-kpi"><span>Everyone done by <b>${fmtClock(R.end)}</b></span><span>${fmtN(CATS.reduce((t, k) => t + P.q[k], 0))} pieces</span>${R.otTotal > 0.04 ? raw(html`<span>${fmtH(R.otTotal)} overtime</span>`) : ""}${raw(money)}</div></header>
-      <div class="ps-grid"><div class="ps-axis"><div>Person</div><div class="ps-ticks">${raw(ticks.join(""))}</div><div>Done</div></div>
+        <div class="ps-kpi"><span>In ${fmtClock(R.firstStart)} · last out <b>${fmtClock(R.end)}</b></span><span>${fmtN(CATS.reduce((t, k) => t + P.q[k], 0))} pieces</span>${raw(money)}</div></header>
+      <div class="ps-grid"><div class="ps-axis"><div>Person</div><div class="ps-ticks">${raw(ticks.join(""))}</div><div>Out</div></div>
         ${rows.map(r => raw(html`<div class="ps-row"><div class="ps-name"><b>${r.name}</b><small>in ${fmtClock(r.start)}</small></div>
           <div class="ps-track">${raw(hrs.join(""))}${W.map(w => raw(html`<i class="ps-dl" style="left:${pct(w.deadline)}"></i>`))}${r.steps.map(x => raw(html`<span class="ps-bar" style="left:${pct(x.from)};width:${wid(x.from, x.to)};--c:${col(x.stn)}">${lbl(x.stn)}${x.rot ? " (rot.)" : ""}</span>`))}
             ${r.brk ? raw(html`<span class="ps-brk" style="left:${pct(r.brk[0])};width:${wid(r.brk[0], r.brk[1])}">Break</span>`) : ""}</div>

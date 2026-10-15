@@ -15,7 +15,7 @@ SET.runs = [
   { id: "r1", name: "Quitman", kind: "shuttle", driveBack: 30, stops: [{ store: "Quitman", arrive: "11:30", drive: 40, stay: 15 }] },
   { id: "r2", name: "Counter", kind: "counter", stops: [{ store: "Sulphur Springs", arrive: "16:00", drive: 0, stay: 0 }] },
 ];
-const s = M.engineSettings(SET, { slt: 4 });
+const s = { ...M.engineSettings(SET, { slt: 4 }), manual: false };   // these tests cover the simulation engine (plans are entered by hand since Oct 14)
 const pos = M.positions(SET);
 const TEAM = { people: [
   { id: "a", name: "Ana Uno", status: "active", usualStart: "05:00", trainings: ["slt1", "slb"] },

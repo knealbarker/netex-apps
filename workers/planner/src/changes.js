@@ -30,8 +30,9 @@ export function planDiff(before, after, ovBefore, ovAfter, labels, names) {
     if (!b) continue;
     if (a.start !== b.start) out.push(`${N(pid)}: planned start ${clock(b.start)} → ${clock(a.start)}`);
     if (+a.hours !== +b.hours) out.push(`${N(pid)}: hours ${hrs(b.hours)} → ${hrs(a.hours)}`);
-    if ((a.stop || "") !== (b.stop || "")) out.push(a.stop ? `${N(pid)}: hard stop at ${clock(a.stop)}` : `${N(pid)}: hard stop removed`);
-    if ((a.brk || "") !== (b.brk || "")) out.push(a.brk ? `${N(pid)}: break at ${clock(a.brk)}` : `${N(pid)}: break time back to automatic`);
+    if ((a.stop || "") !== (b.stop || "")) out.push(a.stop ? `${N(pid)}: clock out ${clock(a.stop)}` : `${N(pid)}: clock-out time removed`);
+    const brk = v => String(v).split("-").map(clock).join("–");
+    if ((a.brk || "") !== (b.brk || "")) out.push(a.brk ? `${N(pid)}: break ${brk(a.brk)}` : `${N(pid)}: no break`);
     const mv = c => { try { return JSON.parse(c.moves || "[]"); } catch { return []; } };
     const ma = mv(a), mb = mv(b), key = m => `${m.at}>${m.to}`;
     for (const m of ma) if (!mb.some(x => key(x) === key(m))) out.push(`${N(pid)} moves to ${L(m.to)} at ${clock(m.at)}`);

@@ -1,4 +1,4 @@
-// Floor: the TV on the plant floor. Shows the published plan replayed minute by minute, live progress from SMRT,
+// Floor: the TV on the plant floor. Shows the published plan as the manager entered it, live progress from SMRT,
 // who should be where right now and what's coming up. English or Spanish (remembered on each screen). Read-only.
 // #/floor?tv hides the header for a screen that only ever shows this.
 import { api } from "../api.js";

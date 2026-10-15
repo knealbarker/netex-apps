@@ -12,7 +12,7 @@ const ok = (v, m) => { if (!v) throw new Error(m || "expected truthy"); };
 
 const { db } = freshDb();
 const SET = await allSettings(db, makeEnv(db));
-const s = M.engineSettings(SET, {});
+const s = { ...M.engineSettings(SET, {}), manual: false };   // the simulation engine (plans are entered by hand since Oct 14)
 const pos = M.positions(SET);
 // Oct 13's rates: DCT/DCB 25/h, tablecloths 6/h, comforters 3/h
 s.rates = { ...s.rates, dct: 25, dcb: 25, tc: 6, comf: 3 };

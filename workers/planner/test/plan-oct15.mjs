@@ -1,24 +1,23 @@
-// Thu Oct 15, 2026 plan (Neal's review, Oct 14): the suggested crew as saved, with production's settings.
-// Checks: break cover on SLT 1, breaks not pushed past ~3.5 h, and no "move to starch bottoms" when both presses are staffed.
-// Run: node workers/planner/test/plan-oct15.mjs   (VERBOSE=1 prints each person's day)
+// Manual plans (Neal, Oct 14: "remove all predictive planning ... let the user manually create a plan. The plan should
+// repeat for the next day ... click on an employee and set their start or end time for the clicked position, including
+// setting breaks"). Uses Thursday Oct 15's crew with production's settings.
+// Run: node workers/planner/test/plan-oct15.mjs
 import { freshDb, makeEnv } from "./harness.mjs";
 import { allSettings } from "../src/settings.js";
 import * as M from "../public/js/plan/model.js";
-import { hm, stepsOf, parseTime } from "../public/js/engine/engine.js";
+import * as F from "../public/js/plan/floor.js";
+import { parseTime } from "../public/js/engine/engine.js";
 
 let pass = 0, fail = 0;
 const t = async (name, fn) => { try { await fn(); pass++; console.log("  ok  " + name); } catch (e) { fail++; console.log("  FAIL " + name + "\n       " + (e.stack || e).split("\n").slice(0, 3).join("\n       ")); } };
 const eq = (a, b, m = "") => { if (JSON.stringify(a) !== JSON.stringify(b)) throw new Error(`${m} expected ${JSON.stringify(b)} got ${JSON.stringify(a)}`); };
 const ok = (v, m) => { if (!v) throw new Error(m || "expected truthy"); };
+const near = (a, b, m) => ok(Math.abs(a - b) < 1 / 60, `${m}: ${a} vs ${b}`);
 
 const { db } = freshDb();
 const SET = await allSettings(db, makeEnv(db));
-// production settings that differ from a fresh database (Oct 14)
 SET.rates.find(r => r.type === "slb").perHour = 20;
-SET.groups.day.breakAfter = 3;
-SET.groups.wash.delay = 40;
-for (const w of SET.wash) w.cycleMin = 45;
-const s = M.engineSettings(SET), pos = M.positions(SET);
+const s = M.engineSettings(SET), pos = M.positions(SET), POS = pos.stations.concat(pos.ops);
 
 const P_ = (id, name, trainings, depth) => ({ id, name, status: "active", trainings, depth });
 const TEAM = { people: [
@@ -40,108 +39,77 @@ const serverCrew = {
   slb1: C("carnell", "05:40"), slb2: C("diana", "07:30"), dct1: C("marina", "05:40"), dct2: C("betty", "06:00"), dcb1: C("gaby", "05:30"),
   asm1: C("isela", "07:50"), asm2: C("kosi", "07:30"), slo: C("roderick", "03:50"), dco: C("gabriel", "05:50"),
 };
-const POS = pos.stations.concat(pos.ops);
-const P = { s, ...pos, people: M.peopleFrom(TEAM), crew: M.crewFromServer(serverCrew, POS, s), q: { dct: 266, dcb: 119, slt: 200, slb: 300, comf: 6, tc: 12 },
-  waves: [], day: "2026-10-15", today: "2026-10-14", isToday: false, now: null, callouts: [], late: [], history: { hours: [], planned: [] }, clock: [], published: null, admin: false };
-const X = M.evaluate(P), R = X.R;
-const rowOf = code => R.rows.find(r => r.st.id === code);
+const P0 = crew => ({ s, ...pos, people: M.peopleFrom(TEAM), crew, q: { dct: 266, dcb: 119, slt: 200, slb: 300, comf: 6, tc: 12 },
+  waves: [], day: "2026-10-15", today: "2026-10-14", isToday: false, now: null, callouts: [], late: [], history: { hours: [], planned: [] }, clock: [], published: null, admin: false });
+const crew0 = M.crewFromServer(serverCrew, POS, s);
+const X = M.evaluate(P0(crew0)), R = X.R;
+const row = code => R.rows.find(r => r.st.id === code);
+const segs = code => row(code).segs.map(g => `${g.stn} ${g.from.toFixed(2)}-${g.to.toFixed(2)}`);
 
-if (process.env.VERBOSE) {
-  for (const r of R.rows.filter(r => r.staffed)) console.log(`  ${r.st.id.padEnd(5)} ${P.crew[r.st.id].emp.padEnd(9)} in ${hm(r.x.start).padEnd(8)} break ${(r.brkS != null ? hm(r.brkS) : "-").padEnd(8)} out ${hm(r.clockOut).padEnd(8)} ${stepsOf(r).map(sp => `${sp.stn} ${hm(sp.from)}-${hm(sp.to)}`).join(", ")}`);
-  for (const o of X.E.opsInfo().filter(o => o.on)) console.log(`  ${o.o.id.padEnd(5)} ${P.crew[o.o.id].emp.padEnd(9)} break ${hm(o.brkS)}`);
-  console.log("  bottleneck moves:", JSON.stringify(M.bottleneckMoves(X, null, { max: 3 }).map(m => `${m.name} ${m.at} → ${hm(m.kAfter)}`)));
-}
-
-await t("SLT 1 keeps pressing while Rosenda is on break (Maria steps up from SLT 2)", () => {
-  const ro = rowOf("slt1"), b0 = ro.brkS, b1 = ro.brkS + ro.x.b;
-  const onSlt1 = R.rows.filter(r => r.staffed && r.st.id !== "slt1").flatMap(r => r.segs.filter(sg => sg.stn === "slt1"));
-  const covered = onSlt1.filter(sg => sg.from < b1 - 0.01 && sg.to > b0 + 0.01).reduce((a, sg) => a + Math.min(sg.to, b1) - Math.max(sg.from, b0), 0);
-  ok(covered >= ro.x.b - 0.05, `SLT 1 covered ${Math.round(covered * 60)} of ${Math.round(ro.x.b * 60)} min of Rosenda's ${hm(b0)} break`);
+await t("the plan is what was entered: no simulation, no predicted finish times, no automatic breaks", () => {
+  ok(R.manual, "manual plan");
+  eq(segs("slb1"), ["slb1 5.67-13.17"], "Carnell 5:40 for 7.5 hours");
+  eq(segs("slt2"), ["slb2 5.67-7.50", "slt2 7.50-13.17"], "Maria starts on SLB 2 (move at clock-in), then SLT 2");
+  ok(R.rows.every(r => !r.staffed || r.brkS == null), "no break unless one is set");
+  eq(M.catEnds(X.E, R), {}, "no finish times per kind of work");
+  ok(X.checks.length === 0 && X.verdict.head === "Plan", "no warnings or suggestions");
+  ok(X.E.opsInfo().every(o => !o.on || o.brkS == null), "operators: no automatic break either");
 });
-await t("SLT 2's helper doesn't wander off to DC tops while SLT 1 is empty", () => {
-  const ma = rowOf("slt2"), ro = rowOf("slt1");
-  const bad = ma.segs.filter(sg => sg.stn.startsWith("dct") && sg.from < ro.brkS + ro.x.b - 0.01 && sg.to > ro.brkS + 0.01);
-  ok(!bad.length, `Maria on ${bad.map(sg => `${sg.stn} ${hm(sg.from)}`).join(", ")}`);
+await t("tap a bar: set the start and end of that station; first = clock-in, last = clock-out, middle = move times", () => {
+  let c = M.setSegment(crew0, "slb1", 0, 5.5, 13.5, s.breakMin);
+  eq([c.slb1.start, c.slb1.stop, c.slb1.hrs], ["05:30", "13:30", 8]);
+  c = M.setSegment(crew0, "slt2", 0, 5.5, 8, s.breakMin);   // Maria's SLB 2 stint, longer
+  eq([c.slt2.start, c.slt2.moves], ["05:30", [{ at: "05:30", to: "slb2" }, { at: "08:00", to: "slt2" }]]);
+  c = M.setSegment(crew0, "slt2", 1, 9, 12, s.breakMin);    // her SLT 2 stint: moves at 9, clocks out at 12
+  eq([c.slt2.moves, c.slt2.stop], [[{ at: "05:40", to: "slb2" }, { at: "09:00", to: "slt2" }], "12:00"]);
+  let threw = false; try { M.setSegment(crew0, "slt2", 1, 5, 12, s.breakMin); } catch { threw = true; }
+  ok(threw, "a station can't start before the one before it");
 });
-await t("nobody's break starts later than 3½ hours after clocking in", () => {
-  const late = R.rows.filter(r => r.staffed && r.brkS != null && r.brkS - r.x.start > 3.5 + 1e-6).map(r => `${P.crew[r.st.id].emp} ${hm(r.brkS)} (in ${hm(r.x.start)})`);
-  ok(!late.length, late.join(", "));
+await t("breaks: set from–to (the bar shows the gap), change, or clear; hours follow", () => {
+  let c = M.setBreak(crew0, "slb1", 9, 9.5, s.breakMin);
+  eq([c.slb1.brk, c.slb1.stop, c.slb1.hrs], ["09:00-09:30", "13:10", 7]);
+  const r = M.evaluate(P0(c)).R.rows.find(x => x.st.id === "slb1");
+  eq(r.segs.map(g => [g.from, g.to]), [[parseTime("05:40"), 9], [9.5, parseTime("13:10")]]);
+  near(r.brkS, 9, "break start"); near(r.brkTaken, 0.5, "break length");
+  c = M.setBreak(c, "slb1", null, null, s.breakMin); eq([c.slb1.brk, c.slb1.hrs], ["", 7.5]);
+  let threw = false; try { M.setBreak(crew0, "slb1", 15, 15.5, s.breakMin); } catch { threw = true; }
+  ok(threw, "a break outside the shift is refused");
+  // the server form: a start only means a break of the setting's length
+  eq(M.breakOf({ brk: "09:00" }, 30), [9, 9.5]); eq(M.breakOf({ brk: "09:00-09:45" }, 30), [9, 9.75]);
 });
-await t("the two starch bottoms presses never break at the same time", () => {
-  const a = rowOf("slb1"), b = rowOf("slb2");
-  ok(Math.abs(a.brkS - b.brkS) >= 0.5 - 1e-6, `${hm(a.brkS)} and ${hm(b.brkS)}`);
+await t("move someone to another station at a time; remove a later station", () => {
+  let c = M.moveAt(crew0, "dct2", "slb1", 9, s.breakMin);
+  eq(c.dct2.moves, [{ at: "09:00", to: "slb1" }]);
+  eq(M.evaluate(P0(c)).R.rows.find(x => x.st.id === "dct2").segs.map(g => g.stn), ["dct2", "slb1"]);
+  c = M.dropSegment(c, "dct2", 1, s.breakMin); eq(c.dct2.moves, []);
+  c = M.dropSegment(crew0, "slt2", 1, s.breakMin);   // Maria: drop SLT 2, stays on SLB 2
+  eq(M.segmentsOf(c.slt2, "slt2", 30).map(g => g.stn), ["slb2"]);
 });
-await t("SLT 1 and its helper don't break at the same time", () => {
-  const a = rowOf("slt1"), b = rowOf("slt2");
-  ok(Math.abs(a.brkS - b.brkS) >= 0.5 - 1e-6, `${hm(a.brkS)} and ${hm(b.brkS)}`);
+await t("a new day copies the last saved plan, without anyone who's out", () => {
+  const c1 = M.setBreak(crew0, "slb1", 9, 9.5, s.breakMin);
+  const copy = M.copyCrew(M.crewToServer(c1), POS, s, new Set(["kosi"]));
+  eq([copy.slb1.emp, copy.slb1.start, copy.slb1.brk, copy.slb1.stop], ["carnell", "05:40", "09:00-09:30", "13:10"]);
+  eq(copy.slt2.moves, crew0.slt2.moves, "moves come along");
+  eq(copy.asm2.emp, "", "Kosi is out: left off");
 });
-await t("no 'move to starch bottoms' while both presses are staffed", () => {
-  const mv = M.bottleneckMoves(X, null, { max: 3 });
-  for (const m of mv) {
-    const at = parseTime(m.at);
-    const busy = ["slb1", "slb2"].every(code => Object.entries(P.crew).some(([c, x]) => x.emp && M.stationAt(x, c, at) === code && at >= parseTime(x.start) - 1e-6 && at < parseTime(x.start) + 8));
-    ok(!busy, `suggested ${m.name} to starch bottoms at ${hm(at)} with both presses staffed`);
-  }
+await t("the Floor shows the published manual plan as entered (starts, moves, breaks, clock-outs)", () => {
+  const c = M.setBreak(crew0, "slb1", 9, 9.5, s.breakMin), X2 = M.evaluate(P0(c));
+  const snap = JSON.parse(JSON.stringify(M.snapshotOf(X2)));
+  const FR = F.replay(snap), ev = F.events(FR, F.TXT.en);
+  ok(FR.R.manual, "the Floor replays it as a manual plan");
+  const carnell = ev.filter(e => e.nm === "Carnell").map(e => `${e.kind}@${e.t.toFixed(2)}`);
+  eq(carnell, ["start@5.67", "brk@9.00", "end@13.17"]);
+  const maria = ev.filter(e => e.nm === "Maria").map(e => `${e.kind}@${e.t.toFixed(2)}`);
+  eq(maria, ["start@5.67", "move@7.50", "end@13.17"]);
+  const now = F.rightNow(FR, ev, 9.1).find(p => p.nm === "Carnell");
+  eq([now.state, now.brkEnd], ["break", 9.5]);
 });
-
-await t("each SLB press stays full through its presser's break (someone SLB-trained steps in)", () => {
-  for (const code of ["slb1", "slb2"]) {
-    const o = rowOf(code), b0 = o.brkS, b1 = o.brkS + o.x.b;
-    const cov = R.rows.filter(r => r.staffed && r.st.id !== code).flatMap(r => r.segs.filter(sg => sg.stn === code && sg.from < b1 - 0.01 && sg.to > b0 + 0.01))
-      .reduce((a, sg) => a + Math.min(sg.to, b1) - Math.max(sg.from, b0), 0);
-    ok(cov >= o.x.b - 0.05, `${code}: ${Math.round(cov * 60)} of ${Math.round(o.x.b * 60)} min covered`);
-  }
-});
-await t("an SLB press starting from empty loses its start-up minutes; a full hand-off loses nothing", () => {
-  const slbDone = sX => { let n = 0; for (const r of sX.R.rows) if (r.staffed) for (const sg of r.segs) if (sg.stn.startsWith("slb")) n += sg.pcs; return n; };
-  // starch bottoms done by hour h (all presses), from the simulation's 5-minute timeline
-  const by = (sX, h) => { let v = 0; for (const row of sX.R.TL) if (row[0] <= h + 1e-6) v = row[2]; return v; };
-  const X0 = M.evaluate({ ...P, s: { ...s, slbPrime: 0 } });
-  // Carnell (SLB 1) and Maria (SLB 2) both start at 5:40: 20 min start-up each, then 20/hr
-  ok(Math.abs(by(X, parseTime("06:40")) - 2 * 20 * 40 / 60) < 1, `first hour: ${by(X, parseTime("06:40")).toFixed(1)} pairs on two presses (expected ~26.7)`);
-  ok(Math.abs(by(X0, parseTime("06:40")) - 40) < 1, `no start-up setting: ${by(X0, parseTime("06:40")).toFixed(1)} in the first hour (expected 40)`);
-  // Maria hands SLB 2 to Diana at 7:30 with the press full: no start-up then
-  const d = by(X, parseTime("07:45")) - by(X, parseTime("07:30")), d0 = by(X0, parseTime("07:45")) - by(X0, parseTime("07:30"));
-  ok(Math.abs(d - d0) < 0.5, `7:30–7:45: ${d.toFixed(1)} pairs with start-up vs ${d0.toFixed(1)} without`);
-  ok(slbDone(X0) >= slbDone(X) - 0.5, "start-up never adds pieces");
-});
-
-await t("board: one row per station, Maria then Diana on one SLB 2 line, Betty in Carnell's break gap", () => {
+await t("boards: by station and by person, straight from the entered times", () => {
   const rows = M.stationRows(X, M.boardGroups(POS));
-  const codes = rows.map(r => r.code);
-  ok(["slb1", "slb2", "slt1", "slt2", "dct1", "dct2", "dct3", "dcb1", "asm1", "asm2", "slo", "dco"].every(c => codes.includes(c)), codes.join(","));
-  ok(codes.indexOf("slb1") === 0 && codes.indexOf("slb2") === 1, "starch bottoms on top");
-  ok(rows.filter(r => r.first).map(r => r.key).join() === "slb,slt,dct,dcb,tc,comf,asm,ops", "first row of each kind");
-  const r = c => rows.find(x => x.code === c);
-  ok(r("slb2").nLanes === 1 && r("slb2").lanes.map(l => l.empId).join() === "diana,maria", `SLB 2: ${r("slb2").lanes.map(l => `${l.empId}@${l.lane}`)}`);
-  const s1 = r("slb1"), betty = s1.lanes.find(l => l.empId === "betty"), carn = s1.lanes.find(l => l.empId === "carnell");
-  ok(betty && betty.lane === carn.lane && s1.nLanes === 1, `SLB 1 lanes: ${s1.lanes.map(l => `${l.empId}@${l.lane}`)}`);
-  ok(!carn.bars.some(b => b.brk), "Carnell's break isn't striped under Betty");
-  ok(r("dct3").lanes.length > 0 && r("slo").label === "SL Operator" && r("slt2").label === "SLT 2 helper", `${r("slo").label} / ${r("slt2").label}`);
-});
-
-await t("people board: one line per person in station order, bars labeled with the station they're on", () => {
-  const rows = M.personRows(X, M.boardGroups(POS));
-  ok(rows.length === 11 && rows[0].empId === "carnell" && rows[1].empId === "diana", rows.map(r => r.empId).join(","));
-  const maria = rows.find(r => r.empId === "maria"), labs = maria.lanes[0].bars.filter(b => !b.brk).map(b => b.label);
-  ok(labs[0] === "SLB 2" && labs.includes("SLT 1") && labs.includes("SLT 2 helper"), labs.join(","));
-  ok(maria.lanes[0].bars.some(b => b.brk), "Maria's break shows");
-  const betty = rows.find(r => r.empId === "betty").lanes[0].bars.filter(b => !b.brk).map(b => b.label);
-  ok(betty.includes("SLB 1") && betty.includes("DCT 2"), betty.join(","));
-  ok(rows.find(r => r.empId === "roderick").lanes[0].bars[0].label === "SL Operator");
-  ok(rows.filter(r => r.first).map(r => r.key).join() === "slb,slt,dct,dcb,asm,ops", rows.filter(r => r.first).map(r => r.key).join());
-});
-
-await t("a break time set for one person is kept; the others work around it; it survives a save", () => {
-  const crew = JSON.parse(JSON.stringify(P.crew)); crew.slb1.brk = "09:00";
-  const X2 = M.evaluate({ ...P, crew }), c = X2.R.rows.find(r => r.st.id === "slb1");
-  ok(Math.abs(c.brkS - 9) < 1e-6, `Carnell's break ${hm(c.brkS)}`);
-  const d = X2.R.rows.find(r => r.st.id === "slb2");
-  ok(Math.abs(d.brkS - 9) >= 0.5 - 1e-6, `Diana's break ${hm(d.brkS)} stays apart from Carnell's`);
-  const cov = X2.R.rows.filter(r => r.staffed && r.st.id !== "slb1").flatMap(r => r.segs.filter(sg => sg.stn === "slb1" && sg.from < 9.5 - 0.01 && sg.to > 9 + 0.01));
-  ok(cov.length, "someone covers SLB 1 at 9:00");
-  eq(M.crewToServer(crew).slb1.brk, "09:00"); eq(M.crewFromServer(M.crewToServer(crew), POS, s).slb1.brk, "09:00");
-  ok(M.sigOf({ ...P, crew }) !== M.sigOf(P), "a changed break counts as a change to publish");
+  const slb2 = rows.find(r => r.code === "slb2");
+  ok(slb2.nLanes === 1 && slb2.lanes.map(l => l.empId).sort().join() === "diana,maria", "Maria then Diana share SLB 2's line");
+  const pr = M.personRows(X, M.boardGroups(POS)).find(r => r.empId === "maria");
+  eq(pr.lanes[0].bars.map(b => b.label), ["SLB 2", "SLT 2 helper"]);
 });
 
 console.log(`\n${pass} passed, ${fail} failed`);

@@ -31,6 +31,7 @@ export function engineSettings(SET, smrtPrices = {}) {
     stationMax: Object.fromEntries(SET.stations.filter(s => s.maxHours > 0).map(s => [s.code, s.maxHours])),
     price: { ...g.money.prices, ...smrtPrices }, payAvg: g.money.payAvg, laborTarget: g.money.laborTarget,
     weekStart: g.alerts.weekStart,
+    manual: true,   // Neal, Oct 14: plans are made by hand; the engine draws exactly what was entered
   };
 }
 
@@ -98,11 +99,12 @@ export function evaluate(P0) {
   const R = E.buildPlan(P.q);
   const M = R.empty ? null : E.money(R);
   const waves = (P.waves || []).filter(w => w.todo > 0 || w.kind === "overdue");
-  const etas = R.empty ? {} : waveEtas(R, waves, P.q, P.s.asmInclude);
+  const etas = R.empty || R.manual ? {} : waveEtas(R, waves, P.q, P.s.asmInclude);
   const states = Object.fromEntries(waves.map(w => { const st = waveState(w, etas[w.id]); st.eta = etas[w.id]; return [w.id, st]; }));
   const X = { P, E, R, M, waves, etas, states };
-  X.week = weekWatch(X);
-  X.checks = buildChecks(X);
+  // a manual plan (Neal, Oct 14) has no predictions to check: no deadline fixes, no warnings
+  X.week = R.manual ? null : weekWatch(X);
+  X.checks = R.manual ? [] : buildChecks(X);
   X.verdict = verdict(X);
   return X;
 }
@@ -143,7 +145,7 @@ export function weekWatch(X) {
 function bottleneckFix(X, w, eta) {
   const { P, R, E } = X;
   const cats = ["dct", "dcb", "slt", "slb", "tc", "comf"].filter(k => (w.q[k] || 0) > 0.5);
-  if (!cats.length || !R.TL) return null;
+  if (!cats.length || !R.TL || !R.TL.length) return null;
   const TL = R.TL, col = { slt: 1, slb: 2, dct: 3, dcb: 4, tc: 5, comf: 6 }, last = TL[TL.length - 1];
   let worst = null, wt = -1;
   for (const k of cats) { const t = (TL.find(s => s[col[k]] >= Math.min(w.q[k], last[col[k]]) - 0.5) || last)[0]; if (t > wt) { wt = t; worst = k; } }
@@ -280,6 +282,10 @@ const clockOf = iso => { const d = new Date(iso); return d.getHours() + d.getMin
 export function verdict(X) {
   const { P, R, M, waves, states, E } = X;
   if (R.empty) return { cls: "idle", head: R.noCrew ? "Pick the crew" : "Nothing to plan yet", kpis: [] };
+  if (R.manual) {   // a plan entered by hand: facts only
+    const tot = CATS.reduce((t, k) => t + (P.q[k] || 0), 0), people = R.rows.filter(r => r.staffed).length + E.opsInfo().filter(x => x.on).length;
+    return { cls: "ok", head: "Plan", kpis: [{ v: (P.expected ? "~" : "") + fmtN(tot), l: P.expected ? "pieces expected" : "pieces" }, { v: String(people), l: "people" }, { v: hm(R.end), l: "last out" }] };
+  }
   // once today's plan is published, deadlines don't drive the headline (Neal: nothing to act on; the Deadlines card shows each store)
   const running = P.isToday && !!P.published;
   const W = running ? [] : waves.filter(w => w.todo > 0 && w.kind !== "overdue" && live(X, w) && !(P.isToday && w.leftTodo === 0));
@@ -652,6 +658,104 @@ export function applyMove(crew, POS, empId, toKey, at, toCode = null) {
   c.moves = [...keep, { at: hhmm(Math.max(atH, startH)), to: empty || targets[0] }];
   c.source = "user";
   return C;
+}
+
+// ---------------------------------------------------------------- manual plans (Neal, Oct 14)
+/** One person's break as [start, end] hours, from "HH:MM-HH:MM" (or "HH:MM" plus breakMin). */
+export function breakOf(c, breakMin = 30) {
+  const m = String((c && c.brk) || "").match(/^(\d{1,2}:\d{2})(?:-(\d{1,2}:\d{2}))?$/); if (!m) return null;
+  const a = parseTime(m[1]), b = m[2] ? parseTime(m[2]) : a + breakMin / 60;
+  return b > a ? [a, b] : null;
+}
+/** Clock-in and clock-out of a crew entry (clock-out = its stop, or start + hours + break). */
+export function shiftOf(c, breakMin = 30) {
+  const start = parseTime(c.start) ?? 7, br = breakOf(c, breakMin), bl = br ? br[1] - br[0] : 0;
+  let end = parseTime(c.stop); if (end == null || end <= start) end = start + Math.max(0, +c.hrs || 0) + bl;
+  return { start, end, brk: br };
+}
+/** A person's stations in time order: [{ i, stn, from, to }] (the break isn't cut out). */
+export function segmentsOf(c, code, breakMin = 30) {
+  const { start, end } = shiftOf(c, breakMin);
+  const all = (c.moves || []).map(m => ({ at: parseTime(m.at), to: m.to })).filter(m => m.at != null).sort((a, b) => a.at - b.at);
+  const first = all.filter(m => m.at <= start + 1e-6).pop();   // a move at clock-in: that's where they start
+  const mv = all.filter(m => m.at > start + 1e-6 && m.at < end - 1e-6);
+  const cuts = [{ at: start, to: first ? first.to : code }, ...mv];
+  return cuts.map((v, i) => ({ i, stn: v.to, from: v.at, to: i + 1 < cuts.length ? cuts[i + 1].at : end }));
+}
+/** Hours worked = clock-out − clock-in − break; kept in step whenever times change. */
+function withHours(c, breakMin) {
+  const { start, end, brk } = shiftOf(c, breakMin);
+  return { ...c, stop: hhmm(end), hrs: Math.round((end - start - (brk ? brk[1] - brk[0] : 0)) * 100) / 100 };
+}
+/**
+ * Sets the times of one of a person's stations (the clicked bar): segment i runs from..to.
+ * The first station's start is their clock-in, the last one's end is their clock-out; in between, the times are moves.
+ * Returns a new crew; throws an Error with a plain message when the times don't fit.
+ */
+export function setSegment(crew, code, i, from, to, breakMin = 30) {
+  const C = JSON.parse(JSON.stringify(crew)), c = C[code]; if (!c || !c.emp) return C;
+  const segs = segmentsOf(c, code, breakMin), sg = segs[i]; if (!sg) return C;
+  if (!(to > from + 1 / 12)) throw new Error("The end has to be after the start.");
+  const prev = segs[i - 1], next = segs[i + 1];
+  if (prev && from <= prev.from + 1 / 12) throw new Error(`It can't start before ${fmtClock(prev.from + 1 / 12)} (they're on the station before until then).`);
+  if (next && to >= next.to - 1 / 12) throw new Error(`It has to end before ${fmtClock(next.to - 1 / 12)} (their next station).`);
+  const moves = segs.slice(1).map(x => ({ at: x.from, to: x.stn }));
+  if (i === 0) c.start = hhmm(from); else moves[i - 1].at = from;
+  if (next) moves[i].at = to; else c.stop = hhmm(to);
+  const lead = segs[0].stn !== code ? [{ at: c.start, to: segs[0].stn }] : [];   // starts away from their own station
+  c.moves = [...lead, ...moves.map(m => ({ at: hhmm(m.at), to: m.to }))];
+  const br = breakOf(c, breakMin), sh = shiftOf(c, breakMin);
+  if (br && (br[0] < sh.start || br[1] > sh.end)) c.brk = "";   // a break outside the new shift goes
+  C[code] = { ...withHours(c, breakMin), source: "user" };
+  return C;
+}
+/** Sets (or with null clears) a person's break, from–to hours. */
+export function setBreak(crew, code, from, to, breakMin = 30) {
+  const C = JSON.parse(JSON.stringify(crew)), c = C[code]; if (!c || !c.emp) return C;
+  const sh = shiftOf(c, breakMin);
+  if (from == null) { C[code] = { ...withHours({ ...c, stop: hhmm(sh.end), brk: "" }, breakMin), source: "user" }; return C; }
+  if (!(to > from)) throw new Error("The break has to end after it starts.");
+  if (from < sh.start || to > sh.end) throw new Error(`Pick a break between ${fmtClock(sh.start)} and ${fmtClock(sh.end)}.`);
+  C[code] = { ...withHours({ ...c, stop: hhmm(sh.end), brk: `${hhmm(from)}-${hhmm(to)}` }, breakMin), source: "user" };
+  return C;
+}
+/** Moves a person to another station from hour `at` (their later moves are dropped). */
+export function moveAt(crew, code, toCode, at, breakMin = 30) {
+  const C = JSON.parse(JSON.stringify(crew)), c = C[code]; if (!c || !c.emp) return C;
+  const { start, end } = shiftOf(c, breakMin);
+  if (at <= start + 1e-6) { // from clock-in: they simply start there
+    if (toCode === code) { C[code] = { ...c, moves: [], source: "user" }; return C; }
+    if (C[toCode] && C[toCode].emp) throw new Error("Someone already starts on that station. Move them first, or pick a later time.");
+    C[toCode] = { ...withHours(c, breakMin), moves: [], source: "user" }; C[code] = { emp: "", start: c.start, hrs: c.hrs, stop: "", source: "", moves: [], brk: "" };
+    return C;
+  }
+  if (at >= end - 1 / 12) throw new Error(`${fmtClock(at)} is after they clock out (${fmtClock(end)}).`);
+  const keep = (c.moves || []).filter(m => (parseTime(m.at) ?? 0) < at - 1e-6);
+  c.moves = [...keep, { at: hhmm(at), to: toCode }];
+  C[code] = { ...withHours(c, breakMin), source: "user" };
+  return C;
+}
+/** Takes away one of a person's later stations (the time goes to the station before it). */
+export function dropSegment(crew, code, i, breakMin = 30) {
+  const C = JSON.parse(JSON.stringify(crew)), c = C[code]; if (!c || !c.emp || i < 1) return C;
+  const segs = segmentsOf(c, code, breakMin);
+  const lead = segs[0].stn !== code ? [{ at: c.start, to: segs[0].stn }] : [];
+  c.moves = [...lead, ...segs.slice(1).filter(x => x.i !== i).map(x => ({ at: hhmm(x.from), to: x.stn }))];
+  C[code] = { ...c, source: "user" };
+  return C;
+}
+/**
+ * A new day starts as a copy of the last saved plan (Neal, Oct 14: "The plan should repeat for the next day").
+ * People who are out that day are left off. The copy has the same people, stations, times, moves and breaks.
+ */
+export function copyCrew(prevServerCrew, POS, s, outIds = new Set()) {
+  const crew = crewFromServer(prevServerCrew, POS, s);
+  for (const [code, c] of Object.entries(crew)) {
+    if (!c.emp) continue;
+    if (outIds.has(c.emp)) { crew[code] = { emp: "", start: c.start, hrs: c.hrs, stop: "", source: "", moves: [], brk: "" }; continue; }
+    crew[code] = { ...withHours(c, s.breakMin), source: "user" };
+  }
+  return crew;
 }
 
 /** Where a person is (which code) at hour t after their moves: the station code they work then. */

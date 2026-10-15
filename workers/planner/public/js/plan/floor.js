@@ -3,7 +3,7 @@ import { createEngine, buildWaves, stepsOf, outInfo, CATS, fmtClock, fmtH, fmtN,
 
 export const TXT = {
   en: { ontrack: "ON TRACK", slipping: "SLIPPING", atrisk: "AT RISK", noplan: "NO PLAN PUBLISHED", deadlines: "Deadlines today", deadlinesFor: "Deadlines", now: "Right now", coming: "Coming up",
-    done: "pieces done today", of: "of", ontime: "deadlines on time", doneby: "everyone done by", ready: "READY", readyAbout: "ready about", behind: "behind",
+    done: "pieces done today", of: "of", ontime: "deadlines on time", doneby: "last clock-out", ready: "READY", readyAbout: "ready about", behind: "behind",
     left: "left", shuttle: "shuttle", counter: "counter", route: "route", overdue: "Overdue", leaves: "leaves", notready: "not ready", okload: "OK to load the", shuttleWord: "shuttle",
     pieces: "pieces", orders: "orders", starts: "starts", brk: "break", home: "home", to: "→", missed: "MISSED", back: "Shuttle back", nothing: "Nothing due today",
     plan: "Plan", full: "Full screen", exit: "Exit full screen", lang: "Español", min: "min", clock: "clocks out", pace: "White line = where we should be by now", first: "do these first",
@@ -12,7 +12,7 @@ export const TXT = {
     work: "Work today", workFor: "Work", cats: { dct: "DC tops", dcb: "DC bottoms", slt: "Laundry tops", slb: "Laundry bottoms", comf: "Comforters", tc: "Tablecloths" }, comf: "Comforters", opLaundry: "Laundry operator", opDc: "DC operator",
     streakLab: "work days in a row with labor under", streakTip: "Labor cost as a share of the value of the pieces finished" },
   es: { ontrack: "A TIEMPO", slipping: "ATRASÁNDOSE", atrisk: "EN RIESGO", noplan: "SIN PLAN PUBLICADO", deadlines: "Entregas de hoy", deadlinesFor: "Entregas", now: "Ahora", coming: "Próximamente",
-    done: "piezas terminadas hoy", of: "de", ontime: "entregas a tiempo", doneby: "todos terminan a las", ready: "LISTO", readyAbout: "listo como a las", behind: "atrasado",
+    done: "piezas terminadas hoy", of: "de", ontime: "entregas a tiempo", doneby: "última salida", ready: "LISTO", readyAbout: "listo como a las", behind: "atrasado",
     left: "faltan", shuttle: "camioneta", counter: "mostrador", route: "ruta", overdue: "Atrasadas", leaves: "sale", notready: "sin terminar", okload: "Pueden cargar la", shuttleWord: "camioneta",
     pieces: "piezas", orders: "órdenes", starts: "empieza", brk: "descanso", home: "a casa", to: "→", missed: "PERDIDA", back: "Regresa la camioneta", nothing: "Nada para hoy",
     plan: "Plan", full: "Pantalla completa", exit: "Salir", lang: "English", min: "min", clock: "sale", pace: "Línea blanca = donde deberíamos ir", first: "hacer primero",
