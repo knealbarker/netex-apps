@@ -54,7 +54,7 @@ export async function render(main, ctx) {
     const bits = [];
     if (D.due.pieces) bits.push(`${fmtN(D.due.finished)} of ${fmtN(D.due.pieces)} due pieces finished`);
     if (pastLine.length) bits.push(`${pastLine.length} ${pastLine.length === 1 ? "person" : "people"} past their line`);
-    if (pct != null) bits.push(pct <= L.target ? `labor ${pct.toFixed(1)}%, under target` : `labor ${pct.toFixed(1)}%`);
+    if (pct != null) bits.push(pct <= L.target ? `labor ${pct.toFixed(1)}%, under target` : `labor ${pct.toFixed(1)}%, over the ${L.target}% target`);
     const good = D.due.finished >= D.due.pieces && !pastLine.length && (pct == null || pct <= L.target);
     const head = bits.length ? `${D.isToday ? "So far: " : ""}${bits.join(" · ")}` : "No pieces or hours recorded for this day";
     const lastOut = Math.max(-1, ...D.actual.filter(p => p.lastOut != null).map(p => p.lastOut)), stillIn = D.actual.some(p => p.open);
@@ -153,7 +153,8 @@ export async function render(main, ctx) {
       if (!a) return { t: "—", c: "" };
       if (D.isToday) {
         if (a.breakMin == null) return { t: a.open ? "not yet" : "—", c: "muted" };
-        if (a.breakOpen) return { t: `on break ${a.breakMin} min`, c: a.breakMin > 35 ? "bad" : a.breakMin > 30 ? "warn" : "" };
+        // clocked out and not back: a break while it's within 35 min; after that they've most likely left for the day
+        if (a.breakOpen) return a.breakMin <= 35 ? { t: `on break ${a.breakMin} min`, c: a.breakMin > 30 ? "warn" : "" } : { t: `out since ${hm(a.lastOut)}`, c: "muted" };
         return a.breakPaid > 0 ? { t: `${a.breakMin} min · paid` } : { t: `${a.breakMin} min · unpaid`, c: "bad" };
       }
       if (a.breakPaid > 0) return { t: `${Math.round(a.breakPaid * 60)} min paid${a.offMin > Math.round(a.breakPaid * 60) + 2 ? ` · off ${a.offMin} min in all` : ""}` };
