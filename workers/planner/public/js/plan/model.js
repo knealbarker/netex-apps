@@ -793,6 +793,51 @@ export function copyCrew(prevServerCrew, POS, s, outIds = new Set()) {
  * (breaks are gaps). The line is where the pieces run out. Washers and moves people might make aren't guessed.
  *   { slb: { k, pieces, finish (hours) | null, short (pieces not covered by the plan), people, rate (pieces/hr at full staffing) }, ... }
  */
+/**
+ * When each person should leave at the planned pace, and the labor that comes to (Neal, Oct 15).
+ * A person is needed on a station until that kind of work's red finish line (or their own time there ends, if sooner);
+ * they should leave when the last of their stations is done. Short on hours = needed to the end of their time there;
+ * work already done (or none) = not needed. Operators keep their scheduled hours.
+ * Today: someone still clocked in past their leave time counts up to now; someone clocked out counts to their real clock-out.
+ * Returns { people: { empId: { start, leave, end, paid, rate, cost, over, kind } }, total, sched, sales, pct, schedPct, over: [empIds] }.
+ */
+export function paceLabor(X) {
+  const { P, E, R, M } = X, FIN = finishLines(X), people = {};
+  if (!R || R.empty) return null;
+  const D = P.dp && P.dp.D, live = P.isToday && P.now != null && D, now = P.isToday && P.now != null ? P.now : null;
+  const kindOf = stn => (stn === "comf" ? "comf" : groupOf(E.TYPE_OF[stn]));
+  const hasWork = new Set([...CATS, "asm"]);
+  const rateOf = id => { const e = E.empById(id); return e && +e.rate > 0 ? +e.rate : +P.s.payAvg || 0; };
+  const one = (id, code, start, sched, segs, brk) => {
+    let leave = start, kind = null;
+    for (const g of segs) {
+      const k = kindOf(g.stn), f = FIN[k];
+      const until = !hasWork.has(k) ? g.to : f ? (f.finish == null ? g.to : f.finish) : live ? Math.max(g.from, Math.min(g.to, now)) : g.from;
+      const u = Math.min(g.to, Math.max(g.from, until));
+      if (kind == null || u > leave) { leave = Math.max(leave, u); kind = k; }
+    }
+    leave = Math.min(leave, sched);
+    let end = leave;
+    if (now != null && (P.clock || []).some(c => c.personId === id)) {
+      const st = clockState(P, id, now, brk ? { s: brk[0], e: brk[1] } : null);
+      if (st === "gone") end = lastOutOf(P, id) ?? leave; else if (now > leave) end = now;
+    }
+    const b = brk ? Math.max(0, Math.min(end, brk[1]) - Math.max(start, brk[0])) : 0;
+    const paid = Math.max(0, end - start - b), rate = rateOf(id);
+    people[id] = { code, start, leave, end, paid, rate, cost: paid * rate, over: end > leave + 1 / 60, kind };
+  };
+  for (const row of R.rows) if (row.staffed) {
+    const id = (P.crew[row.st.id] || {}).emp || row.emp?.empId; if (!id) continue;
+    one(id, row.st.id, row.x.start, row.clockOut ?? row.x.start, row.segs, row.brkTaken > 0 ? [row.brkS, row.brkS + row.brkTaken] : null);
+  }
+  for (const x of E.opsInfo()) if (x.on) {
+    const id = (P.crew[x.o.id] || {}).emp; if (!id) continue;
+    one(id, x.o.id, x.start, x.end, [{ stn: x.o.id, from: x.start, to: x.end }], x.b ? [x.brkS, x.brkS + x.b] : null);
+  }
+  const total = Object.values(people).reduce((a, p) => a + p.cost, 0), sales = M ? M.committed : 0, sched = M ? M.total : null;
+  return { people, total, sched, sales, pct: sales > 0 ? total / sales * 100 : null, schedPct: sales > 0 && sched != null ? sched / sales * 100 : null,
+    over: Object.keys(people).filter(id => people[id].over) };
+}
 export function finishLines(X) {
   const { P, E, R } = X, out = {};
   if (!R || R.empty) return out;

@@ -294,9 +294,14 @@ export async function render(main, ctx) {
       const D = P.dp?.D, left = P.isToday && D ? leftovers(P).reduce((t, x) => t + x.n, 0) : null;
       cls = "good";
       // planned labor $ and its percent of the plan's pieces' sales, against the labor target (Neal, Oct 15; Admin/Owner only, like pay rates)
-      const Mo = admin && X.M ? X.M : null, tgt = SET.groups.money.laborTarget, sales = Mo ? Mo.committed : 0, pct = Mo && sales > 0 ? Mo.total / sales * 100 : null;
+      // at the planned pace: each person out at their red line; anyone staying past it pushes this up (Neal, Oct 15)
+      const PL = admin && X.M ? M.paceLabor(X) : null, tgt = SET.groups.money.laborTarget, pct = PL ? PL.pct : null;
       const pcls = pct == null ? "" : pct <= tgt ? "good-txt" : pct <= tgt + 2 ? "warn-txt" : "bad-txt";
-      const lab = Mo ? raw(html` · labor ${fmt$(Mo.total)}${pct != null ? raw(html` = <b class="pv-pct ${pcls}" title="Planned labor ${fmt$(Mo.total)} ÷ ${fmt$(sales)} sales of the plan's pieces · target ${tgt}%">${pct.toFixed(1)}%</b>`) : ""}`) : "";
+      const overN = PL ? PL.over.length : 0;
+      const ltip = PL ? `Labor if everyone leaves at their red line (the planned pace): ${fmt$(PL.total)} ÷ ${fmt$(PL.sales)} sales of the plan's pieces · target ${tgt}%`
+        + `${overN ? ` · ${overN} past their line: ${PL.over.map(id => first(M.nameOf(P, id))).join(", ")}` : ""}`
+        + `${PL.schedPct != null ? ` · staying to scheduled clock-outs: ${fmt$(PL.sched)} = ${PL.schedPct.toFixed(1)}%` : ""}` : "";
+      const lab = PL ? raw(html` · labor ${fmt$(PL.total)}${pct != null ? raw(html` = <b class="pv-pct ${pcls}" title="${ltip}">${pct.toFixed(1)}%</b>`) : ""}${overN ? raw(html` <span class="bad-txt pv-over" title="${ltip}">· ${overN} past their line</span>`) : ""}`) : "";
       txt = raw(html`${left != null ? raw(html`<b>${fmtN(left)}</b> of ${fmtN(tot)} pieces left`) : raw(html`<b>${P.expected ? "~" : ""}${fmtN(tot)}</b> pieces`)} · ${people} people · ${fmtH(hrs)} planned · in ${hm(X.R.firstStart)}–${hm(X.R.end)}${lab}`);
     }
     el.className = `pv-status ${cls}`;
@@ -395,6 +400,15 @@ export async function render(main, ctx) {
       if (left > 0 && st.over) return html`<span class="muted">${fmtN(left)} for later</span>`;
       return left <= 0 ? html`<span class="good-txt">done</span>` : html`<span class="${f && f.finish == null ? "bad-txt" : ""}" title="${f ? finTip(f) : ""}">${fmtN(left)} ${P.isToday ? "left" : "to do"}${when}</span>`;
     };
+    // each person's red "should leave" mark: when their last station's work runs out at the planned pace (Neal, Oct 15)
+    const PL = st.over ? null : M.paceLabor(X);
+    const leaveTick = (empId, lane, stn) => {
+      const lp = PL && PL.people[empId]; if (!lp || lp.leave <= a || lp.leave >= b) return "";
+      if (stn != null) { const at = rows.find(r => r.code === stn); if (!at) return ""; }
+      const nm = M.nameOf(P, empId), late = lp.over && now != null;
+      const tip = `${nm} should be done about ${fmtClock(lp.leave)} at the planned pace${lp.kind ? ` (${M.GROUP_LABEL[lp.kind] || lp.kind})` : ""}${late ? ` — still on the clock, ${fmtH(Math.max(0, now - lp.leave))} past` : ""}`;
+      return html`<i class="tl-leave ${late ? "late" : ""}" style="left:${pct(lp.leave)};top:${lane * 32 + 3}px" title="${tip}" aria-label="${tip}"><span>${hmShort(lp.leave)}</span></i>`;
+    };
     const dupTip = (x, where) => x.dup ? ` — ⚠ ${(x.dupWith || []).length + 1} people on ${where} ${fmtClock(x.from)}–${fmtClock(x.to)} (also ${(x.dupWith || []).map(id => first(M.nameOf(P, id))).join(", ")})` : "";
     const barHtml = (g, l, lane = l.lane) => {
       const pi = info[l.empId], nm = pi ? pi.first : first(M.nameOf(P, l.empId));
@@ -427,7 +441,7 @@ export async function render(main, ctx) {
           const plab = html`<i class="sw" style="--c:${COLOR[g.key] || COLOR.ops}"></i><span class="tl-name"><b>${g.label}${raw(punchTag(pu))}</b><small>${sub}</small>${wkTxt ? raw(html`<small class="tl-worked" title="On the clock today">⏱ ${wkTxt}</small>`) : ""}</span>`;
           return raw(html`<div class="tl-row ${g.first ? "first" : "sub"}" data-g="${g.key}" data-code="${g.code}">
             ${can ? raw(html`<button type="button" class="tl-lab" data-emp="${g.empId}" aria-label="Move ${g.name}" title="${ptitle}">${raw(plab)}</button>`) : raw(html`<div class="tl-lab" title="${ptitle}">${raw(plab)}</div>`)}
-            <div class="tl-track" style="height:32px">${raw(g.lanes.map(l => barHtml(g, l)).join(""))}${raw(nowLine)}${raw(finLine(g.key))}</div>
+            <div class="tl-track" style="height:32px">${raw(g.lanes.map(l => barHtml(g, l)).join(""))}${raw(nowLine)}${raw(leaveTick(g.empId, 0))}</div>
           </div>`);
         }
         const lab = html`<i class="sw" style="--c:${COLOR[g.key] || COLOR.ops}"></i><span class="tl-name"><b>${g.label}</b><small>${raw(g.first ? statusOf(g) : "")}</small></span>${add ? raw('<span class="tl-plus" aria-hidden="true">+</span>') : ""}`;
@@ -435,7 +449,7 @@ export async function render(main, ctx) {
         return raw(html`<div class="tl-row ${g.key === "slb" ? "neck" : ""} ${g.first ? "first" : "sub"}" data-g="${g.key}" data-code="${g.code}">
           ${reorder ? raw(html`<div class="tl-lab">${raw(lab)}${ord}</div>`)
             : add ? raw(html`<button type="button" class="tl-lab" data-add="${g.key}" data-code="${g.code}" aria-label="Add someone to ${g.label}">${raw(lab)}</button>`) : raw(html`<div class="tl-lab">${raw(lab)}</div>`)}
-          <div class="tl-track" style="height:${lanes * 32}px">${g.lanes.length ? raw(g.lanes.map(l => barHtml(g, l)).join("")) : raw('<span class="tl-none">No one</span>')}${raw(nowLine)}${raw(finLine(g.key))}</div>
+          <div class="tl-track" style="height:${lanes * 32}px">${g.lanes.length ? raw(g.lanes.map(l => barHtml(g, l)).join("")) : raw('<span class="tl-none">No one</span>')}${raw(nowLine)}${raw(finLine(g.key))}${raw(g.lanes.filter(l => { const lp = PL && PL.people[l.empId]; return lp && l.bars.some(x => !x.brk && lp.leave >= x.from - 0.02 && lp.leave <= x.to + 0.02); }).map(l => leaveTick(l.empId, l.lane)).join(""))}</div>
         </div>`);
       })}
     </div>`;

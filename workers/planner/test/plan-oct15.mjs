@@ -140,5 +140,25 @@ await t("no clock-out entered = an 8-hour day; red finish lines are pieces ÷ pi
   near(f2.slb.finish - f.slb.finish, 0.25, "break moves the line");
 });
 
+await t("labor at the planned pace: each person leaves at their work's red line; staying past it raises labor", () => {
+  const F = M.finishLines(X), L = M.paceLabor(X), p = L.people;
+  near(p.carnell.leave, F.slb.finish, "Carnell leaves when starch bottoms are done");
+  near(p.diana.leave, F.slb.finish, "so does Diana");
+  near(p.rosenda.leave, F.slt.finish, "Rosenda at the starch tops line");
+  near(p.maria.leave, F.slt.finish, "Maria's last station is SLT 2 → starch tops line");
+  near(p.roderick.leave, row("slb1") ? M.shiftOf(crew0.slo, s.breakMin).end : 0, "operators keep their scheduled clock-out");
+  ok(L.total < L.sched - 1, `paced labor ${L.total.toFixed(0)} under scheduled ${L.sched.toFixed(0)}`);
+  ok(L.pct < L.schedPct && L.sales > 0, "and so is the percent");
+  // today, 2:00 PM: Carnell still clocked in 50 min past his line; Diana clocked out at 1:00
+  const now = 14, P1 = { ...P0(crew0), isToday: true, now, day: "2026-10-15", today: "2026-10-15", dp: { D: { done: {} } },
+    clock: [{ personId: "carnell", clockIn: "2026-10-15T05:40:00", clockOut: null }, { personId: "diana", clockIn: "2026-10-15T07:30:00", clockOut: "2026-10-15T13:00:00" }] };
+  const X1 = M.evaluate(P1), L1 = M.paceLabor(X1), c = L1.people.carnell;
+  ok(c.over && Math.abs(c.end - now) < 1e-6, "Carnell counts up to now");
+  near(L1.people.diana.end, 13, "Diana counts to her real clock-out");
+  const L2 = M.paceLabor(M.evaluate({ ...P1, now: 14.5 }));
+  ok(L2.total > L1.total && L2.pct > L1.pct, "half an hour later the labor % is higher");
+  eq(L1.over, ["carnell"], "who's past their line");
+});
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
