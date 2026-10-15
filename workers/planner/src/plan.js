@@ -24,9 +24,9 @@ export async function loadPlan(db, env, day) {
   const d = await dayRow(db, locationId, day);
   const crew = {}, overrides = {}; let callouts = [], published = null, updatedByName = null;
   if (d) {
-    for (const a of (await db.prepare(`SELECT s.code, a.person_id AS personId, a.starts_at AS start, a.hours, a.hard_stop AS stop, a.source, a.moves_json AS moves
+    for (const a of (await db.prepare(`SELECT s.code, a.person_id AS personId, a.starts_at AS start, a.hours, a.hard_stop AS stop, a.source, a.moves_json AS moves, a.break_at AS brk
         FROM plan_assignments a JOIN plan_stations s ON s.id=a.station_id WHERE a.day_id=? AND a.deleted_at IS NULL`).bind(d.id).all()).results)
-      crew[a.code] = { personId: a.personId, start: a.start, hours: a.hours, stop: a.stop || "", source: a.source, ...(a.moves ? { moves: parseMoves(a.moves) } : {}) };
+      crew[a.code] = { personId: a.personId, start: a.start, hours: a.hours, stop: a.stop || "", source: a.source, ...(a.moves ? { moves: parseMoves(a.moves) } : {}), ...(a.brk ? { brk: a.brk } : {}) };
     for (const o of (await db.prepare("SELECT category_id AS k, pieces FROM plan_count_overrides WHERE day_id=? AND deleted_at IS NULL").bind(d.id).all()).results) overrides[o.k] = o.pieces;
     callouts = (await db.prepare(`SELECT c.id, c.person_id AS personId, s.code AS station, c.note, c.created_at AS at FROM plan_callouts c LEFT JOIN plan_stations s ON s.id=c.station_id
         WHERE c.day_id=? AND c.deleted_at IS NULL ORDER BY c.created_at`).bind(d.id).all()).results;
@@ -89,9 +89,10 @@ function cleanCrew(crew, stations, people) {
     seen.add(c.personId);
     if (!TIME.test(c.start || "")) throw new HttpError(400, `Clock-in for ${code} must be a time like 05:30.`);
     if (c.stop && !TIME.test(c.stop)) throw new HttpError(400, `Hard stop for ${code} must be a time like 14:00.`);
+    if (c.brk && !TIME.test(c.brk)) throw new HttpError(400, `Break for ${code} must be a time like 09:00.`);
     const hours = +c.hours; if (!(hours >= 0 && hours <= 16)) throw new HttpError(400, `Hours for ${code} must be between 0 and 16.`);
     out.push({ stationId: st, personId: c.personId, start: c.start, hours, stop: c.stop || null, source: c.source === "suggested" ? "suggested" : c.source === "clock" ? "clock" : "user",
-      moves: cleanMoves(c.moves, stations, code) });
+      moves: cleanMoves(c.moves, stations, code), brk: c.brk || null });
   }
   return out;
 }
@@ -111,7 +112,7 @@ export async function savePlan(db, env, me, day, body) {
   // what it was, for the "Changes today" list
   const before = {}, ovBefore = {};
   if (cur) {
-    for (const a of (await db.prepare(`SELECT s.code, a.person_id AS personId, a.starts_at AS start, a.hours, a.hard_stop AS stop, a.moves_json AS moves FROM plan_assignments a JOIN plan_stations s ON s.id=a.station_id
+    for (const a of (await db.prepare(`SELECT s.code, a.person_id AS personId, a.starts_at AS start, a.hours, a.hard_stop AS stop, a.moves_json AS moves, a.break_at AS brk FROM plan_assignments a JOIN plan_stations s ON s.id=a.station_id
         WHERE a.day_id=? AND a.deleted_at IS NULL`).bind(cur.id).all()).results) before[a.code] = a;
     for (const o of (await db.prepare("SELECT category_id AS k, pieces FROM plan_count_overrides WHERE day_id=? AND deleted_at IS NULL").bind(cur.id).all()).results) ovBefore[o.k] = o.pieces;
   }
@@ -126,8 +127,8 @@ export async function savePlan(db, env, me, day, body) {
     ? db.prepare("UPDATE plan_days SET rev=rev+1, updated_at=?, updated_by=? WHERE id=? AND rev=?").bind(now, me.id, id, rev)
     : db.prepare("INSERT INTO plan_days(id, location_id, work_date, status, updated_by, updated_at, rev) VALUES(?,?,?,'draft',?,?,1)").bind(id, locationId, day, me.id, now)];
   stmts.push(db.prepare(`DELETE FROM plan_assignments WHERE day_id=? AND ${G}`).bind(id, ...g));
-  for (const c of crew) stmts.push(db.prepare(`INSERT INTO plan_assignments(id, day_id, station_id, person_id, starts_at, hours, hard_stop, source, moves_json, updated_by)
-      SELECT ?,?,?,?,?,?,?,?,?,? WHERE ${G}`).bind(ulid(), id, c.stationId, c.personId, c.start, c.hours, c.stop, c.source, c.moves, me.id, ...g));
+  for (const c of crew) stmts.push(db.prepare(`INSERT INTO plan_assignments(id, day_id, station_id, person_id, starts_at, hours, hard_stop, source, moves_json, break_at, updated_by)
+      SELECT ?,?,?,?,?,?,?,?,?,?,? WHERE ${G}`).bind(ulid(), id, c.stationId, c.personId, c.start, c.hours, c.stop, c.source, c.moves, c.brk, me.id, ...g));
   stmts.push(db.prepare(`DELETE FROM plan_count_overrides WHERE day_id=? AND ${G}`).bind(id, ...g));
   for (const [k, n] of overrides) stmts.push(db.prepare(`INSERT INTO plan_count_overrides(day_id, category_id, pieces, updated_by) SELECT ?,?,?,? WHERE ${G}`).bind(id, k, n, me.id, ...g));
   let res;
@@ -135,7 +136,7 @@ export async function savePlan(db, env, me, day, body) {
   catch (e) { if (/UNIQUE/i.test(String(e.message))) throw new HttpError(409, "Someone else started this plan at the same moment. Your view has been refreshed with their version.", { latest: await loadPlan(db, env, day) }); throw e; }
   if (cur && res?.[0]?.meta && res[0].meta.changes === 0) throw new HttpError(409, "Someone else saved this plan at the same moment. Your view has been refreshed with their version.", { latest: await loadPlan(db, env, day) });
   const codeOf = new Map(stRows.map(s => [s.id, s.code]));
-  const after = Object.fromEntries(crew.map(c => [codeOf.get(c.stationId), { personId: c.personId, start: c.start, hours: c.hours, stop: c.stop, moves: c.moves }]));
+  const after = Object.fromEntries(crew.map(c => [codeOf.get(c.stationId), { personId: c.personId, start: c.start, hours: c.hours, stop: c.stop, moves: c.moves, brk: c.brk }]));
   const lines = planDiff(before, after, ovBefore, Object.fromEntries(overrides), new Map(stRows.map(s => [s.code, s.label])), people);
   await audit(db, { orgId: env.ORG_ID, userId: me.id, appId: env.APP_ID, entity: "plan_days", entityId: id, action: "update", changes: { day, rev: rev + 1, crew: crew.length, overrides: Object.fromEntries(overrides), lines: lines.slice(0, 40) } });
   return { rev: rev + 1, day };

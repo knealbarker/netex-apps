@@ -102,13 +102,17 @@ export function createEngine(S) {
       const ty = p.type === "slt2" ? "slt" : p.type || "ops"; ppl.push({ id: p.id, start, a, b, ty, mid: start + a / 2 });
     }
     const out = {};
-    if (!s.staggerBreaks) { for (const x of ppl) out[x.id] = x.mid; return out; }
+    // a break time the manager set for that person that day (Neal, Oct 14) is kept as is; the others stagger around it
+    const fixed = ppl.filter(x => parseTime((s.crew[x.id] || {}).brk) != null);
+    for (const x of fixed) out[x.id] = parseTime(s.crew[x.id].brk);
+    if (!s.staggerBreaks) { for (const x of ppl) if (out[x.id] == null) out[x.id] = x.mid; return out; }
     const step = 0.25;
     // the earliest a break starts: 3 hours after clocking in (Neal, Oct 13); the latest: 2 hours before the shift ends
     for (const x of ppl) { x.lo = x.start + Math.min(3, x.a / 2); x.hi = Math.max(x.lo, x.start + x.a - Math.min(2, x.a / 2)); }
     ppl.sort((a, b) => a.lo - b.lo || (a.hi - a.lo) - (b.hi - b.lo));
-    const done = [];
+    const done = fixed.map(x => ({ t: out[x.id], b: x.b, ty: x.ty }));
     for (const x of ppl) {
+      if (out[x.id] != null) continue;
       let best = x.lo, bc = Infinity;
       for (let t = Math.ceil(x.lo / step - 1e-9) * step; t <= x.hi + 1e-9; t += step) {
         let c = 0;

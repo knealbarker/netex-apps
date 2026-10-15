@@ -8,6 +8,7 @@ import { hm, stepsOf, parseTime } from "../public/js/engine/engine.js";
 
 let pass = 0, fail = 0;
 const t = async (name, fn) => { try { await fn(); pass++; console.log("  ok  " + name); } catch (e) { fail++; console.log("  FAIL " + name + "\n       " + (e.stack || e).split("\n").slice(0, 3).join("\n       ")); } };
+const eq = (a, b, m = "") => { if (JSON.stringify(a) !== JSON.stringify(b)) throw new Error(`${m} expected ${JSON.stringify(b)} got ${JSON.stringify(a)}`); };
 const ok = (v, m) => { if (!v) throw new Error(m || "expected truthy"); };
 
 const { db } = freshDb();
@@ -129,6 +130,18 @@ await t("people board: one line per person in station order, bars labeled with t
   ok(betty.includes("SLB 1") && betty.includes("DCT 2"), betty.join(","));
   ok(rows.find(r => r.empId === "roderick").lanes[0].bars[0].label === "SL Operator");
   ok(rows.filter(r => r.first).map(r => r.key).join() === "slb,slt,dct,dcb,asm,ops", rows.filter(r => r.first).map(r => r.key).join());
+});
+
+await t("a break time set for one person is kept; the others work around it; it survives a save", () => {
+  const crew = JSON.parse(JSON.stringify(P.crew)); crew.slb1.brk = "09:00";
+  const X2 = M.evaluate({ ...P, crew }), c = X2.R.rows.find(r => r.st.id === "slb1");
+  ok(Math.abs(c.brkS - 9) < 1e-6, `Carnell's break ${hm(c.brkS)}`);
+  const d = X2.R.rows.find(r => r.st.id === "slb2");
+  ok(Math.abs(d.brkS - 9) >= 0.5 - 1e-6, `Diana's break ${hm(d.brkS)} stays apart from Carnell's`);
+  const cov = X2.R.rows.filter(r => r.staffed && r.st.id !== "slb1").flatMap(r => r.segs.filter(sg => sg.stn === "slb1" && sg.from < 9.5 - 0.01 && sg.to > 9 + 0.01));
+  ok(cov.length, "someone covers SLB 1 at 9:00");
+  eq(M.crewToServer(crew).slb1.brk, "09:00"); eq(M.crewFromServer(M.crewToServer(crew), POS, s).slb1.brk, "09:00");
+  ok(M.sigOf({ ...P, crew }) !== M.sigOf(P), "a changed break counts as a change to publish");
 });
 
 console.log(`\n${pass} passed, ${fail} failed`);

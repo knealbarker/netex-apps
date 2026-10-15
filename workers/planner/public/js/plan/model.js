@@ -50,13 +50,13 @@ export const peopleFrom = TEAM => TEAM.people.filter(p => p.status === "active")
 export function blankCrew(POS, s) { return Object.fromEntries(POS.map(p => [p.id, { emp: "", start: s.defStart, hrs: s.fullDay, stop: "", source: "" }])); }
 export function crewFromServer(serverCrew, POS, s) {
   const crew = blankCrew(POS, s);
-  for (const [code, c] of Object.entries(serverCrew || {})) if (crew[code]) crew[code] = { emp: c.personId, start: c.start, hrs: c.hours, stop: c.stop || "", source: c.source || "user", moves: c.moves || [] };
+  for (const [code, c] of Object.entries(serverCrew || {})) if (crew[code]) crew[code] = { emp: c.personId, start: c.start, hrs: c.hours, stop: c.stop || "", source: c.source || "user", moves: c.moves || [], brk: c.brk || "" };
   return crew;
 }
 export function crewToServer(crew) {
   const out = {};
   for (const [code, c] of Object.entries(crew)) if (c.emp) out[code] = { personId: c.emp, start: c.start, hours: +c.hrs || 0, stop: c.stop || "", source: c.source === "suggested" ? "suggested" : c.source === "clock" ? "clock" : "user",
-    ...(c.moves && c.moves.length ? { moves: c.moves } : {}) };
+    ...(c.moves && c.moves.length ? { moves: c.moves } : {}), ...(c.brk ? { brk: c.brk } : {}) };
   return out;
 }
 
@@ -398,7 +398,7 @@ export function clockInOf(P) {
 
 // ---------------------------------------------------------------- publishing
 export function sigOf(P) {
-  const crew = Object.entries(P.crew).filter(([, c]) => c.emp).sort(([a], [b]) => a.localeCompare(b)).map(([k, c]) => [k, c.emp, c.start, +c.hrs, c.stop || "", ...(c.moves && c.moves.length ? [c.moves.map(m => m.at + ">" + m.to).join(",")] : [])]);
+  const crew = Object.entries(P.crew).filter(([, c]) => c.emp).sort(([a], [b]) => a.localeCompare(b)).map(([k, c]) => [k, c.emp, c.start, +c.hrs, c.stop || "", ...(c.moves && c.moves.length ? [c.moves.map(m => m.at + ">" + m.to).join(",")] : []), ...(c.brk ? ["b" + c.brk] : [])]);
   const s = JSON.stringify([crew, CATS.map(k => Math.round(P.q[k] || 0))]);
   let h = 2166136261; for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); }
   return (h >>> 0).toString(36);

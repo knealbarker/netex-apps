@@ -502,7 +502,8 @@ export async function render(main, ctx) {
     const opts = groups.filter(g => g.key !== curKey).sort((a, b) => rankIn(a) - rankIn(b));
     const T = timeChoices(P, pi.startH);
     const state = { to: opts.find(g => rankIn(g) < 99)?.key || opts[0]?.key, at: T[0][1] };
-    const stateTxt = pi.state === "gone" ? `Clocked out ${fmtClock(pi.outAt)} · gone for the day` : pi.state === "break" ? `On break since ${fmtClock(pi.outAt)}` : pi.state === "missing" ? "Not clocked in yet" : pi.state === "in" ? "On the clock" : `Planned ${fmtClock(pi.startH)}–${fmtClock(pi.end)}`;
+    const brkAt = M.breaksOf(X.R)[empId]?.s ?? X.E.opsInfo().find(o => o.o.id === code)?.brkS;
+    const stateTxt = (brkAt != null && !pi.state ? `Break ${fmtClock(brkAt)}${st.crew[code].brk ? " (set)" : ""} · ` : "") + (pi.state === "gone" ? `Clocked out ${fmtClock(pi.outAt)} · gone for the day` : pi.state === "break" ? `On break since ${fmtClock(pi.outAt)}` : pi.state === "missing" ? "Not clocked in yet" : pi.state === "in" ? "On the clock" : `Planned ${fmtClock(pi.startH)}–${fmtClock(pi.end)}`);
     const dlg = openDialog({
       title: `Move ${pi.name}`, submitLabel: "Move",
       body: html`<p class="dlg-lead">Now on <b>${M.GROUP_LABEL[curKey] || ""}</b> · ${stateTxt}${pi.standing ? ` · must leave by ${fmtClock(parseTime(pi.standing))}` : ""}</p>
@@ -511,7 +512,8 @@ export async function render(main, ctx) {
         <fieldset class="ms-times"><legend>From</legend>${T.map(([l, v], i) => raw(html`<label class="ms-time"><input type="radio" name="at" value="${v}" ${i === 0 ? "checked" : ""}><span>${l}</span></label>`))}
           <label class="ms-time other"><span class="sr">Another time</span><input class="input" type="time" step="300" name="atx"></label></fieldset>
         <div class="ms-impact" id="ms-impact" aria-live="polite"></div>
-        <div class="ms-more"><span class="muted small">Today only:</span>
+        <div class="ms-more"><span class="muted small">${P.isToday ? "Today" : new Date(pick + "T12:00:00").toLocaleDateString(undefined, { weekday: "short", month: "numeric", day: "numeric" })} only:</span>
+          <button type="button" class="btn small ghost" data-act="brk">Break at…</button>
           <button type="button" class="btn small ghost" data-act="home">Send home…</button><button type="button" class="btn small ghost" data-act="longer">Stay 1 hour longer</button>
           <button type="button" class="btn small ghost" data-act="off">Off the plan</button><button type="button" class="btn small ghost" data-act="away">Out, late or hard stop…</button></div>`,
       onOpen: (form, d) => {
@@ -536,6 +538,7 @@ export async function render(main, ctx) {
         d.querySelectorAll("[data-act]").forEach(b => b.addEventListener("click", () => {
           const act = b.dataset.act; d.close();
           if (act === "home") return homeSheet(code);
+          if (act === "brk") return breakSheet(code);
           if (act === "longer") return edit(() => { st.crew[code] = { ...st.crew[code], hrs: Math.min(16, (+st.crew[code].hrs || 0) + 1), stop: "", source: "user" }; }, { msg: `${pi.first} stays an hour longer.` });
           if (act === "off") return edit(() => { st.crew[code] = { ...st.crew[code], emp: "", stop: "", moves: [], source: "" }; }, { msg: `${pi.first} is off the plan.` });
           if (act === "away") return awayDialog(makeP(), empId);
@@ -548,6 +551,27 @@ export async function render(main, ctx) {
       },
     });
     return dlg;
+  }
+  // ---- a break time for one person that day (Neal, Oct 14); "Automatic" gives it back to the planner
+  function breakSheet(code) {
+    const c = st.crew[code], X = st.X, P = makeP(), name = first(M.nameOf(P, c.emp));
+    const auto = M.breaksOf(X.R)[c.emp]?.s ?? X.E.opsInfo().find(o => o.o.id === code)?.brkS ?? (parseTime(c.start) ?? 7) + 3;
+    openDialog({
+      title: `${name}'s break`, submitLabel: "Save",
+      body: html`<p class="dlg-lead">For ${longDay(pick)} only. ${c.brk ? `Set to ${fmtClock(parseTime(c.brk))}.` : `The planner has it at ${fmtClock(auto)}.`} Everyone else's breaks work around it.</p>
+        <label class="field"><span>Break starts at</span><input class="input" type="time" step="300" name="t" value="${c.brk || hhmm(auto)}" required></label>
+        ${c.brk ? raw('<button type="button" class="btn ghost small" data-auto>Back to automatic</button>') : ""}`,
+      onOpen: (form, d) => {
+        d.classList.add("sheet");
+        d.querySelector("[data-auto]")?.addEventListener("click", () => { d.close(); edit(() => { st.crew[code] = { ...st.crew[code], brk: "", source: "user" }; }, { msg: `${name}'s break is placed by the planner again.` }); });
+      },
+      onSubmit: form => {
+        const t = form.t.value; if (!t) throw new Error("Pick a time.");
+        const h = parseTime(t), s0 = parseTime(c.start) ?? 0;
+        if (h < s0 + 0.25 || h > s0 + (+c.hrs || 0) + 0.5) throw new Error(`Pick a time during ${name}'s shift.`);
+        edit(() => { st.crew[code] = { ...st.crew[code], brk: t, source: "user" }; }, { msg: `${name} breaks at ${fmtClock(h)}.` });
+      },
+    });
   }
   function homeSheet(code) {
     const c = st.crew[code], P = makeP(), name = first(M.nameOf(P, c.emp));

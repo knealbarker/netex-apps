@@ -43,6 +43,14 @@ await t("Manager saves crew and piece overrides; they load back", async () => {
   eq(r.crew.slt1, { personId: p1, start: "05:00", hours: 7.5, stop: "", source: "user" });
   eq(r.crew.dct1.stop, "13:00"); eq(r.overrides, { comf: 12 }); eq(r.rev, 1); eq(r.status, "draft"); eq(r.updatedBy, "Mo");
 });
+await t("a break time set on the plan saves and loads back; a bad time is refused", async () => {
+  const { call, p1 } = await setup();
+  const s = await call("PUT", `/api/plan/${DAY}`, { as: "mo@example.com", body: { rev: 0, crew: { slb1: { personId: p1, start: "05:40", hours: 7.5, brk: "09:00" } } } });
+  eq(s.status, 200);
+  eq((await call("GET", `/api/plan/${DAY}`)).body.crew.slb1.brk, "09:00");
+  const bad = await call("PUT", `/api/plan/${DAY}`, { as: "mo@example.com", body: { rev: 1, crew: { slb1: { personId: p1, start: "05:40", hours: 7.5, brk: "9am" } } } });
+  eq(bad.status, 400);
+});
 await t("moves save and load back; Team's standing schedule can be set by a manager", async () => {
   const { call, p1, p2 } = await setup();
   const s = await call("PUT", `/api/plan/${DAY}`, { as: "mo@example.com", body: { rev: 0, crew: { dct1: { personId: p1, start: "06:00", hours: 7.5, moves: [{ at: "10:30", to: "slb1" }] } } } });
