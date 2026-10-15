@@ -48,23 +48,22 @@ export async function render(main, ctx) {
   }
 
   function draw() {
-    const L = D.labor, pct = L.pct, now = nowH();
-    const rows = planRows();
-    const pastLine = rows.filter(r => r.past > 1 / 6);
-    const bits = [];
-    if (D.due.pieces) bits.push(`${fmtN(D.due.finished)} of ${fmtN(D.due.pieces)} due pieces finished`);
-    if (pastLine.length) bits.push(`${pastLine.length} ${pastLine.length === 1 ? "person" : "people"} past their line`);
-    if (pct != null) bits.push(pct <= L.target ? `labor ${pct.toFixed(1)}%, under target` : `labor ${pct.toFixed(1)}%, over the ${L.target}% target`);
-    const good = D.due.finished >= D.due.pieces && !pastLine.length && (pct == null || pct <= L.target);
-    const head = bits.length ? `${D.isToday ? "So far: " : ""}${bits.join(" · ")}` : "No pieces or hours recorded for this day";
+    const L = D.labor, DP = D.departments, T = DP.total, tgt = DP.target;
+    // the goal (Neal, Oct 15): every piece due today processed, at a pace that keeps labor under the target
+    const missed = [...T.miss, ...DP.rows.filter(r => r.miss.length).map(r => r.label)];
+    const head = D.isToday && !T.miss.length && T.left === 0 ? "So far: every due piece is done" + (T.pct != null ? ` · labor ${T.pct.toFixed(1)}%` : "")
+      : T.miss.length ? `${D.isToday ? "So far: " : "Missed: "}${T.miss.join(" · ")}` : `Goal met: every due piece done${T.pct != null ? `, labor ${T.pct.toFixed(1)}% (target ${tgt}%)` : ""}`;
+    const cls = T.miss.length ? (D.isToday && !(T.pct > tgt) ? "warn" : "bad") : "ok";
+    const deptMiss = DP.rows.filter(r => r.miss.length).map(r => r.label);
     const lastOut = Math.max(-1, ...D.actual.filter(p => p.lastOut != null).map(p => p.lastOut)), stillIn = D.actual.some(p => p.open);
     const tiles = [
-      { v: fmtN(D.done.pieces), s: "pieces assembled" },
-      { v: D.due.pieces ? `${fmtN(D.due.finished)}` : "—", s: D.due.pieces ? `of ${fmtN(D.due.pieces)} due, finished` : "pieces due", c: D.due.pieces && D.due.finished < D.due.pieces ? "warn" : "" },
-      { v: L.hours ? fmtH(L.hours) : "—", s: `paid hours · ${L.people} ${L.people === 1 ? "person" : "people"}`, t: L.breakPaid > 0.01 ? `Includes ${fmtH(L.breakPaid)} of paid breaks (up to 30 min each, Production and Laundry Hub)` : "" },
-      { v: L.perHour != null ? L.perHour.toFixed(1) : "—", s: "pieces per paid hour" },
-      ...(D.money ? [{ v: pct != null ? pct.toFixed(1) + "%" : "—", c: pct == null ? "" : pct <= L.target ? "good" : "bad", s: `labor of revenue · target ${L.target}%` }] : []),
-      { v: lastOut >= 0 ? hm(lastOut) : "—", s: `last out${stillIn ? " (some still in)" : ""}${R0 && R0.lastOut != null ? ` · plan ${hm(R0.lastOut)}` : ""}` },
+      { v: T.due ? fmtN(T.finished) : "—", s: T.due ? `of ${fmtN(T.due)} due, finished` : "pieces due", c: T.left ? "warn" : T.due ? "good" : "" },
+      { v: fmtN(T.assembled), s: "pieces assembled" },
+      { v: L.hours ? fmtH(L.hours) : "—", s: `paid hours · ${L.people} ${L.people === 1 ? "person" : "people"}`, t: L.breakPaid > 0.01 ? `Includes ${fmtH(L.breakPaid)} of paid breaks (up to 30 min each)` : "" },
+      { v: T.perHour != null ? T.perHour.toFixed(1) : "—", s: "pieces per paid hour" },
+      ...(D.money ? [{ v: T.cost != null ? fmt$(T.cost) : "—", s: `labor · ${fmt$(T.value || 0)} of sales assembled` },
+        { v: T.pct != null ? T.pct.toFixed(1) + "%" : "—", c: T.pct == null ? "" : T.pct <= tgt ? "good" : "bad", s: `labor % · target ${tgt}%` }] : []),
+      { v: lastOut >= 0 ? hm(lastOut) : "—", s: `last out${stillIn ? " (some still in)" : ""}` },
     ];
     main.innerHTML = html`<div id="rv-root">
       <div class="page-head"><div><h1>${D.isToday ? "Today" : "Review"}</h1><p>${longDay(D.day)}${D.isToday ? " · so far, live from SMRT and the time clock" : ""}</p></div>
@@ -73,15 +72,16 @@ export async function render(main, ctx) {
           <label class="sr" for="rv-date">Day</label><input class="input" type="date" id="rv-date" value="${D.day}" max="${D.today}">
           <button class="icon-btn" id="rv-next" title="Next work day" aria-label="Next work day" ${D.next ? "" : "disabled"}>›</button>
         </div></div>
-      <section class="verdict ${!bits.length ? "idle" : good ? "ok" : pct != null && pct > L.target ? "bad" : "warn"}"><div class="v-head"><span class="v-ico" aria-hidden="true">${!bits.length ? "…" : good ? "✓" : "!"}</span><b>${head[0].toUpperCase() + head.slice(1)}</b></div></section>
+      <section class="verdict ${!T.due && !L.hours ? "idle" : cls}"><div class="v-head"><span class="v-ico" aria-hidden="true">${cls === "ok" ? "✓" : "!"}</span><b>${head}</b></div>
+        <p class="v-sub muted small">Goal: every piece due ${D.isToday ? "today" : "that day"} finished, with labor at or under ${tgt}% of the sales assembled.${deptMiss.length ? ` Missed in: ${deptMiss.join(", ")}.` : ""}</p></section>
       <section class="tiles rv-tiles">${tiles.map(x => raw(html`<div class="tile"${x.t ? raw(html` title="${x.t}"`) : ""}><b class="t-num ${x.c ? "c-" + x.c : ""}">${x.v}</b><span class="t-sub">${x.s}</span></div>`))}</section>
       ${D.money && L.avgHours > 0.05 ? raw(html`<p class="muted small rv-note">Labor cost uses each person's pay rate from Rippling; ${fmtH(L.avgHours)} of ${fmtH(L.hours)} ${L.avgHours >= L.hours - 0.05 ? "are" : "is"} costed at the average ${fmt$(L.payAvg)}/h because Rippling hasn't sent a rate for ${L.avgHours >= L.hours - 0.05 ? "anyone yet" : "everyone"}.</p>`) : ""}
-      <section class="card pl-card rv-people"><header class="pl-cardhead"><div><h2>Plan vs. actual</h2><p>${R0 && R0.crew.length ? `${R0.copied ? `No plan was saved for this day; this is ${R0.basis}` : R0.plan?.published ? `The published plan${R0.plan.published.by ? ` (${R0.plan.published.by})` : ""}` : "The plan as saved"} against Rippling. Line = when they're needed until at the planned pace (the Plan's red mark). Breaks: the first gap is the paid break, up to 30 min; back after more than 35 and none of it is paid.` : "No plan was saved for this day, so only the time clock is shown."}</p></div></header>${raw(peopleTable(rows))}</section>
+      <section class="card pl-card rv-depts"><header class="pl-cardhead"><div><h2>By department</h2><p>Pieces due and finished, and the labor that went into each. Hours come from the time clock, split across the stations each person was on in the day's plan${DP.planBasis.startsWith("copied") ? " (none was saved, so the last saved plan)" : DP.planBasis === "none" ? " (no plan was saved, so all hours show as not on the plan)" : ""}. Assembly and the operators work for every department, so they're on their own rows and in the total.</p></div></header>${raw(deptTable())}</section>
       <div class="rv-grid">
-        ${raw(laborCard(rows))}
         <section class="card pl-card rv-hours"><header class="pl-cardhead"><div><h2>By the hour</h2><p>Pieces assembled in SMRT each hour${D.isToday ? ", so far" : ""}. Assembly runs behind pressing, so spurts follow batches.</p></div></header>${raw(byHour())}</section>
         ${D.tally && (D.tally.total || D.tally.entries.length || D.isToday) ? raw(html`<section class="card pl-card rv-tally" id="rv-tally"><header class="pl-cardhead"><div><h2>Starch bottoms pressed</h2><p>Counts from the station tablets, checked against SMRT's starch bottoms assembled. Pace is per person on the station, against their SLB goal.</p></div></header>${raw(tallyCard())}</section>`) : ""}
-        <section class="card pl-card"><header class="pl-cardhead"><div><h2>Pieces through the day</h2><p>Assembled in SMRT, counted as they happened${R0 && R0.end != null ? `, against when the plan says the work should be done (${hm(R0.end)})` : ""}.</p></div></header>${raw(chart())}</section>
+        <section class="card pl-card"><header class="pl-cardhead"><div><h2>Pieces through the day</h2><p>Assembled in SMRT, counted as they happened.</p></div></header>${raw(chart())}</section>
+        <section class="card pl-card"><header class="pl-cardhead"><div><h2>People</h2><p>From the time clock. The first gap is the paid break, up to 30 min; back after more than 35 and none of it is paid. Week = paid hours this week, amber from 36, red past 40.</p></div></header>${raw(peopleCard())}</section>
         <section class="card pl-card" id="rv-nextday"><header class="pl-cardhead"><div><h2>Next work day · ${shortDay(D.nextWork)}</h2><p>Pieces to plan for, the crew and when the work should be done.</p></div>
           <a class="btn small primary" href="#/plan?day=${D.nextWork}">Open ${new Date(D.nextWork + "T12:00:00").toLocaleDateString(undefined, { weekday: "long" })}'s plan</a></header><div id="rv-nextday-body"><p class="muted pad">Working it out…</p></div></section>
         <section class="card pl-card"><header class="pl-cardhead"><div><h2>Last ${D.trend.length} work days</h2><p>Pieces assembled per paid hour${D.money ? ", and labor % of revenue" : ""}.</p></div></header>${raw(trend())}</section>
@@ -96,6 +96,11 @@ export async function render(main, ctx) {
     main.querySelector("#rv-date").addEventListener("change", e => { if (e.target.value && e.target.value <= D.today) go(e.target.value); });
     main.querySelectorAll("[data-trend]").forEach(b => { b.addEventListener("click", () => go(b.dataset.trend)); b.addEventListener("keydown", e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); go(b.dataset.trend); } }); });
     wireTally();
+    main.querySelectorAll("form.rv-mnote").forEach(f => f.addEventListener("submit", async e => {
+      e.preventDefault(); const btn = f.querySelector("button"); btn.disabled = true;
+      try { await api(`/review/${D.day}/note`, { method: "PUT", body: { dept: f.dataset.dept, text: f.note.value } }); toast(f.note.value.trim() ? "Note saved." : "Note removed."); D = await api(`/review/${pick}`); draw(); }
+      catch (x) { toast(x.message, "bad"); btn.disabled = false; }
+    }));
     main.querySelectorAll("form.fu").forEach(f => f.addEventListener("submit", async e => {
       e.preventDefault();
       const resolved = e.submitter?.value === "resolve";
@@ -107,36 +112,54 @@ export async function render(main, ctx) {
     }));
   }
 
-  // ------------------------------------------------------------ plan vs. actual, person by person
-  // One row per person who was planned or clocked in: stations (moves), planned in/out and break, their line (should
-  // leave at the planned pace), actual in/out, the break as taken (paid or not), paid hours, the week so far, and flags.
-  function planRows() {
-    const now = nowH(), live = D.isToday;
-    const act = new Map(D.actual.map(a => [a.personId, a]));
-    const PL = R0?.PL?.people || {};
-    const toH = t => { const m = /^(\d{1,2}):(\d{2})/.exec(t || ""); return m ? +m[1] + +m[2] / 60 : null; };
-    const out = [], seen = new Set();
-    for (const c of R0?.crew || []) {
-      if (seen.has(c.personId)) continue; seen.add(c.personId);
-      const a = act.get(c.personId) || null, pl = PL[c.personId] || null;
-      const pin = toH(c.start), pout = toH(c.stop) ?? (pin != null ? pin + 8 : null);
-      const bk = /^(\d{1,2}:\d{2})(?:-(\d{1,2}:\d{2}))?$/.exec(c.brk || "");
-      const end = a ? (a.lastOut ?? (live ? now : null)) : null;
-      const past = pl && end != null && a ? Math.max(0, end - pl.leave) : 0;
-      out.push({ id: c.personId, name: c.name, planned: true, stations: [c.station, ...c.moves.map(m => `${m.label} ${hm(toH(m.at))}`)], pin, pout,
-        pbrk: bk ? [toH(bk[1]), bk[2] ? toH(bk[2]) : toH(bk[1]) + 0.5] : null, leave: pl ? pl.leave : null, a, past, rate: pl ? pl.rate : null });
-    }
-    for (const a of D.actual) if (!seen.has(a.personId)) out.push({ id: a.personId, name: a.name, planned: false, stations: [], a, past: 0 });
-    // who shared a station at the same time in the plan, and both clocked in that day (Neal, Oct 15)
-    if (R0 && !R0.X.R.empty) {
-      try {
-        const SR = M.stationRows(R0.X, M.boardGroups(R0.X.E.POS, BASE.SET.boardOrder));
-        for (const r of SR) for (const l of r.lanes) for (const b of l.bars) if (b.dup && act.has(l.empId) && b.dupWith.some(id => act.has(id))) {
-          const row = out.find(x => x.id === l.empId); if (row) (row.dup = row.dup || []).push(`2 on ${r.label} ${hm(b.from)}–${hm(b.to)}`);
-        }
-      } catch { /* the board is optional here */ }
-    }
-    return out.sort((x, y) => (x.planned === y.planned ? 0 : x.planned ? -1 : 1) || (x.pin ?? x.a?.firstIn ?? 99) - (y.pin ?? y.a?.firstIn ?? 99));
+  // ------------------------------------------------------------ by department, with where the goal was missed
+  function deptTable() {
+    const DP = D.departments, T = DP.total, tgt = DP.target, money = D.money;
+    const pctCls = v => (v == null ? "" : v <= tgt ? "c-good" : v <= tgt + 2 ? "c-warn" : "c-bad");
+    const note = key => {
+      const n = DP.notes[key];
+      if (can) return raw(html`<form class="rv-mnote" data-dept="${key}"><input class="input" name="note" maxlength="500" placeholder="Why was it missed? (shows here for everyone)" aria-label="Note" value="${n ? n.text : ""}"><button class="btn small">Save</button></form>${n ? raw(html`<small class="muted">${n.by || ""}</small>`) : ""}`);
+      return n ? raw(html`<p class="rv-ntext">${n.text}${n.by ? raw(html` <small class="muted">· ${n.by}</small>`) : ""}</p>`) : "";
+    };
+    const cols = 6 + (money ? 2 : 0);
+    const missRow = r => (r.miss.length || DP.notes[r.key] ? raw(html`<tr class="rv-missrow"><td colspan="${cols}"><span class="c-bad small">Missed: ${r.miss.join(" · ") || "—"}</span>${note(r.key)}</td></tr>`) : "");
+    const dept = r => raw(html`<tr class="${r.miss.length ? "rv-miss" : ""}"><td><b>${r.label}</b>${r.people.length ? raw(html`<small>${r.people.join(", ")}</small>`) : ""}</td>
+      <td class="num">${fmtN(r.due)}</td><td class="num ${r.left ? "c-bad" : r.due ? "c-good" : ""}">${fmtN(r.finished)}${r.left ? raw(html`<small>${fmtN(r.left)} left</small>`) : ""}</td>
+      <td class="num">${fmtN(r.assembled)}</td><td class="num">${r.hours > 0.05 ? fmtH(r.hours) : "—"}</td>
+      <td class="num ${r.perHour != null && r.goal && r.perHour < r.goal * 0.9 ? "c-bad" : ""}">${r.perHour != null ? r.perHour.toFixed(1) : "—"}${r.goal ? raw(html`<small>goal ${r.goal}</small>`) : ""}</td>
+      ${money ? raw(html`<td class="num">${r.cost != null && r.hours > 0.05 ? fmt$(r.cost) : "—"}</td><td class="num ${pctCls(r.pct)}" ${r.pct == null && r.assembled ? raw('title="No hours on these stations in the plan, so no labor % (their labor is under Not on the plan or another department)"') : ""}>${r.pct != null ? r.pct.toFixed(1) + "%" : "—"}${r.value ? raw(html`<small>of ${fmt$(r.value)}</small>`) : ""}</td>`) : ""}</tr>${missRow(r)}`);
+    const shared = r => raw(html`<tr class="rv-shared"><td><b>${r.label}</b>${r.people.length ? raw(html`<small>${r.people.join(", ")}</small>`) : ""}</td><td colspan="3" class="muted small">${r.key === "none" ? "clocked in, not on any station in the plan" : "works for every department"}</td>
+      <td class="num">${fmtH(r.hours)}</td><td></td>${money ? raw(html`<td class="num">${fmt$(r.cost)}</td><td class="num muted">${r.pct != null ? r.pct.toFixed(1) + "%" : "—"}<small>of all sales</small></td>`) : ""}</tr>${DP.notes[r.key] || (can && r.key === "none") ? missRow(r) : ""}`);
+    const rows = DP.rows.filter(r => !r.shared), sh = DP.rows.filter(r => r.shared);
+    if (!rows.length && !sh.length) return html`<p class="muted pad">Nothing due, assembled or clocked this day.</p>`;
+    return html`<div class="t-scroll"><table class="rt rv-dept"><thead><tr><th>Department</th><th class="num">Due</th><th class="num">Finished</th><th class="num">Assembled</th><th class="num">Hours</th><th class="num">Per hour</th>${money ? raw('<th class="num">Labor</th><th class="num">Labor %</th>') : ""}</tr></thead><tbody>
+      ${rows.map(dept)}${sh.map(shared)}
+      <tr class="rv-total ${T.miss.length ? "rv-miss" : ""}"><td><b>Total</b></td><td class="num"><b>${fmtN(T.due)}</b></td><td class="num ${T.left ? "c-bad" : "c-good"}"><b>${fmtN(T.finished)}</b>${T.left ? raw(html`<small>${fmtN(T.left)} left</small>`) : ""}</td>
+        <td class="num"><b>${fmtN(T.assembled)}</b></td><td class="num"><b>${fmtH(T.hours)}</b></td><td class="num"><b>${T.perHour != null ? T.perHour.toFixed(1) : "—"}</b></td>
+        ${money ? raw(html`<td class="num"><b>${fmt$(T.cost)}</b></td><td class="num ${pctCls(T.pct)}"><b>${T.pct != null ? T.pct.toFixed(1) + "%" : "—"}</b><small>target ${tgt}%</small></td>`) : ""}</tr>
+      ${T.miss.length || DP.notes.total ? missRow({ key: "total", miss: T.miss }) : ""}
+      </tbody></table></div>
+      <p class="muted small">Labor % = the department's labor ÷ the sales value (before tax) of its pieces assembled that day. Per hour = pieces assembled ÷ hours on its stations, against Settings › Rates.${D.isToday ? " Today's numbers are so far." : ""}</p>`;
+  }
+
+  // ------------------------------------------------------------ people: the time clock, breaks and the week
+  function peopleCard() {
+    const A = D.actual.slice().sort((a, b) => (a.firstIn ?? 99) - (b.firstIn ?? 99));
+    if (!A.length) return html`<p class="muted pad">${D.isToday ? "No one has clocked in yet." : "No time clock for this day."}</p>`;
+    const brk = a => {
+      if (D.isToday) {
+        if (a.breakMin == null) return { t: a.open ? "not yet" : "—", c: "muted" };
+        if (a.breakOpen) return a.breakMin <= 35 ? { t: `on break ${a.breakMin} min`, c: a.breakMin > 30 ? "warn" : "" } : { t: `out since ${hm(a.lastOut)}`, c: "muted" };
+        return a.breakPaid > 0 ? { t: `${a.breakMin} min · paid` } : { t: `${a.breakMin} min · unpaid`, c: "bad" };
+      }
+      if (a.breakPaid > 0) return { t: `${Math.round(a.breakPaid * 60)} min paid` };
+      return a.offMin > 2 ? { t: `off ${a.offMin} min · unpaid`, c: a.offMin > 35 ? "bad" : "" } : { t: "none", c: "muted" };
+    };
+    const wk = h => (h == null ? "—" : raw(html`<span class="${h > 40 ? "c-bad" : h >= 36 ? "c-warn" : ""}">${fmtH(h)}</span>`));
+    return html`<div class="t-scroll"><table class="rt"><thead><tr><th>Person</th><th>In–out</th><th>Break</th><th class="num">Paid</th><th class="num">Week</th></tr></thead><tbody>
+      ${A.map(a => { const b = brk(a); return raw(html`<tr><td><b>${a.name}</b></td><td>${a.firstIn != null ? hm(a.firstIn) : "?"}–${a.lastOut != null ? hm(a.lastOut) : "…"}</td>
+        <td class="${b.c ? "c-" + b.c : ""}">${b.t}</td><td class="num">${fmtH(a.hours)}</td><td class="num">${wk(weekOf(a.personId, a.hours))}</td></tr>`); })}
+      </tbody></table></div>`;
   }
   // the week so far for one person: Rippling's finished days before this one (paid hours) plus this day's
   function weekOf(id, todayH) {
@@ -145,68 +168,6 @@ export async function render(main, ctx) {
     const start = new Date(Date.parse(D.day + "T12:00:00Z") - back * 864e5).toISOString().slice(0, 10);
     const before = H.filter(h => h.personId === id && h.day >= start && h.day < D.day).reduce((t, h) => t + (+h.hours || 0), 0);
     return before + (todayH || 0);
-  }
-  function peopleTable(rows) {
-    if (!rows.length) return html`<p class="muted pad">${D.isToday ? "No one has clocked in yet." : "No plan and no time clock for this day."}</p>`;
-    const now = nowH();
-    const brkTxt = a => {
-      if (!a) return { t: "—", c: "" };
-      if (D.isToday) {
-        if (a.breakMin == null) return { t: a.open ? "not yet" : "—", c: "muted" };
-        // clocked out and not back: a break while it's within 35 min; after that they've most likely left for the day
-        if (a.breakOpen) return a.breakMin <= 35 ? { t: `on break ${a.breakMin} min`, c: a.breakMin > 30 ? "warn" : "" } : { t: `out since ${hm(a.lastOut)}`, c: "muted" };
-        return a.breakPaid > 0 ? { t: `${a.breakMin} min · paid` } : { t: `${a.breakMin} min · unpaid`, c: "bad" };
-      }
-      if (a.breakPaid > 0) return { t: `${Math.round(a.breakPaid * 60)} min paid${a.offMin > Math.round(a.breakPaid * 60) + 2 ? ` · off ${a.offMin} min in all` : ""}` };
-      return a.offMin > 2 ? { t: `off ${a.offMin} min · unpaid`, c: a.offMin > 35 ? "bad" : "" } : { t: "none", c: "muted" };
-    };
-    const flags = r => {
-      const f = [], a = r.a;
-      if (!r.planned) f.push(["warn", "Not in the plan"]);
-      else if (!a) f.push(D.isToday && r.pin != null && now < r.pin + 0.25 ? ["", "Not in yet"] : ["bad", "Didn't clock in"]);
-      if (r.planned && a) {
-        const dIn = Math.round((a.firstIn - r.pin) * 60);
-        if (dIn >= 10) f.push(["warn", `In ${dIn} min late`]); else if (dIn <= -10) f.push(["", `In ${-dIn} min early`]);
-        if (a.lastOut != null && r.pout != null && Math.round((r.pout - a.lastOut) * 60) >= 10 && !(r.leave != null && a.lastOut >= r.leave - 1 / 6)) f.push(["warn", `Out ${Math.round((r.pout - a.lastOut) * 60)} min early`]);
-        if (r.past > 1 / 6) f.push(["bad", `${a.lastOut == null ? "On the clock" : "Stayed"} ${fmtH(r.past)} past the line${admin && r.rate ? ` · ${fmt$(r.past * r.rate)}` : ""}`]);
-      }
-      if (a && !a.breakOpen && a.breakMin != null && a.breakPaid === 0) f.push(["bad", "Break over 35 min · unpaid"]);
-      for (const d of r.dup || []) f.push(["warn", d]);
-      return f;
-    };
-    const wk = h => h == null ? "—" : raw(html`<span class="${h > 40 ? "c-bad" : h >= 36 ? "c-warn" : ""}">${fmtH(h)}</span>`);
-    return html`<div class="t-scroll"><table class="rt rv-pva"><thead><tr><th>Person</th><th>Planned</th><th>Line</th><th>Actual</th><th>Break</th><th class="num">Paid</th><th class="num">Week</th><th></th></tr></thead><tbody>
-      ${rows.map(r => { const a = r.a, b = brkTxt(a), fl = flags(r);
-        return raw(html`<tr><td><b>${r.name}</b><small>${r.stations.join(" → ") || "—"}</small></td>
-          <td>${r.planned ? `${hm(r.pin)}–${hm(r.pout)}` : "—"}${r.pbrk ? raw(html`<small>break ${hm(r.pbrk[0])}–${hm(r.pbrk[1])}</small>`) : ""}</td>
-          <td>${r.leave != null ? hm(r.leave) : "—"}</td>
-          <td>${a ? `${a.firstIn != null ? hm(a.firstIn) : "?"}–${a.lastOut != null ? hm(a.lastOut) : "…"}` : "—"}</td>
-          <td class="${b.c ? "c-" + b.c : ""}">${b.t}</td>
-          <td class="num">${a ? fmtH(a.hours) : "—"}</td>
-          <td class="num">${wk(a || r.planned ? weekOf(r.id, a ? a.hours : 0) : null)}</td>
-          <td class="rv-flags">${fl.map(([c, t]) => raw(html`<span class="chip ${c === "bad" ? "off" : c === "warn" ? "manager" : ""}">${t}</span>`))}</td></tr>`); })}
-      </tbody></table></div>`;
-  }
-
-  // ------------------------------------------------------------ labor: plan vs. actual, on the same sales
-  // Scheduled (everyone to their planned clock-out), at the planned pace (each person to their line), and actual
-  // (Rippling paid hours, breaks paid up to 30 min) — all as % of the sales value of the plan's pieces, like the Plan's
-  // status line. Labor % of revenue (the tile) divides by what was assembled instead.
-  function laborCard(rows) {
-    if (!R0 || !R0.crew.length) return "";
-    const L = D.labor, sales = R0.sales, money = D.money && L.cost != null;
-    const pc = c => (sales > 0 && c != null ? `${(c / sales * 100).toFixed(1)}%` : "—");
-    const cls = c => (sales > 0 && c != null ? (c / sales * 100 <= L.target ? "c-good" : c / sales * 100 <= L.target + 2 ? "c-warn" : "c-bad") : "");
-    const schedH = R0.X.M ? R0.X.M.regH + R0.X.M.otH + R0.X.M.opsH : null;
-    const past = rows.filter(r => r.past > 1 / 6), pastH = past.reduce((t, r) => t + r.past, 0), pastC = past.reduce((t, r) => t + r.past * (r.rate || 0), 0);
-    const line = (label, h, c, note) => raw(html`<tr><td><b>${label}</b>${note ? raw(html`<small>${note}</small>`) : ""}</td><td class="num">${h != null ? fmtH(h) : "—"}</td>${money ? raw(html`<td class="num">${c != null ? fmt$(c) : "—"}</td><td class="num ${cls(c)}">${pc(c)}</td>`) : ""}</tr>`);
-    return html`<section class="card pl-card"><header class="pl-cardhead"><div><h2>Labor: plan vs. actual</h2><p>${money ? `As a share of the plan's pieces' sales (${fmt$(sales)}), like the Plan's status line; target ${L.target}%.` : "Paid hours planned and worked."} Paid breaks count, up to 30 min a person.</p></div></header>
-      <div class="t-scroll"><table class="rt"><thead><tr><th></th><th class="num">Hours</th>${money ? raw("<th class=\"num\">Cost</th><th class=\"num\">% of sales</th>") : ""}</tr></thead><tbody>
-        ${line("Scheduled", schedH, R0.schedCost, "everyone to their planned clock-out")}
-        ${line("At the planned pace", R0.laborH, R0.cost, "each person to their line")}
-        ${line(D.isToday ? "Actual so far" : "Actual", L.hours, money ? L.cost : null, L.breakPaid > 0.01 ? `Rippling; ${fmtH(L.breakPaid)} of it paid breaks` : "Rippling")}
-      </tbody></table></div>
-      ${past.length ? raw(html`<p class="small c-bad">${past.length} ${past.length === 1 ? "person" : "people"} ${D.isToday ? "on the clock" : "stayed"} past their line: ${fmtH(pastH)}${admin ? ` · ${fmt$(pastC)}` : ""}.</p>`) : raw('<p class="small muted">No one stayed past their line by more than 10 minutes.</p>')}</section>`;
   }
 
   // the next work day: its saved plan (or the last one copied in, as the Plan page will), with the pieces known now
@@ -279,14 +240,7 @@ export async function render(main, ctx) {
     const C = D.done.curve;
     if (C.length < 2) return html`<p class="muted pad">${D.isToday ? "Fills in as pieces are assembled." : "No pieces were assembled this day."}</p>`;
     const last = C[C.length - 1];
-    // where the plan says the work should be done (the Plan's red finish lines): past days from the first clock-in to
-    // the last finish line with all the plan's pieces; today from now and what's done to the finish of what's left
-    let pl = null;
-    if (R0 && R0.end != null && R0.pieces) {
-      const left = Object.values(R0.FIN).reduce((t, f) => t + (f.pieces || 0), 0);
-      pl = D.isToday ? { a: [Math.max(last[0], nowH()), last[1]], b: [R0.end, last[1] + left] } : { a: [R0.firstIn ?? C[0][0], 0], b: [R0.end, R0.pieces] };
-      if (!(pl.b[0] > pl.a[0])) pl = null;
-    }
+    const pl = null;   // no plan line: Review measures the day against the goal, not the plan (Neal, Oct 15)
     const total = Math.max(last[1], pl ? pl.b[1] : 0, D.due.pieces || 0, 1), top = total * 1.06;
     const t0 = Math.floor(Math.min(C[0][0], pl ? pl.a[0] : 24)), t1 = Math.ceil(Math.max(last[0], pl ? pl.b[0] : 0, t0 + 6));
     const Wd = 560, Ht = 260, L = 44, R = 548, T = 14, B = 232, X = t => L + (t - t0) / (t1 - t0) * (R - L), Y = v => B - v / top * (B - T);

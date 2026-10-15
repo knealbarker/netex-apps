@@ -6,12 +6,15 @@
 //    plan with the same model as the Plan page: red finish lines, should-leave times, paced labor)
 //  - follow-ups: orders whose due date SMRT moved later, with a reason and a note
 //  - the last few weeks of work days, for the trend
-import { HttpError, nowIso, audit } from "./util.js";
+import { HttpError, nowIso, audit, ulid } from "./util.js";
 import { requireRole, rank } from "./auth.js";
 import { loadGroups, loadRuns } from "./settings.js";
 import { productionIds } from "./team.js";
 import { payRates, laborCost } from "./pay.js";
-import { dayTally } from "./tally.js";
+import { dayTally, segmentsOf } from "./tally.js";
+import { loadPlan } from "./plan.js";
+import { allSettings } from "./settings.js";
+import { engineSettings } from "../public/js/plan/model.js";
 import { firstBreak, minuteOf } from "../public/js/engine/breakpay.js";
 import { SHUTTLES } from "./features.js";
 import { CATS, categorizer, splitOrders, loadOpen, nextWorkDay, prevWorkDay, addDays, localNow, storeToRun, runDeadline } from "./pieces.js";
@@ -28,12 +31,12 @@ async function assembled(db, orgId, day, cat, prices) {
       FROM pos_items i JOIN pos_orders o ON o.id=i.order_id JOIN pos_order_statuses s ON s.id=o.status_id
       LEFT JOIN pos_item_types t ON t.id=i.item_type_id LEFT JOIN pos_departments d ON d.id=i.department_id
       WHERE o.org_id=? AND s.is_void=0 AND i.removed_at IS NULL AND substr(i.assembled_at,1,10)=?`).bind(orgId, day).all()).results;
-  const q = Object.fromEntries(CATS.map(k => [k, 0])); let rev = 0, n = 0;
+  const q = Object.fromEntries(CATS.map(k => [k, 0])), revQ = Object.fromEntries(CATS.map(k => [k, 0])); let rev = 0, n = 0;
   const times = [], byHour = {}, byCat = {}; // byCat: minute of the day each piece was assembled, by kind of work // byHour: { "7": {slb: 12, ...} } pieces assembled in each clock hour, by kind of work
   for (const r of rows) {
     const k = cat(r.type, r.dep); if (!k) continue;
     q[k]++; n++;
-    rev += r.base != null ? cents(r) / 100 : (+prices[k] || 0);
+    const v = r.base != null ? cents(r) / 100 : (+prices[k] || 0); rev += v; revQ[k] += v;
     const h = hmOf(r.asm); if (h != null) { times.push(h); const hr = Math.floor(h); (byHour[hr] = byHour[hr] || {})[k] = (byHour[hr][k] || 0) + 1; (byCat[k] = byCat[k] || []).push(Math.round(h * 60)); }
   }
   times.sort((a, b) => a - b);
@@ -41,7 +44,7 @@ async function assembled(db, orgId, day, cat, prices) {
   const curve = []; let c = 0;
   for (const t of times) { c++; const slot = Math.ceil(t * 4) / 4; const last = curve[curve.length - 1]; if (last && last[0] === slot) last[1] = c; else curve.push([slot, c]); }
   for (const k in byCat) byCat[k].sort((a, b) => a - b);
-  return { q, pieces: n, revenue: rev, curve, byHour, byCat };
+  return { q, revQ, pieces: n, revenue: rev, curve, byHour, byCat };
 }
 
 /** Hours worked in Production on a day: finished days from Rippling's daily totals; today from the punches so far. */
@@ -156,7 +159,8 @@ export async function reviewDay(db, env, me, day) {
   }
 
   return { day, today, isToday: day === today, isWorkDay: workDays.includes(weekday(day)), prev: prevWorkDay(day, workDays), next: day < today ? nextWorkDay(day, workDays) : null, nextWork: nextWorkDay(day, workDays),
-    done: money ? done : { ...done, revenue: undefined }, due, deadlines, labor, people: vs,
+    departments: await departments(db, env, { day, today, people, done, due, rates, money, groups }),
+    done: money ? done : { ...done, revenue: undefined, revQ: undefined }, due, deadlines, labor, people: vs,
     actual: people.map(a => ({ personId: a.personId, name: a.name, hours: a.hours, breakPaid: a.breakPaid || 0, breakMin: a.breakMin ?? null, breakOpen: !!a.breakOpen,
       offMin: a.offMin ?? null, firstIn: a.firstIn, lastOut: a.lastOut, open: !!a.open })), planned: planned ? { source: planned.source, at: planned.at || null, by: planned.by || null, metrics: planned.metrics } : null,
     tally: await dayTally(db, env, day).catch(e => { console.error(JSON.stringify({ job: "review", tallyError: String(e && e.stack || e) })); return null; }),
@@ -221,4 +225,76 @@ export async function laborStreak(db, env) {
   let n = 0;
   for (let i = T.length - 1; i >= 0; i--) { const p = T[i].pct; if (p == null || p > groups.money.laborTarget) break; n++; }
   return { days: n, target: groups.money.laborTarget };
+}
+
+// ------------------------------------------------------------ by department (Neal, Oct 15)
+// "The goal was to process all of the items that were due today at an appropriate pace to keep labor costs below 17%.
+//  I'd like to see a review of the total count and total labor and a review by department, and notate where we missed."
+// Rippling has one department (Production), so each person's paid hours are split across the stations the day's plan
+// had them on (moves included), within their actual clock-in to clock-out, in proportion to the time on each. People
+// clocked in but not on the plan are "Not on the plan". Assembly and the machine operators have no pieces of their own:
+// their labor is shared and shows on its own rows; the total counts everything.
+export const DEPTS = [["slb", "Starch bottoms"], ["slt", "Starch tops"], ["dct", "Dry cleaning tops"], ["dcb", "Dry cleaning bottoms"], ["comf", "Comforters"], ["tc", "Tablecloths"]];
+export const SHARED = [["asm", "Inspect, assemble, bag"], ["ops", "Machine operators"], ["none", "Not on the plan"]];
+const TYPE_GROUP = { slt_helper: "slt", assembly: "asm", operator: "ops" };
+
+async function departments(db, env, { day, today, people, done, due, rates, money, groups }) {
+  const target = groups.money.laborTarget, payAvg = groups.money.payAvg;
+  const SET = await allSettings(db, env), S = engineSettings(SET, groups.money.prices || {});
+  const goal = { slb: S.rates.slb, slt: S.rates.sltSolo, dct: S.rates.dct, dcb: S.rates.dcb, comf: S.rates.comf, tc: S.rates.tc };
+  // the day's plan (or the last saved one, as the Plan page copies it), as station time
+  const plan = await loadPlan(db, env, day);
+  const crew = Object.keys(plan.crew).length ? plan.crew : plan.prev?.crew || {};
+  const segs = segmentsOf(crew);
+  const typeOf = new Map((await db.prepare("SELECT code, station_type_id AS t FROM plan_stations WHERE deleted_at IS NULL").all()).results.map(r => [r.code, TYPE_GROUP[r.t] || r.t]));
+  const nowMin = day === today ? (() => { const [h, m] = localNow(env.TIMEZONE).hm.split(":"); return +h * 60 + +m; })() : null;
+  const R = rates || (money ? await payRates(db, env.ORG_ID) : null);
+  const H = {}, C = {}, who = {};
+  const add = (g, h, c, name) => { H[g] = (H[g] || 0) + h; C[g] = (C[g] || 0) + c; if (h > 0.02) (who[g] = who[g] || new Set()).add(name); };
+  for (const p of people) {
+    const rate = R ? (rateOf(R.get(p.personId), day) ?? payAvg) : payAvg;
+    const from = p.firstIn != null ? Math.round(p.firstIn * 60) : null, to = p.lastOut != null ? Math.round(p.lastOut * 60) : nowMin;
+    const mine = from == null || to == null ? [] : segs.filter(s => s.personId === p.personId).map(s => ({ g: typeOf.get(s.code) || "none", m: Math.max(0, Math.min(to, s.to) - Math.max(from, s.from)) })).filter(x => x.m > 0);
+    const T = mine.reduce((t, x) => t + x.m, 0);
+    if (!T) { add("none", p.hours, p.hours * rate, p.name); continue; }
+    for (const x of mine) add(x.g, p.hours * x.m / T, p.hours * x.m / T * rate, p.name);
+  }
+  const valueAll = done.revenue || 0;
+  const row = (k, label, shared) => {
+    const hours = H[k] || 0, cost = C[k] || 0;
+    const r = { key: k, label, shared, hours, people: [...(who[k] || [])], ...(shared ? {} : {
+      due: due.q[k] || 0, finished: due.done[k] || 0, left: Math.max(0, (due.q[k] || 0) - (due.done[k] || 0)), assembled: done.q[k] || 0,
+      perHour: hours > 0.05 ? (done.q[k] || 0) / hours : null, goal: goal[k] || null }) };
+    if (money) { r.cost = cost; if (!shared) { r.value = done.revQ[k] || 0; r.pct = r.value > 0 && hours > 0.05 ? cost / r.value * 100 : null; } else r.pct = valueAll > 0 ? cost / valueAll * 100 : null; }
+    // where the goal was missed: due pieces left, labor over target, or a pace well under the setting
+    const miss = [];
+    if (!shared && r.left > 0) miss.push(`${r.left} due ${r.left === 1 ? "piece" : "pieces"} not finished`);
+    if (!shared && money && r.pct != null && r.pct > target) miss.push(`labor ${r.pct.toFixed(1)}% of its sales`);
+    if (!shared && r.perHour != null && r.goal && r.perHour < r.goal * 0.9) miss.push(`${r.perHour.toFixed(1)} an hour against ${r.goal}`);
+    r.miss = miss;
+    return r;
+  };
+  const rows = [...DEPTS.map(([k, l]) => row(k, l, false)).filter(r => r.due || r.assembled || r.hours > 0.05), ...SHARED.map(([k, l]) => row(k, l, true)).filter(r => r.hours > 0.05)];
+  const hours = people.reduce((t, p) => t + p.hours, 0), cost = Object.values(C).reduce((t, c) => t + c, 0);
+  const total = { due: due.pieces, finished: due.finished, left: Math.max(0, due.pieces - due.finished), assembled: done.pieces, hours, perHour: hours > 0 ? done.pieces / hours : null,
+    ...(money ? { cost, value: valueAll, pct: valueAll > 0 ? cost / valueAll * 100 : null } : {}) };
+  total.miss = [...(total.left ? [`${total.left} due ${total.left === 1 ? "piece" : "pieces"} not finished`] : []), ...(money && total.pct != null && total.pct > target ? [`labor ${total.pct.toFixed(1)}%, over the ${target}% target`] : [])];
+  const notes = Object.fromEntries((await db.prepare(`SELECT e.key, e.text, e.at, u.display_name AS by FROM plan_events e LEFT JOIN core_users u ON u.id=e.user_id
+      WHERE e.org_id=? AND e.day=? AND e.key LIKE 'review:%'`).bind(env.ORG_ID, day).all()).results.map(n => [n.key.slice(7), { text: n.text, at: n.at, by: n.by }]));
+  return { rows, total, target, notes, planBasis: Object.keys(plan.crew).length ? "plan" : plan.prev ? `copied from ${plan.prev.day}` : "none" };
+}
+const rateOf = (list, day) => { if (!list || !list.length) return null; let r = list[0].rate; for (const x of list) if (x.on <= day) r = x.rate; return r; };
+
+/** A manager's note on why a department (or the day: key "total") missed its goal. Empty text removes it. */
+export async function reviewNote(db, env, me, day, body) {
+  requireRole(me, "manager");
+  if (!DAY.test(day)) throw new HttpError(400, "Use a date like 2026-10-12.");
+  const key = String(body.dept || "");
+  if (!["total", ...DEPTS.map(d => d[0]), ...SHARED.map(d => d[0])].includes(key)) throw new HttpError(400, "Unknown department.");
+  const text = String(body.text ?? "").trim().slice(0, 500);
+  if (!text) { await db.prepare("DELETE FROM plan_events WHERE org_id=? AND day=? AND key=?").bind(env.ORG_ID, day, "review:" + key).run(); return { ok: true, removed: true }; }
+  await db.prepare(`INSERT INTO plan_events(id, org_id, day, key, kind, text, at, user_id) VALUES(?,?,?,?, 'note', ?, ?, ?)
+      ON CONFLICT(org_id, day, key) DO UPDATE SET text=excluded.text, at=excluded.at, user_id=excluded.user_id`).bind(ulid(), env.ORG_ID, day, "review:" + key, text, nowIso(), me.id).run();
+  await audit(db, { orgId: env.ORG_ID, userId: me.id, appId: env.APP_ID, entity: "plan_events", entityId: day + "/review:" + key, action: "update", changes: { text } });
+  return { ok: true };
 }

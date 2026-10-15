@@ -1025,3 +1025,12 @@ dialog.sheet .dlg-body { max-height: min(70vh, 640px); overflow: auto; }
 .rv-flags .chip { white-space: normal; }
 .rv-pva td:nth-child(5) { white-space: nowrap; }
 .rt th.num, .rt td.num { padding-left: 12px; }
+.rv-depts { margin-bottom: 16px; }
+.rv-dept tr.rv-miss td { border-bottom: 0; }
+.rv-dept tr.rv-missrow td { padding-top: 0; background: var(--bad-soft); }
+.rv-dept tr.rv-shared td { color: var(--muted); }
+.rv-dept tr.rv-total td { border-top: 2px solid var(--line2); }
+.rv-mnote { display: flex; gap: 8px; margin-top: 6px; }
+.rv-mnote .input { flex: 1; min-width: 0; }
+.rv-ntext { margin: 6px 0 0; }
+.verdict .v-sub { margin: 6px 0 0 34px; }

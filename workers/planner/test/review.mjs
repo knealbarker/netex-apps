@@ -87,6 +87,23 @@ await t("plan vs actual: the published crew against Rippling, plus someone who w
   near(a.plannedIn, 5); near(a.plannedOut, 13); near(a.actualIn, 5 + 5 / 60); eq(a.station, "SLT 1");
   ok(c.unplanned && c.name === "Cora Tres", JSON.stringify(c));
 });
+await t("by department: each person's paid hours on the stations the plan had them on; someone not on the plan on their own row; notes", async () => {
+  const r = (await call("GET", `/review/${DAY}`)).body, D = r.departments;
+  const row = k => D.rows.find(x => x.key === k);
+  ok(row("slt") && row("slt").people.includes("Ana Uno") && row("slt").hours > 7, JSON.stringify(row("slt")));
+  ok(row("dct") && row("dct").people.includes("Beto Dos"), JSON.stringify(row("dct")));
+  ok(row("none") && row("none").shared && row("none").people.includes("Cora Tres"), JSON.stringify(row("none"))); near(row("none").hours, 4);
+  near(D.rows.reduce((t, x) => t + x.hours, 0), r.labor.hours);
+  near(D.total.cost, r.labor.cost);
+  ok(Array.isArray(D.total.miss) && D.rows.every(x => Array.isArray(x.miss)));
+  eq((await call("PUT", `/review/${DAY}/note`, { as: "vi@example.com", body: { dept: "slt", text: "x" } })).status, 403);
+  eq((await call("PUT", `/review/${DAY}/note`, { as: "mo@example.com", body: { dept: "slt", text: "Rosenda out sick, tops ran late" } })).status, 200);
+  eq((await call("GET", `/review/${DAY}`)).body.departments.notes.slt.text, "Rosenda out sick, tops ran late");
+  eq((await call("PUT", `/review/${DAY}/note`, { as: "mo@example.com", body: { dept: "slt", text: "" } })).status, 200);
+  ok(!(await call("GET", `/review/${DAY}`)).body.departments.notes.slt);
+  const v = (await call("GET", `/review/${DAY}`, { as: "vi@example.com" })).body.departments;
+  ok(v.total.cost === undefined && v.rows.every(x => x.cost === undefined && x.pct === undefined), "viewers see no money");
+});
 await t("follow-ups: an order whose due date moved later; a Manager adds a reason and a note; a Viewer can't", async () => {
   const o = sqlite.prepare("SELECT id FROM pos_orders LIMIT 1").get().id, ch = ulid(), id = ulid();
   sqlite.prepare("INSERT INTO pos_changes(id, order_id, kind, old_value, new_value, detected_at) VALUES(?,?,?,?,?,?)").run(ch, o, "due_changed", ts(DAY, "12:00"), ts(addDays(DAY, 1), "12:00"), new Date().toISOString());

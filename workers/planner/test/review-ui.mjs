@@ -84,8 +84,9 @@ await t("opens on the last work day with numbers, chart, by the hour and plan vs
   ok(!/late|deadline|shuttle/i.test(await p.textContent(".verdict")), await p.textContent(".verdict"));
   ok(await p.isVisible(".rv-chart .c-done")); ok(!(await p.isVisible('.rt td:has-text("Quitman run")')), "no deadlines card");
   ok(await p.isVisible(".hr-tbl"), "by the hour");
-  ok(await p.isVisible('.rt td:has-text("Not in the plan")'), "Cora worked but wasn't planned");
-  ok(await p.isVisible('.tile:has-text("labor of revenue")'), "Owner sees labor %");
+  ok(await p.isVisible('.rv-dept td:has-text("Not on the plan")'), "Cora worked but wasn't planned: her hours on their own row");
+  ok(await p.isVisible('.rv-dept td:has-text("Total")'), "department total");
+  ok(await p.isVisible('.tile:has-text("labor %")'), "Owner sees labor %");
   await p.screenshot({ path: join(SHOTS, "30-review.png"), fullPage: true });
 });
 await t("a Manager-level user notes a follow-up", async () => {
@@ -102,7 +103,7 @@ await t("previous and next work day buttons move through days", async () => {
 await t("a Viewer sees no money and can't edit follow-ups", async () => {
   who = "vi@example.com";
   const q = await page(); await q.goto(url + "/#/review"); await q.waitForSelector("#rv-root .rv-tiles");
-  ok(!(await q.isVisible('.tile:has-text("labor of revenue")'))); ok(!(await q.$("form.fu")));
+  ok(!(await q.isVisible('.tile:has-text("labor %")'))); ok(!(await q.$("form.rv-mnote")), "viewers can't write notes"); ok(!(await q.$("form.fu")));
   who = "neal@towncountryclean.com";
 });
 await t("phone and light theme", async () => {
