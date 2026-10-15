@@ -816,6 +816,8 @@ button.wk { cursor: pointer; } button.wk:hover { background: var(--hover); }
 /* station timeline: stations top to bottom, the day across in 15-minute steps (Neal, Oct 13) */
 .pv-board-head .btn { margin-left: auto; min-height: 36px; }
 .pv-board-head .muted { flex: 1; text-align: right; }
+.pv-board-head .tl-view { margin: 0; padding: 3px; }
+.pv-board-head .tl-view button { padding: 5px 12px; font-size: 13px; }
 .tl-scroll { overflow-x: auto; border-radius: var(--radius); background: var(--card); border: 1px solid var(--line); -webkit-overflow-scrolling: touch; }
 .tl { --lab: 168px; --hw: 72px; width: max(100%, calc(var(--lab) + var(--hrs) * var(--hw))); }
 .tl-axis, .tl-row { display: grid; grid-template-columns: var(--lab) minmax(0, 1fr); }

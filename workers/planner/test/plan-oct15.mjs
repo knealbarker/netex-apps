@@ -119,5 +119,17 @@ await t("board: one row per station, Maria then Diana on one SLB 2 line, Betty i
   ok(r("dct3").lanes.length > 0 && r("slo").label === "SL Operator" && r("slt2").label === "SLT 2 helper", `${r("slo").label} / ${r("slt2").label}`);
 });
 
+await t("people board: one line per person in station order, bars labeled with the station they're on", () => {
+  const rows = M.personRows(X, M.boardGroups(POS));
+  ok(rows.length === 11 && rows[0].empId === "carnell" && rows[1].empId === "diana", rows.map(r => r.empId).join(","));
+  const maria = rows.find(r => r.empId === "maria"), labs = maria.lanes[0].bars.filter(b => !b.brk).map(b => b.label);
+  ok(labs[0] === "SLB 2" && labs.includes("SLT 1") && labs.includes("SLT 2 helper"), labs.join(","));
+  ok(maria.lanes[0].bars.some(b => b.brk), "Maria's break shows");
+  const betty = rows.find(r => r.empId === "betty").lanes[0].bars.filter(b => !b.brk).map(b => b.label);
+  ok(betty.includes("SLB 1") && betty.includes("DCT 2"), betty.join(","));
+  ok(rows.find(r => r.empId === "roderick").lanes[0].bars[0].label === "SL Operator");
+  ok(rows.filter(r => r.first).map(r => r.key).join() === "slb,slt,dct,dcb,asm,ops", rows.filter(r => r.first).map(r => r.key).join());
+});
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

@@ -778,6 +778,46 @@ export function stationTimeline(X, groups) {
 }
 
 /**
+ * The board by person (Neal, Oct 14: "jump over to an Employee view to see who is doing what when"): one line per person,
+ * in the order of their own station on the station board, each bar colored and labeled by the station they're on then.
+ *   [{ key (their own kind of work), code, empId, label, first, lanes: [{ empId, code, lane: 0, bars: [{ from, to, key, stn, label, ot?, idle?, brk? }] }], nLanes: 1 }]
+ */
+export function personRows(X, groups) {
+  const { P, E, R } = X;
+  const stRows = stationRows(X, groups), labelOf = new Map(stRows.map(r => [r.code, r.label])), order = stRows.map(r => r.code);
+  const keyOf = stn => (stn === "comf" ? "comf" : groupOf(E.TYPE_OF[stn]) || "ops");
+  const out = [];
+  const add = (code, empId, bars) => {
+    if (!empId) return;
+    bars.sort((a, b) => a.from - b.from);
+    out.push({ key: keyOf(code), code, empId, label: nameOf(P, empId).split(/\s+/)[0], name: nameOf(P, empId), first: false, lanes: [{ empId, code, lane: 0, bars }], nLanes: 1 });
+  };
+  if (!R.empty) for (const row of R.rows) {
+    if (!row.staffed) continue;
+    const code = row.st.id, empId = (P.crew[code] || {}).emp || row.emp?.empId, steps = stepsOf(row), bars = [];
+    const b0 = row.brkTaken > 0 ? row.brkS : null, b1 = b0 != null ? b0 + row.brkTaken : null;
+    const bar = (stn, from, to, extra = {}) => bars.push({ from, to, key: keyOf(stn), stn, label: labelOf.get(stn) || stn, ot: to > row.x.schedEnd + 0.02, ...extra });
+    if (!steps.length) bar(code, row.x.start, Math.max(row.clockOut || 0, row.x.start + 0.5), { idle: true, ot: false });
+    for (const sp of steps) {
+      if (b0 != null && b1 > sp.from + 0.01 && b0 < sp.to - 0.01) { if (b0 - sp.from > 0.01) bar(sp.stn, sp.from, b0); if (sp.to - b1 > 0.01) bar(sp.stn, b1, sp.to); }
+      else bar(sp.stn, sp.from, sp.to);
+    }
+    if (b0 != null) bars.push({ from: b0, to: b1, brk: true, key: keyOf(code), stn: code, label: "" });
+    add(code, empId, bars);
+  }
+  for (const x of E.opsInfo()) {
+    if (!x.on) continue;
+    const code = x.o.id, lab = labelOf.get(code) || x.o.label, k = "ops";
+    const bars = x.b ? [{ from: x.start, to: x.brkS, key: k, stn: code, label: lab }, { from: x.brkS, to: x.brkS + x.b, brk: true, key: k, stn: code, label: "" }, { from: x.brkS + x.b, to: x.end, key: k, stn: code, label: lab }]
+      : [{ from: x.start, to: x.end, key: k, stn: code, label: lab }];
+    add(code, (P.crew[code] || {}).emp, bars);
+  }
+  out.sort((a, b) => order.indexOf(a.code) - order.indexOf(b.code));
+  out.forEach((r, i) => { r.first = i === 0 || out[i - 1].key !== r.key; });
+  return out;
+}
+
+/**
  * The same board with one row per station (Neal, Oct 14: "I liked it better when I could see the individual stations"):
  * SLB 1, SLB 2, DCT 1, ... in `groups` order (kinds of work stay together; the first row of each kind has `first`).
  * People who don't overlap share a lane (Maria on SLB 2 until 7:30, then Diana), so a station is one line most of the day.

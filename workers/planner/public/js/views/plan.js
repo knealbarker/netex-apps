@@ -56,6 +56,8 @@ export async function render(main, ctx) {
   const days = () => [st.V.isWorkDay ? st.V.today : null, st.V.next].filter(Boolean);
   if (!pick || (!days().includes(pick) && !st.V.days[pick])) pick = days()[0];
   let saveT = null, chgBusy = false, reorder = false; // the pending save, the changes list loading, moving station rows up and down
+  // the board by station or by person (Neal, Oct 14); remembered on this device
+  let boardView = "stations"; try { if (localStorage.getItem("pl-board-view") === "people") boardView = "people"; } catch { /* private window */ }
   const order = () => SET.boardOrder || M.BOARD_ORDER;
   const root = Symbol("plan"); main._plan = root;
   const alive = () => main._plan === root && document.getElementById("pl-root");
@@ -199,8 +201,9 @@ export async function render(main, ctx) {
       <section class="pv-presses" id="pl-presses" aria-label="Starch bottoms presses" hidden></section>
       <section class="pv-work" id="pl-work" aria-label="The rest of the work"></section>
       <section class="pv-board" aria-label="Stations">
-        <div class="pv-board-head"><h2>Stations</h2><span class="muted small" id="pl-board-hint">${can ? "Tap a person to move them · tap a station to add someone" : ""}</span>
-          ${canRole ? raw('<button type="button" class="btn ghost small" id="pl-reorder" aria-pressed="false">Reorder</button>') : ""}</div>
+        <div class="pv-board-head"><div class="seg tl-view" role="tablist" aria-label="Show the day by"><button type="button" role="tab" data-view="stations" aria-selected="${boardView === "stations"}">Stations</button><button type="button" role="tab" data-view="people" aria-selected="${boardView === "people"}">People</button></div>
+          <span class="muted small" id="pl-board-hint"></span>
+          ${canRole ? raw(`<button type="button" class="btn ghost small" id="pl-reorder" aria-pressed="false" ${boardView === "people" ? "hidden" : ""}>Reorder</button>`) : ""}</div>
         <div class="tl-scroll" id="pl-board"></div>
         <div class="pv-away" id="pl-away"></div>
       </section>
@@ -243,9 +246,18 @@ export async function render(main, ctx) {
     });
     main.querySelector("#pl-reorder")?.addEventListener("click", e => {
       reorder = !reorder; e.currentTarget.setAttribute("aria-pressed", String(reorder)); e.currentTarget.textContent = reorder ? "Done" : "Reorder";
-      const h = document.getElementById("pl-board-hint"); if (h) h.textContent = reorder ? "Move a station up or down. Everyone sees the same order." : can ? "Tap a person to move them · tap a station to add someone" : "";
-      if (st.X) drawBoard(st.X, st.L);
+      boardHint(); if (st.X) drawBoard(st.X, st.L);
     });
+    main.querySelectorAll(".tl-view [data-view]").forEach(b => b.addEventListener("click", () => {
+      if (boardView === b.dataset.view) return;
+      boardView = b.dataset.view; try { localStorage.setItem("pl-board-view", boardView); } catch { /* private window */ }
+      main.querySelectorAll(".tl-view [data-view]").forEach(x => x.setAttribute("aria-selected", String(x.dataset.view === boardView)));
+      if (reorder) { reorder = false; const r = main.querySelector("#pl-reorder"); if (r) { r.setAttribute("aria-pressed", "false"); r.textContent = "Reorder"; } }
+      const r = main.querySelector("#pl-reorder"); if (r) r.hidden = boardView === "people";
+      const el = document.getElementById("pl-board"); if (el) delete el.dataset.scrolled;
+      boardHint(); if (st.X) drawBoard(st.X, st.L);
+    }));
+    boardHint();
     drawHeadPill(); update({ table: true });
   }
   function P0isToday() { return pick === st.V.today && st.V.isWorkDay; }
@@ -382,9 +394,13 @@ export async function render(main, ctx) {
     return { id, code, name: M.nameOf(P, id), first: first(M.nameOf(P, id)), startH, end, state, outAt: M.lastOutOf(P, id), moves: (c.moves || []).slice().sort((a, b) => a.at.localeCompare(b.at)), standing: !c.stop && P.people.find(p => p.id === id)?.leaveBy };
   }
   // ---- stations, top to bottom (order set with Reorder), and the whole day across in 15-minute steps (Neal, Oct 13)
+  function boardHint() {
+    const h = document.getElementById("pl-board-hint"); if (!h) return;
+    h.textContent = reorder ? "Move a station up or down. Everyone sees the same order." : !can ? "" : boardView === "people" ? "Each bar is the station they're on · tap to move them" : "Tap a person to move them · tap a station to add someone";
+  }
   function drawBoard(X, L) {
     const el = document.getElementById("pl-board"); if (!el) return;
-    const P = X.P, groups = M.boardGroups(POS, order()), rows = M.stationRows(X, groups), ends = M.catEnds(X.E, X.R), live = P.isToday && L && L.on && L.cats;
+    const P = X.P, groups = M.boardGroups(POS, order()), people = boardView === "people", rows = people ? M.personRows(X, groups) : M.stationRows(X, groups), ends = M.catEnds(X.E, X.R), live = P.isToday && L && L.on && L.cats;
     const now = P.isToday && P.now != null ? P.now : null;
     // people: clocked out (gray from then on), not clocked in yet, on break
     const info = {}; for (const code of Object.keys(st.crew)) { const pi = personInfo(X, code); if (pi) info[pi.id] = pi; }
@@ -420,9 +436,10 @@ export async function render(main, ctx) {
         const parts = cut == null || t <= cut ? [[f, t, false]] : f >= cut ? [[f, t, true]] : [[f, q(cut), false], [q(cut), t, true]].filter(p => p[1] > p[0]);
         for (const [pf, pt, gone] of parts) {
           if (x.brk) { out.push(html`<i class="tl-brk" style="left:${pct(pf)};width:${wid(pf, pt)};top:${lane * 32 + 6}px" title="${nm}: break ${fmtClock(x.from)}–${fmtClock(x.to)}"></i>`); continue; }
-          const label = nm;
-          const tip = `${pi?.name || nm}: ${g.label}${l.code !== g.code && g.code ? ` (from ${(POS.find(p => p.id === l.code) || {}).label || l.code})` : ""} ${fmtClock(x.from)}–${fmtClock(x.to)}${x.ot ? " (overtime)" : ""}${gone ? ` — clocked out ${fmtClock(cut)}` : noshow ? " — not clocked in" : x.idle ? " — nothing to do" : ""}`;
-          out.push(html`<button type="button" class="tl-bar ${x.ot ? "ot" : ""} ${gone ? "gone" : ""} ${noshow ? "noshow" : ""} ${x.idle ? "idle" : ""}" data-emp="${l.empId}" style="left:${pct(pf)};width:${wid(pf, pt)};top:${lane * 32 + 6}px;--c:${COLOR[g.key] || COLOR.ops}" title="${tip}" aria-label="${tip}">${label ? raw(html`<b>${label}</b>`) : ""}</button>`);
+          const label = people ? x.label : nm;
+          const tip = people ? `${pi?.name || nm}: ${x.label} ${fmtClock(x.from)}–${fmtClock(x.to)}${x.ot ? " (overtime)" : ""}${gone ? ` — clocked out ${fmtClock(cut)}` : noshow ? " — not clocked in" : x.idle ? " — nothing to do" : ""}`
+            : `${pi?.name || nm}: ${g.label}${l.code !== g.code && g.code ? ` (from ${(POS.find(p => p.id === l.code) || {}).label || l.code})` : ""} ${fmtClock(x.from)}–${fmtClock(x.to)}${x.ot ? " (overtime)" : ""}${gone ? ` — clocked out ${fmtClock(cut)}` : noshow ? " — not clocked in" : x.idle ? " — nothing to do" : ""}`;
+          out.push(html`<button type="button" class="tl-bar ${x.ot ? "ot" : ""} ${gone ? "gone" : ""} ${noshow ? "noshow" : ""} ${x.idle ? "idle" : ""}" data-emp="${l.empId}" style="left:${pct(pf)};width:${wid(pf, pt)};top:${lane * 32 + 6}px;--c:${COLOR[x.key || g.key] || COLOR.ops}" title="${tip}" aria-label="${tip}">${label ? raw(html`<b>${label}</b>`) : ""}</button>`);
         }
       });
       return out.join("");
@@ -432,7 +449,15 @@ export async function render(main, ctx) {
       ${rows.map(g => {
         // one row per station (Neal, Oct 14); the kind of work's count and finish show on its first station
         const gi = groups.findIndex(x => x.key === g.key), lastG = groups.length - 1;
-        const free = !st.crew[g.code].emp, lanes = g.nLanes, add = can && free && !reorder;
+        const free = !people && !st.crew[g.code].emp, lanes = g.nLanes, add = can && free && !reorder;
+        if (people) {   // a person's line: their name, their own station and hours; tap = the move sheet
+          const pi = info[g.empId], sub = `${(POS.find(p => p.id === g.code) || {}).label || g.code}${pi ? ` · ${hmShort(pi.startH)}–${hmShort(pi.end)}` : ""}`;
+          const plab = html`<i class="sw" style="--c:${COLOR[g.key] || COLOR.ops}"></i><span class="tl-name"><b>${g.label}</b><small>${sub}</small></span>`;
+          return raw(html`<div class="tl-row ${g.first ? "first" : "sub"}" data-g="${g.key}" data-code="${g.code}">
+            ${can ? raw(html`<button type="button" class="tl-lab" data-emp="${g.empId}" aria-label="Move ${g.name}" title="${g.name}">${raw(plab)}</button>`) : raw(html`<div class="tl-lab">${raw(plab)}</div>`)}
+            <div class="tl-track" style="height:32px">${raw(g.lanes.map(l => barHtml(g, l)).join(""))}${raw(nowLine)}</div>
+          </div>`);
+        }
         const lab = html`<i class="sw" style="--c:${COLOR[g.key] || COLOR.ops}"></i><span class="tl-name"><b>${g.label}</b><small>${raw(g.first ? statusOf(g) : "")}</small></span>${add ? raw('<span class="tl-plus" aria-hidden="true">+</span>') : ""}`;
         const ord = reorder && g.first ? raw(html`<span class="tl-ord"><button type="button" class="btn ghost small" data-up="${g.key}" aria-label="Move ${M.GROUP_LABEL[g.key]} up" ${gi === 0 ? "disabled" : ""}>↑</button><button type="button" class="btn ghost small" data-down="${g.key}" aria-label="Move ${M.GROUP_LABEL[g.key]} down" ${gi === lastG ? "disabled" : ""}>↓</button></span>`) : "";
         return raw(html`<div class="tl-row ${g.key === "slb" ? "neck" : ""} ${g.first ? "first" : "sub"}" data-g="${g.key}" data-code="${g.code}">
