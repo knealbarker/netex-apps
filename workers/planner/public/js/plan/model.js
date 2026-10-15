@@ -960,6 +960,13 @@ export function personRows(X, groups) {
     bars.sort((a, b) => a.from - b.from);
     out.push({ key: keyOf(code), code, empId, label: nameOf(P, empId).split(/\s+/)[0], name: nameOf(P, empId), first: false, lanes: [{ empId, code, lane: 0, bars }], nLanes: 1 });
   };
+  // overlapping time someone shares a station with another person (flagged on the station board)
+  const dupOf = new Map();
+  for (const r of stRows) for (const l of r.lanes) for (const x of l.bars) if (x.dup) { const k = `${l.empId}|${r.code}`; if (!dupOf.has(k)) dupOf.set(k, []); dupOf.get(k).push(x); }
+  const flag = (empId, list) => list.flatMap(x => {
+    const d = !x.brk && dupOf.get(`${empId}|${x.stn}`); if (!d) return [x];
+    return splitDup(x, d.map(y => ({ from: y.from, to: y.to, empId: y.dupWith[0] }))).map(y => y.dup ? { ...y, dupWith: [...new Set(d.filter(z => z.from < y.to - 0.01 && z.to > y.from + 0.01).flatMap(z => z.dupWith))] } : y);
+  });
   if (!R.empty) for (const row of R.rows) {
     if (!row.staffed) continue;
     const code = row.st.id, empId = (P.crew[code] || {}).emp || row.emp?.empId, steps = stepsOf(row), bars = [];
@@ -971,7 +978,7 @@ export function personRows(X, groups) {
       else bar(sp.stn, sp.from, sp.to);
     }
     if (b0 != null) bars.push({ from: b0, to: b1, brk: true, key: keyOf(code), stn: code, label: "" });
-    add(code, empId, bars);
+    add(code, empId, flag(empId, bars));
   }
   for (const x of E.opsInfo()) {
     if (!x.on) continue;
@@ -1039,8 +1046,28 @@ export function stationRows(X, groups) {
     // someone filling in during the owner's break shows in the gap instead of the break stripes
     for (const l of r.lanes) l.bars = l.bars.filter(x => !x.brk || !r.lanes.some(o => o !== l && o.lane === l.lane && o.bars.some(y => !y.brk && y.from < x.to - 0.01 && y.to > x.from + 0.01)));
     r.nLanes = Math.max(1, ends.length);
+    // two people on one station at once: the later one's overlapping time is flagged (Neal, Oct 15)
+    r.lanes.forEach((l, k) => {
+      const before = r.lanes.slice(0, k).flatMap(o => o.bars.filter(x => !x.brk && !x.idle).map(x => ({ ...x, empId: o.empId })));
+      if (before.length) l.bars = l.bars.flatMap(x => x.brk || x.idle ? [x] : splitDup(x, before));
+    });
   }
   return rows;
+}
+/** Cuts a bar where it overlaps any of `others` (bars with empId); the overlapping pieces get dup: true and dupWith: [empId]. */
+function splitDup(bar, others) {
+  const hits = others.filter(o => o.from < bar.to - 0.01 && o.to > bar.from + 0.01);
+  if (!hits.length) return [bar];
+  const cuts = [...new Set([bar.from, bar.to, ...hits.flatMap(o => [o.from, o.to]).filter(t => t > bar.from && t < bar.to)])].sort((a, b) => a - b);
+  const out = [];
+  for (let i = 0; i + 1 < cuts.length; i++) {
+    const f = cuts[i], t = cuts[i + 1]; if (t - f < 0.01) continue;
+    const w = hits.filter(o => o.from < t - 0.01 && o.to > f + 0.01).map(o => o.empId);
+    const piece = { ...bar, from: f, to: t, dup: w.length > 0, dupWith: [...new Set(w)] };
+    const prev = out[out.length - 1];
+    if (prev && prev.dup === piece.dup && String(prev.dupWith) === String(piece.dupWith) && Math.abs(prev.to - f) < 0.01) prev.to = t; else out.push(piece);
+  }
+  return out;
 }
 
 /**

@@ -395,6 +395,7 @@ export async function render(main, ctx) {
       if (left > 0 && st.over) return html`<span class="muted">${fmtN(left)} for later</span>`;
       return left <= 0 ? html`<span class="good-txt">done</span>` : html`<span class="${f && f.finish == null ? "bad-txt" : ""}" title="${f ? finTip(f) : ""}">${fmtN(left)} ${P.isToday ? "left" : "to do"}${when}</span>`;
     };
+    const dupTip = (x, where) => x.dup ? ` — ⚠ ${(x.dupWith || []).length + 1} people on ${where} ${fmtClock(x.from)}–${fmtClock(x.to)} (also ${(x.dupWith || []).map(id => first(M.nameOf(P, id))).join(", ")})` : "";
     const barHtml = (g, l, lane = l.lane) => {
       const pi = info[l.empId], nm = pi ? pi.first : first(M.nameOf(P, l.empId));
       const cut = pi && pi.state === "gone" && pi.outAt != null ? pi.outAt : null, noshow = pi && pi.state === "missing";
@@ -407,8 +408,8 @@ export async function render(main, ctx) {
           if (x.brk) { out.push(html`<i class="tl-brk" style="left:${pct(pf)};width:${wid(pf, pt)};top:${lane * 32 + 6}px" title="${nm}: break ${fmtClock(x.from)}–${fmtClock(x.to)}"></i>`); continue; }
           const label = people ? x.label : nm;
           const tip = people ? `${pi?.name || nm}: ${x.label} ${fmtClock(x.from)}–${fmtClock(x.to)}${x.ot ? " (overtime)" : ""}${gone ? ` — clocked out ${fmtClock(cut)}` : noshow ? " — not clocked in" : x.idle ? " — nothing to do" : ""}`
-            : `${pi?.name || nm}: ${g.label}${l.code !== g.code && g.code ? ` (from ${(POS.find(p => p.id === l.code) || {}).label || l.code})` : ""} ${fmtClock(x.from)}–${fmtClock(x.to)}${x.ot ? " (overtime)" : ""}${gone ? ` — clocked out ${fmtClock(cut)}` : noshow ? " — not clocked in" : x.idle ? " — nothing to do" : ""}${puTip}`;
-          out.push(html`<button type="button" class="tl-bar ${x.ot ? "ot" : ""} ${gone ? "gone" : ""} ${noshow ? "noshow" : ""} ${x.idle ? "idle" : ""}" data-emp="${l.empId}" data-stn="${people ? x.stn : g.code}" data-at="${x.from}" style="left:${pct(pf)};width:${wid(pf, pt)};top:${lane * 32 + 6}px;--c:${COLOR[x.key || g.key] || COLOR.ops}" title="${tip}" aria-label="${tip}">${label ? raw(html`<b>${label}</b>`) : ""}${k === 0 ? raw(punchTag(pu)) : ""}</button>`);
+            : `${pi?.name || nm}: ${g.label}${l.code !== g.code && g.code ? ` (from ${(POS.find(p => p.id === l.code) || {}).label || l.code})` : ""} ${fmtClock(x.from)}–${fmtClock(x.to)}${x.ot ? " (overtime)" : ""}${gone ? ` — clocked out ${fmtClock(cut)}` : noshow ? " — not clocked in" : x.idle ? " — nothing to do" : ""}${dupTip(x, people ? x.label : g.label)}${puTip}`;
+          out.push(html`<button type="button" class="tl-bar ${x.dup ? "dup" : ""} ${x.ot ? "ot" : ""} ${gone ? "gone" : ""} ${noshow ? "noshow" : ""} ${x.idle ? "idle" : ""}" data-emp="${l.empId}" data-stn="${people ? x.stn : g.code}" data-at="${x.from}" style="left:${pct(pf)};width:${wid(pf, pt)};top:${lane * 32 + 6}px;--c:${COLOR[x.key || g.key] || COLOR.ops}" title="${tip}" aria-label="${tip}">${label ? raw(html`<b>${label}</b>`) : ""}${k === 0 ? raw(punchTag(pu)) : ""}</button>`);
         }
       });
       return out.join("");

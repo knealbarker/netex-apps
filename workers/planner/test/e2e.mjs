@@ -305,7 +305,15 @@ await t("Plan board: each person's last time-clock punch, green in / red out, by
   const beto = await m.p.$eval(`#pl-board .tl-lab[data-emp="${ids.Beto}"] .tl-worked`, e => e.textContent);
   ok(/4h 44m/.test(beto), `Beto's time on the clock: ${beto}`);   // 5:31–10:15
   await m.p.locator(".pv-board").screenshot({ path: join(SHOTS, "e11b-punch-people.png") });
-  await m.p.click('.tl-view button:has-text("Stations")');
+  await m.p.click('.tl-view button:has-text("Stations")'); await m.p.waitForSelector("#pl-board .tl-bar");
+  // Gus moves onto DCT 1 at 7:00 while Cora's there: his time there is shaded red (Neal, Oct 15)
+  await m.p.click(`#pl-board .tl-bar[data-emp="${ids.Gus}"]`); await m.p.waitForSelector('dialog select[name="mv"]');
+  await m.p.selectOption('dialog select[name="mv"]', "dct1"); await m.p.fill('dialog input[name="mvat"]', "07:00");
+  await m.p.click('dialog button[type="submit"]'); await m.p.waitForSelector("dialog", { state: "detached" });
+  await m.p.waitForSelector(`#pl-board .tl-row[data-code="dct1"] .tl-bar.dup[data-emp="${ids.Gus}"]`);
+  ok(!(await m.p.$(`#pl-board .tl-bar.dup[data-emp="${ids.Cora}"]`)), "Cora, there first, isn't shaded");
+  ok(/2 people on DCT 1/.test(await m.p.$eval(`#pl-board .tl-bar.dup[data-emp="${ids.Gus}"]`, e => e.title)), "hover says why");
+  await m.p.locator(".pv-board").screenshot({ path: join(SHOTS, "e11d-two-on-station.png") });
   await m.ctx.close();
 });
 await t("Tablet: the plan fits, and a person's sheet opens with their times", async () => {

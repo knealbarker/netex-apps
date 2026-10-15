@@ -112,6 +112,19 @@ await t("boards: by station and by person, straight from the entered times", () 
   eq(pr.lanes[0].bars.map(b => b.label), ["SLB 2", "SLT 2 helper"]);
 });
 
+await t("two people on one station at once: the second one's overlapping time is flagged, on both boards", () => {
+  const no = M.stationRows(X, M.boardGroups(POS)).flatMap(r => r.lanes.flatMap(l => l.bars)).filter(b => b.dup);
+  eq(no.length, 0, "Thursday's plan has no double-ups (Maria → Diana on SLB 2 is a hand-off, a break cover sits in the gap)");
+  const c = M.moveAt(crew0, "dct2", "slb2", 9, s.breakMin), X2 = M.evaluate(P0(c));   // Betty onto SLB 2 at 9 while Diana's there
+  const slb2 = M.stationRows(X2, M.boardGroups(POS)).find(r => r.code === "slb2");
+  const betty = slb2.lanes.find(l => l.empId === "betty"), diana = slb2.lanes.find(l => l.empId === "diana");
+  ok(diana.bars.every(b => !b.dup), "Diana (there first) isn't flagged");
+  const d = betty.bars.filter(b => b.dup);
+  ok(d.length && Math.abs(d[0].from - 9) < 0.01 && d[0].dupWith.join() === "diana", `Betty flagged from 9:00 with Diana: ${JSON.stringify(d)}`);
+  const pb = M.personRows(X2, M.boardGroups(POS)).find(r => r.empId === "betty").lanes[0].bars;
+  ok(pb.some(b => b.dup && b.stn === "slb2") && pb.every(b => !b.dup || b.stn === "slb2"), "People view: only Betty's SLB 2 time is flagged");
+});
+
 await t("no clock-out entered = an 8-hour day; red finish lines are pieces ÷ pieces-per-hour over the planned people", () => {
   eq(segs("slb1"), ["slb1 5.67-13.67"], "Carnell 5:40 + 8 hours");
   const f = M.finishLines(X);
