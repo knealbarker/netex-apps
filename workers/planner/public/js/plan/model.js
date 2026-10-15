@@ -421,6 +421,17 @@ export function clockedHoursOf(P, id) {
   }
   return any ? sum : null;
 }
+/** A person's workweek so far (Neal, Oct 15): finished days from Rippling (history) plus today's time on the clock.
+ *  { days: [{ day, h, today, future }] for the 5 work days from the week's start, total }, or null with no hours this week. */
+export function weekHoursOf(P, id) {
+  if (!P.history) return null;
+  const back = (weekday(P.day) - (P.s.weekStart ?? 1) + 7) % 7, start = addDays(P.day, -back), by = {};
+  for (const h of P.history.hours || []) if (h.personId === id && h.day >= start && h.day < P.day) by[h.day] = (by[h.day] || 0) + (+h.hours || 0);
+  const todayH = P.isToday ? clockedHoursOf(P, id) || 0 : 0;
+  const days = []; for (let i = 0; i < 5; i++) { const d = addDays(start, i); days.push({ day: d, h: d === P.day ? todayH : by[d] || 0, today: d === P.day, future: d > P.day }); }
+  const total = Object.values(by).reduce((a, h) => a + h, 0) + todayH;
+  return total > 0 ? { days, total } : null;
+}
 export function clockInOf(P) {
   const out = {};
   if (!P.isToday) return out;

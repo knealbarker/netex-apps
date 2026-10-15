@@ -304,6 +304,10 @@ await t("Plan board: each person's last time-clock punch, green in / red out, by
   ok(labs.some(x => /in 8:30/.test(x)) && labs.some(x => /out 10:15/.test(x)), `name tags: ${labs.join(", ")}`);
   const beto = await m.p.$eval(`#pl-board .tl-lab[data-emp="${ids.Beto}"] .tl-worked`, e => e.textContent);
   ok(/4h 44m/.test(beto), `Beto's time on the clock: ${beto}`);   // 5:31–10:15
+  const wk = await m.p.$$eval("#pl-board .tl-lab .tl-week", els => els.map(e => e.textContent + " | " + e.title));
+  ok(wk.length && wk.every(x => /\d+h \d\dm \| This week: /.test(x)), `week totals: ${wk.join(" / ")}`);
+  const hts = await m.p.$$eval("#pl-board .tl-row", rows => rows.map(r => [r.querySelector(".tl-lab").offsetHeight, r.querySelector(".tl-bar")?.offsetHeight || 0]));
+  ok(hts.every(([lab, bar]) => !bar || bar >= lab - 14), `bars fill the row: ${JSON.stringify(hts)}`);
   await m.p.locator(".pv-board").screenshot({ path: join(SHOTS, "e11b-punch-people.png") });
   await m.p.click('.tl-view button:has-text("Stations")'); await m.p.waitForSelector("#pl-board .tl-bar");
   // Gus moves onto DCT 1 at 7:00 while Cora's there: his time there is shaded red (Neal, Oct 15)

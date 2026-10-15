@@ -849,7 +849,20 @@ button.tl-lab { cursor: pointer; } button.tl-lab:hover { background: var(--hover
 /* last time-clock punch next to a name: green = in, red = out (Neal, Oct 15) */
 .tl-punch { display: inline-block; margin-left: 5px; padding: 0 5px; border-radius: 999px; font: 700 11px/16px var(--font); white-space: nowrap; vertical-align: 1px; background: var(--card); border: 1px solid currentColor; }
 .tl-punch.in { color: var(--good); } .tl-punch.out { color: var(--bad); }
-.tl-name small.tl-worked { color: var(--muted); font-weight: 600; }
+/* People view: today's time on the clock and the week so far, a tiny Mon–Fri bar chart (Neal, Oct 15) */
+.tl-name small.tl-worked { color: var(--muted); font-weight: 600; display: flex; flex-wrap: wrap; align-items: center; gap: 2px 8px; white-space: nowrap; }
+.tl-week { display: inline-flex; align-items: center; gap: 4px; }
+.tl-week .wk-bars { display: inline-flex; align-items: flex-end; gap: 1px; height: 12px; padding-bottom: 1px; border-bottom: 1px solid var(--line2); }
+.tl-week .wk-bars i { width: 4px; border-radius: 1px 1px 0 0; background: var(--muted); }
+.tl-week .wk-bars i.now { background: var(--good); }
+.tl-week .wk-bars i.fut { background: var(--line2); }
+.tl-week.warn { color: var(--warn); } .tl-week.bad { color: var(--bad); }
+.tl-week.warn .wk-bars i:not(.fut):not(.now) { background: var(--warn); } .tl-week.bad .wk-bars i:not(.fut):not(.now) { background: var(--bad); }
+/* People view: the bars fill the row, however tall the name column gets */
+.tl.people { --lab: 196px; } .tl.people .tl-track { min-height: 32px; }
+@media (max-width: 640px) { .tl.people { --lab: 132px; } }
+.tl.people .tl-bar, .tl.people .tl-brk { height: auto; bottom: 6px; }
+.tl.people .tl-leave { height: auto; bottom: 3px; }
 .tl-bar .tl-punch { margin-left: 4px; line-height: 14px; }
 .tl-bar.gone { background: color-mix(in srgb, var(--faint) 18%, var(--card)); border-left-color: var(--faint); color: var(--faint); }
 .tl-bar.noshow { background: repeating-linear-gradient(-45deg, color-mix(in srgb, var(--c) 16%, var(--card)) 0 5px, var(--card) 5px 10px); border: 1px dashed var(--bad); color: var(--bad); }

@@ -428,7 +428,7 @@ export async function render(main, ctx) {
       });
       return out.join("");
     };
-    el.innerHTML = html`<div class="tl" style="--hrs:${b - a}">
+    el.innerHTML = html`<div class="tl ${people ? "people" : ""}" style="--hrs:${b - a}">
       <div class="tl-axis"><div class="tl-lab"></div><div class="tl-track">${raw(ticks.join(""))}</div></div>
       ${rows.map(g => {
         // one row per station (Neal, Oct 14); the kind of work's count and finish show on its first station
@@ -436,12 +436,17 @@ export async function render(main, ctx) {
         const free = !people && !st.crew[g.code].emp, lanes = g.nLanes, add = can && free && !reorder;
         if (people) {   // a person's line: their name, their own station and hours; tap = the move sheet
           const pi = info[g.empId], sub = `${((POS.find(p => p.id === g.code) || {}).label || g.code).replace(/Starch Laundry/i, "SL").replace(/Dry Cleaning/i, "DC")}${pi ? ` · ${hmShort(pi.startH)}–${hmShort(pi.end)}` : ""}`;
-          const pu = punchOf(g.empId), wk = M.clockedHoursOf(P, g.empId), wkTxt = wk == null ? "" : `${Math.floor(Math.round(wk * 60) / 60)}h ${String(Math.round(wk * 60) % 60).padStart(2, "0")}m`;
-          const ptitle = [g.name, pu && punchTxt(pu), wkTxt && `${wkTxt} on the clock today`].filter(Boolean).join(" · ");
-          const plab = html`<i class="sw" style="--c:${COLOR[g.key] || COLOR.ops}"></i><span class="tl-name"><b>${g.label}${raw(punchTag(pu))}</b><small>${sub}</small>${wkTxt ? raw(html`<small class="tl-worked" title="On the clock today">⏱ ${wkTxt}</small>`) : ""}</span>`;
+          const hmTxt = h => `${Math.floor(Math.round(h * 60) / 60)}h ${String(Math.round(h * 60) % 60).padStart(2, "0")}m`;
+          const pu = punchOf(g.empId), wk = M.clockedHoursOf(P, g.empId), wkTxt = wk == null ? "" : hmTxt(wk);
+          // the week: a little Mon–Fri bar chart of hours worked, then the total; amber from 36 h, red past 40 (overtime) (Neal, Oct 15)
+          const W = M.weekHoursOf(P, g.empId), wcls = W ? (W.total > 40 ? "bad" : W.total >= 36 ? "warn" : "") : "";
+          const wTip = W ? `This week: ${W.days.filter(d => !d.future).map(d => `${new Date(d.day + "T12:00:00").toLocaleDateString(undefined, { weekday: "short" })} ${d.h ? hmTxt(d.h) : "—"}${d.today ? " (so far)" : ""}`).join(", ")} = ${hmTxt(W.total)}${W.total > 40 ? " · overtime" : ""}` : "";
+          const wkStrip = W ? html`<span class="tl-week ${wcls}" title="${wTip}"><span class="wk-bars" aria-hidden="true">${raw(W.days.map(d => html`<i class="${d.today ? "now" : ""} ${d.future ? "fut" : ""}" style="height:${d.future ? 1 : Math.max(1, Math.min(12, Math.round(d.h / 10 * 12)))}px"></i>`).join(""))}</span>${hmTxt(W.total)}</span>` : "";
+          const ptitle = [g.name, pu && punchTxt(pu), wkTxt && `${wkTxt} on the clock today`, wTip].filter(Boolean).join(" · ");
+          const plab = html`<i class="sw" style="--c:${COLOR[g.key] || COLOR.ops}"></i><span class="tl-name"><b>${g.label}${raw(punchTag(pu))}</b><small>${sub}</small>${wkTxt || W ? raw(html`<small class="tl-worked">${wkTxt ? raw(html`<span title="On the clock today">⏱ ${wkTxt}</span>`) : ""}${raw(wkStrip)}</small>`) : ""}</span>`;
           return raw(html`<div class="tl-row ${g.first ? "first" : "sub"}" data-g="${g.key}" data-code="${g.code}">
             ${can ? raw(html`<button type="button" class="tl-lab" data-emp="${g.empId}" aria-label="Move ${g.name}" title="${ptitle}">${raw(plab)}</button>`) : raw(html`<div class="tl-lab" title="${ptitle}">${raw(plab)}</div>`)}
-            <div class="tl-track" style="height:32px">${raw(g.lanes.map(l => barHtml(g, l)).join(""))}${raw(nowLine)}${raw(leaveTick(g.empId, 0))}</div>
+            <div class="tl-track">${raw(g.lanes.map(l => barHtml(g, l)).join(""))}${raw(nowLine)}${raw(leaveTick(g.empId, 0))}</div>
           </div>`);
         }
         const lab = html`<i class="sw" style="--c:${COLOR[g.key] || COLOR.ops}"></i><span class="tl-name"><b>${g.label}</b><small>${raw(g.first ? statusOf(g) : "")}</small></span>${add ? raw('<span class="tl-plus" aria-hidden="true">+</span>') : ""}`;
