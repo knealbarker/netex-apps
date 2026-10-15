@@ -1,0 +1,28 @@
+name = "netex-mcp"
+main = "src/index.js"
+compatibility_date = "2026-09-01"
+account_id = "61c6ba95bfea0222857214634869b20a"
+workers_dev = false    # only at mcp.netexcleaners.com
+preview_urls = false
+
+routes = [{ pattern = "mcp.netexcleaners.com", custom_domain = true }]
+
+[[d1_databases]]
+binding = "DB"
+database_name = "netex-apps"
+database_id = "1657081e-9193-4636-a12b-88e0f1f86438"
+migrations_dir = "../../db/migrations"   # applied by the planner's deploy only (0019 adds this connector's tables)
+
+[vars]
+ORG_ID = "tcc"
+APP_ID = "claude"
+TIMEZONE = "America/Chicago"
+PUBLIC_ORIGIN = "https://mcp.netexcleaners.com"
+SMRT_URL = "https://towncountryclean.smrtapp.com/graphql"
+# /authorize sits behind the Cloudflare Access application "Netex apps" (*.netexcleaners.com): same sign-in, same audience tag.
+# /mcp, /token, /register, /revoke and /.well-known need an Access Bypass (Claude's servers call them); this Worker guards them.
+TEAM_DOMAIN = "https://netexcleaners.cloudflareaccess.com"
+ACCESS_AUD = "c8867e4f1d945bfb7fc6b393e7f40f0c3bb050846ca416789136186e32e5de57"
+
+# Secret (Workers > netex-mcp > Settings > Variables and Secrets). Never in GitHub.
+#   SMRT_KEY  - the same SMRT API key netex-sync uses (for smrt_order / smrt_report)
