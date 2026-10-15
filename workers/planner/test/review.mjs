@@ -96,6 +96,7 @@ await t("by department: each person's paid hours on the stations the plan had th
   near(D.rows.reduce((t, x) => t + x.hours, 0), r.labor.hours);
   near(D.total.cost, r.labor.cost);
   ok(Array.isArray(D.total.miss) && D.rows.every(x => Array.isArray(x.miss)));
+  ok(D.rows.filter(x => !x.shared).every(x => x.earlier + x.onDay + x.noScan === x.finished && x.asmFor.today + x.asmFor.ahead + x.asmFor.overdue === x.assembled), "finished and assembled each add up");
   eq((await call("PUT", `/review/${DAY}/note`, { as: "vi@example.com", body: { dept: "slt", text: "x" } })).status, 403);
   eq((await call("PUT", `/review/${DAY}/note`, { as: "mo@example.com", body: { dept: "slt", text: "Rosenda out sick, tops ran late" } })).status, 200);
   eq((await call("GET", `/review/${DAY}`)).body.departments.notes.slt.text, "Rosenda out sick, tops ran late");

@@ -124,22 +124,37 @@ export async function render(main, ctx) {
     const cols = 6 + (money ? 2 : 0);
     const missRow = r => (r.miss.length || DP.notes[r.key] ? raw(html`<tr class="rv-missrow"><td colspan="${cols}"><span class="c-bad small">Missed: ${r.miss.join(" · ") || "—"}</span>${note(r.key)}</td></tr>`) : "");
     const dept = r => raw(html`<tr class="${r.miss.length ? "rv-miss" : ""}"><td><b>${r.label}</b>${r.people.length ? raw(html`<small>${r.people.join(", ")}</small>`) : ""}</td>
-      <td class="num">${fmtN(r.due)}</td><td class="num ${r.left ? "c-bad" : r.due ? "c-good" : ""}">${fmtN(r.finished)}${r.left ? raw(html`<small>${fmtN(r.left)} left</small>`) : ""}</td>
-      <td class="num">${fmtN(r.assembled)}</td><td class="num">${r.hours > 0.05 ? fmtH(r.hours) : "—"}</td>
+      <td class="num">${fmtN(r.due)}</td><td class="num ${r.left ? "c-bad" : r.due ? "c-good" : ""}">${fmtN(r.finished)}${raw(finSub(r))}</td>
+      <td class="num">${fmtN(r.assembled)}${raw(asmSub(r))}</td><td class="num">${r.hours > 0.05 ? fmtH(r.hours) : "—"}</td>
       <td class="num ${r.perHour != null && r.goal && r.perHour < r.goal * 0.9 ? "c-bad" : ""}">${r.perHour != null ? r.perHour.toFixed(1) : "—"}${r.goal ? raw(html`<small>goal ${r.goal}</small>`) : ""}</td>
       ${money ? raw(html`<td class="num">${r.cost != null && r.hours > 0.05 ? fmt$(r.cost) : "—"}</td><td class="num ${pctCls(r.pct)}" ${r.pct == null && r.assembled ? raw('title="No hours on these stations in the plan, so no labor % (their labor is under Not on the plan or another department)"') : ""}>${r.pct != null ? r.pct.toFixed(1) + "%" : "—"}${r.value ? raw(html`<small>of ${fmt$(r.value)}</small>`) : ""}</td>`) : ""}</tr>${missRow(r)}`);
     const shared = r => raw(html`<tr class="rv-shared"><td><b>${r.label}</b>${r.people.length ? raw(html`<small>${r.people.join(", ")}</small>`) : ""}</td><td colspan="3" class="muted small">${r.key === "none" ? "clocked in, not on any station in the plan" : "works for every department"}</td>
       <td class="num">${fmtH(r.hours)}</td><td></td>${money ? raw(html`<td class="num">${fmt$(r.cost)}</td><td class="num muted">${r.pct != null ? r.pct.toFixed(1) + "%" : "—"}<small>of all sales</small></td>`) : ""}</tr>${DP.notes[r.key] || (can && r.key === "none") ? missRow(r) : ""}`);
+    // Finished = pieces due this day that are done, whenever they were done; Assembled = pieces assembled this day,
+    // whatever day they're due. The small lines show how the two overlap (Neal, Oct 15: "326 finished but 309 assembled?")
+    const d0 = D.isToday ? "today" : "that day";
+    function finSub(r) {
+      const b = [];
+      if (r.left) b.push(`<span class="c-bad">${fmtN(r.left)} left</span>`);
+      if (r.earlier) b.push(`${fmtN(r.earlier)} done ahead`);
+      if (r.noScan) b.push(`${fmtN(r.noScan)} no scan`);
+      return b.length ? `<small>${b.join(" · ")}</small>` : "";
+    }
+    function asmSub(r) {
+      const f = r.asmFor; if (!f || (!f.ahead && !f.overdue)) return "";
+      const b = [`${fmtN(f.today)} due ${d0}`]; if (f.ahead) b.push(`${fmtN(f.ahead)} ahead`); if (f.overdue) b.push(`${fmtN(f.overdue)} past due`);
+      return `<small>${b.join(" · ")}</small>`;
+    }
     const rows = DP.rows.filter(r => !r.shared), sh = DP.rows.filter(r => r.shared);
     if (!rows.length && !sh.length) return html`<p class="muted pad">Nothing due, assembled or clocked this day.</p>`;
     return html`<div class="t-scroll"><table class="rt rv-dept"><thead><tr><th>Department</th><th class="num">Due</th><th class="num">Finished</th><th class="num">Assembled</th><th class="num">Hours</th><th class="num">Per hour</th>${money ? raw('<th class="num">Labor</th><th class="num">Labor %</th>') : ""}</tr></thead><tbody>
       ${rows.map(dept)}${sh.map(shared)}
-      <tr class="rv-total ${T.miss.length ? "rv-miss" : ""}"><td><b>Total</b></td><td class="num"><b>${fmtN(T.due)}</b></td><td class="num ${T.left ? "c-bad" : "c-good"}"><b>${fmtN(T.finished)}</b>${T.left ? raw(html`<small>${fmtN(T.left)} left</small>`) : ""}</td>
-        <td class="num"><b>${fmtN(T.assembled)}</b></td><td class="num"><b>${fmtH(T.hours)}</b></td><td class="num"><b>${T.perHour != null ? T.perHour.toFixed(1) : "—"}</b></td>
+      <tr class="rv-total ${T.miss.length ? "rv-miss" : ""}"><td><b>Total</b></td><td class="num"><b>${fmtN(T.due)}</b></td><td class="num ${T.left ? "c-bad" : "c-good"}"><b>${fmtN(T.finished)}</b>${raw(finSub(T))}</td>
+        <td class="num"><b>${fmtN(T.assembled)}</b>${raw(asmSub(T))}</td><td class="num"><b>${fmtH(T.hours)}</b></td><td class="num"><b>${T.perHour != null ? T.perHour.toFixed(1) : "—"}</b></td>
         ${money ? raw(html`<td class="num"><b>${fmt$(T.cost)}</b></td><td class="num ${pctCls(T.pct)}"><b>${T.pct != null ? T.pct.toFixed(1) + "%" : "—"}</b><small>target ${tgt}%</small></td>`) : ""}</tr>
       ${T.miss.length || DP.notes.total ? missRow({ key: "total", miss: T.miss }) : ""}
       </tbody></table></div>
-      <p class="muted small">Labor % = the department's labor ÷ the sales value (before tax) of its pieces assembled that day. Per hour = pieces assembled ÷ hours on its stations, against Settings › Rates.${D.isToday ? " Today's numbers are so far." : ""}</p>`;
+      <p class="muted small"><b>Finished</b> = pieces due ${d0} that are done, whenever they were done (done ahead = assembled on an earlier day; no scan = SMRT has the order assembled or ready but the piece was never scanned). <b>Assembled</b> = pieces assembled ${d0}, whatever day they're due (ahead = due later, past due = catching up). Labor % = the department's labor ÷ the sales value (before tax) of its pieces assembled that day. Per hour = pieces assembled ÷ hours on its stations, against Settings › Rates.${D.isToday ? " Today's numbers are so far." : ""}</p>`;
   }
 
   // ------------------------------------------------------------ people: the time clock, breaks and the week

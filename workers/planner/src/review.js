@@ -26,17 +26,22 @@ const weekday = day => new Date(day + "T12:00:00Z").getUTCDay();
 const cents = it => Math.max(0, (+it.base || 0) + (+it.up || 0) - (+it.disc || 0));
 
 /** Pieces assembled on a day, by kind of work, with their revenue and the running count through the day. */
-async function assembled(db, orgId, day, cat, prices) {
-  const rows = (await db.prepare(`SELECT i.assembled_at AS asm, t.name AS type, d.name AS dep, i.base_cents AS base, i.upcharge_cents AS up, i.discount_cents AS disc
+async function assembled(db, orgId, day, cat, prices, workDayOf = null) {
+  const rows = (await db.prepare(`SELECT i.assembled_at AS asm, t.name AS type, d.name AS dep, i.base_cents AS base, i.upcharge_cents AS up, i.discount_cents AS disc,
+      substr(o.due_at,1,10) AS due, o.is_route_delivery AS route
       FROM pos_items i JOIN pos_orders o ON o.id=i.order_id JOIN pos_order_statuses s ON s.id=o.status_id
       LEFT JOIN pos_item_types t ON t.id=i.item_type_id LEFT JOIN pos_departments d ON d.id=i.department_id
       WHERE o.org_id=? AND s.is_void=0 AND i.removed_at IS NULL AND substr(i.assembled_at,1,10)=?`).bind(orgId, day).all()).results;
   const q = Object.fromEntries(CATS.map(k => [k, 0])), revQ = Object.fromEntries(CATS.map(k => [k, 0])); let rev = 0, n = 0;
+  // what each piece assembled this day was for: due this day, due later (ahead), or past due (catching up)
+  const forQ = { today: Object.fromEntries(CATS.map(k => [k, 0])), ahead: Object.fromEntries(CATS.map(k => [k, 0])), overdue: Object.fromEntries(CATS.map(k => [k, 0])) };
   const times = [], byHour = {}, byCat = {}; // byCat: minute of the day each piece was assembled, by kind of work // byHour: { "7": {slb: 12, ...} } pieces assembled in each clock hour, by kind of work
   for (const r of rows) {
     const k = cat(r.type, r.dep); if (!k) continue;
     q[k]++; n++;
     const v = r.base != null ? cents(r) / 100 : (+prices[k] || 0); rev += v; revQ[k] += v;
+    const wd = r.due ? (workDayOf ? workDayOf(r.due, !!r.route) : r.due) : day;
+    forQ[wd < day ? "overdue" : wd > day ? "ahead" : "today"][k]++;
     const h = hmOf(r.asm); if (h != null) { times.push(h); const hr = Math.floor(h); (byHour[hr] = byHour[hr] || {})[k] = (byHour[hr][k] || 0) + 1; (byCat[k] = byCat[k] || []).push(Math.round(h * 60)); }
   }
   times.sort((a, b) => a - b);
@@ -44,7 +49,7 @@ async function assembled(db, orgId, day, cat, prices) {
   const curve = []; let c = 0;
   for (const t of times) { c++; const slot = Math.ceil(t * 4) / 4; const last = curve[curve.length - 1]; if (last && last[0] === slot) last[1] = c; else curve.push([slot, c]); }
   for (const k in byCat) byCat[k].sort((a, b) => a - b);
-  return { q, revQ, pieces: n, revenue: rev, curve, byHour, byCat };
+  return { q, revQ, forQ, pieces: n, revenue: rev, curve, byHour, byCat };
 }
 
 /** Hours worked in Production on a day: finished days from Rippling's daily totals; today from the punches so far. */
@@ -90,7 +95,8 @@ export async function reviewDay(db, env, me, day) {
   const cat = categorizer(groups.smrt), prices = groups.money.prices;
   const { departmentId, locationId } = await productionIds(db, env.ORG_ID);
 
-  const done = await assembled(db, env.ORG_ID, day, cat, prices);
+  const workDayOf = (dueDay, route) => (route && groups.route?.dayBefore ? prevWorkDay(dueDay, workDays) : dueDay);
+  const done = await assembled(db, env.ORG_ID, day, cat, prices, workDayOf);
 
   // pieces due that day (route orders the work day before their route) and whether they were finished by the end of it
   const routeDay = groups.route?.dayBefore ? nextWorkDay(day, workDays) : day;
@@ -103,6 +109,11 @@ export async function reviewDay(db, env, me, day) {
     if (h == null) cur.open++; else cur.max = Math.max(cur.max, h); asmByOrder.set(it.orderId, cur); }
   const due = { q: Object.fromEntries(CATS.map(k => [k, 0])), done: Object.fromEntries(CATS.map(k => [k, 0])), pieces: 0, finished: 0, orders: orders.length };
   for (const o of orders) for (const [k, p] of Object.entries(o.per)) { due.q[k] += p[0]; due.done[k] += p[2]; due.pieces += p[0]; due.finished += p[2]; }
+  // when the finished ones were done: before this day (worked ahead), on it, or marked done in SMRT with no assembly scan
+  due.earlier = Object.fromEntries(CATS.map(k => [k, 0])); due.onDay = Object.fromEntries(CATS.map(k => [k, 0]));
+  const ids = new Set(orders.map(o => o.id));
+  for (const o of splitOrders(data, cat, day, groups.smrt.transitRack)) if (ids.has(o.id)) for (const [k, p] of Object.entries(o.per)) { due.earlier[k] += p[2]; due.onDay[k] += p[3]; }
+  due.noScan = Object.fromEntries(CATS.map(k => [k, Math.max(0, due.done[k] - due.earlier[k] - due.onDay[k])]));
 
   // the plan: the latest published copy, else the saved crew
   const pub = await db.prepare(`SELECT p.published_at AS at, u.display_name AS by, p.snapshot_json AS snap FROM plan_publications p JOIN plan_days d ON d.id=p.day_id
@@ -264,6 +275,8 @@ async function departments(db, env, { day, today, people, done, due, rates, mone
     const hours = H[k] || 0, cost = C[k] || 0;
     const r = { key: k, label, shared, hours, people: [...(who[k] || [])], ...(shared ? {} : {
       due: due.q[k] || 0, finished: due.done[k] || 0, left: Math.max(0, (due.q[k] || 0) - (due.done[k] || 0)), assembled: done.q[k] || 0,
+      earlier: due.earlier[k] || 0, onDay: due.onDay[k] || 0, noScan: due.noScan[k] || 0,
+      asmFor: { today: done.forQ.today[k] || 0, ahead: done.forQ.ahead[k] || 0, overdue: done.forQ.overdue[k] || 0 },
       perHour: hours > 0.05 ? (done.q[k] || 0) / hours : null, goal: goal[k] || null }) };
     if (money) { r.cost = cost; if (!shared) { r.value = done.revQ[k] || 0; r.pct = r.value > 0 && hours > 0.05 ? cost / r.value * 100 : null; } else r.pct = valueAll > 0 ? cost / valueAll * 100 : null; }
     // where the goal was missed: due pieces left, labor over target, or a pace well under the setting
@@ -276,7 +289,9 @@ async function departments(db, env, { day, today, people, done, due, rates, mone
   };
   const rows = [...DEPTS.map(([k, l]) => row(k, l, false)).filter(r => r.due || r.assembled || r.hours > 0.05), ...SHARED.map(([k, l]) => row(k, l, true)).filter(r => r.hours > 0.05)];
   const hours = people.reduce((t, p) => t + p.hours, 0), cost = Object.values(C).reduce((t, c) => t + c, 0);
-  const total = { due: due.pieces, finished: due.finished, left: Math.max(0, due.pieces - due.finished), assembled: done.pieces, hours, perHour: hours > 0 ? done.pieces / hours : null,
+  const sum = o => CATS.reduce((t, k) => t + (o[k] || 0), 0);
+  const total = { due: due.pieces, finished: due.finished, left: Math.max(0, due.pieces - due.finished), assembled: done.pieces, hours,
+    earlier: sum(due.earlier), onDay: sum(due.onDay), noScan: sum(due.noScan), asmFor: { today: sum(done.forQ.today), ahead: sum(done.forQ.ahead), overdue: sum(done.forQ.overdue) }, perHour: hours > 0 ? done.pieces / hours : null,
     ...(money ? { cost, value: valueAll, pct: valueAll > 0 ? cost / valueAll * 100 : null } : {}) };
   total.miss = [...(total.left ? [`${total.left} due ${total.left === 1 ? "piece" : "pieces"} not finished`] : []), ...(money && total.pct != null && total.pct > target ? [`labor ${total.pct.toFixed(1)}%, over the ${target}% target`] : [])];
   const notes = Object.fromEntries((await db.prepare(`SELECT e.key, e.text, e.at, u.display_name AS by FROM plan_events e LEFT JOIN core_users u ON u.id=e.user_id
