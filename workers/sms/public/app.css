@@ -1,0 +1,27 @@
+:root { --bg: #0f1420; --ink: #e8ebf2; --muted: #9aa3b5; --line: #263042; color-scheme: dark light; }
+@media (prefers-color-scheme: light) { :root { --bg: #f6f5f2; --ink: #1d1d1b; --muted: #5f5e5a; --line: #dcdad3; } }
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--ink); font: 16px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; }
+.top { display: flex; justify-content: space-between; gap: 12px; padding: 12px 16px; border-bottom: 1px solid var(--line); }
+.top span { color: var(--muted); }
+main { padding: 16px; max-width: 900px; margin: 0 auto; }
+table { border-collapse: collapse; width: 100%; }
+th, td { text-align: left; padding: 8px; border-bottom: 1px solid var(--line); }
+th:last-child, td:last-child { text-align: right; }
+h2 { font-size: 1.1rem; margin: 20px 0 8px; } h2 small { color: var(--muted); font-weight: 400; }
+.muted { color: var(--muted); }
+form { display: grid; gap: 8px; grid-template-columns: 1fr; }
+@media (min-width: 640px) { form { grid-template-columns: 180px 1fr auto; align-items: start; } #sendMsg { grid-column: 1 / -1; } }
+input, textarea, button { font: inherit; color: var(--ink); background: transparent; border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; }
+button { cursor: pointer; background: var(--line); }
+#msgs { list-style: none; padding: 0; margin: 0; }
+#msgs li { padding: 10px 0; border-bottom: 1px solid var(--line); display: grid; grid-template-columns: 22px 1fr; gap: 4px 8px; }
+#msgs .dir { color: var(--muted); }
+#msgs .in .dir { color: #3fb27f; }
+#msgs .head { display: flex; flex-wrap: wrap; gap: 4px 10px; font-size: 0.875rem; color: var(--muted); }
+#msgs .head a { color: var(--ink); font-weight: 600; text-decoration: none; }
+#msgs .text { grid-column: 2; white-space: pre-wrap; overflow-wrap: anywhere; }
+#msgs .tag { border: 1px solid var(--line); border-radius: 999px; padding: 0 8px; }
+#msgs .bad { color: #e5534b; border-color: #e5534b; }
+#msgs .new { color: #3fb27f; border-color: #3fb27f; }
+#msgs .done { font-size: 0.875rem; padding: 2px 10px; }

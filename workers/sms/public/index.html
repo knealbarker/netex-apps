@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Texts</title>
+  <meta name="color-scheme" content="dark light">
+  <link rel="stylesheet" href="/app.css">
+  <script type="module" src="/app.js"></script>
+</head>
+<body>
+  <header class="top"><b id="appName">Texts</b><span id="who"></span></header>
+  <main id="main">
+    <p id="status">Loading…</p>
+    <section id="send" hidden>
+      <h2>Send a text <small id="number"></small></h2>
+      <form id="sendForm">
+        <input id="to" type="tel" placeholder="Mobile number" autocomplete="off" required>
+        <textarea id="body" rows="2" maxlength="1000" placeholder="Message" required></textarea>
+        <button type="submit">Send</button>
+        <span id="sendMsg" class="muted"></span>
+      </form>
+    </section>
+    <section id="list" hidden>
+      <h2 id="listTitle">All texts</h2>
+      <p id="filter" hidden><span id="filterLabel"></span> · <a href="#" id="clearFilter">Show all</a></p>
+      <ul id="msgs"></ul>
+      <button id="more" hidden>Older</button>
+    </section>
+  </main>
+</body>
+</html>

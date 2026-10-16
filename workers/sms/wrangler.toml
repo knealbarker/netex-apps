@@ -1,0 +1,51 @@
+# netex-sms: the shared text-message service (Twilio number (903) 689-9487). See README.md.
+name = "netex-sms"
+main = "src/worker.js"
+compatibility_date = "2026-09-01"
+account_id = "61c6ba95bfea0222857214634869b20a"
+workers_dev = false
+preview_urls = false
+
+routes = [{ pattern = "sms.netexcleaners.com", custom_domain = true }]
+
+[assets]
+directory = "./public"
+binding = "ASSETS"
+run_worker_first = true   # the Worker checks the sign-in before any file is served
+
+[[d1_databases]]
+binding = "DB"
+database_name = "netex-apps"
+database_id = "1657081e-9193-4636-a12b-88e0f1f86438"
+migrations_dir = "../../db/migrations"   # applied by the planner's deploy only
+
+# Copies of incoming texts are emailed from reports@netexcleaners.com (recipients verified in Email Routing)
+[[send_email]]
+name = "SEND_EMAIL"
+
+[observability]
+enabled = true
+
+[vars]
+ORG_ID = "tcc"
+APP_ID = "sms"
+APP_NAME = "Texts"
+ACCOUNT_ID = "61c6ba95bfea0222857214634869b20a"
+TIMEZONE = "America/Chicago"
+TEAM_DOMAIN = "https://netexcleaners.cloudflareaccess.com"
+ACCESS_AUD = "c8867e4f1d945bfb7fc6b393e7f40f0c3bb050846ca416789136186e32e5de57"
+ACCESS_GROUP_ID = "2c00c66c-8c20-44bd-95b1-07639add45ab"
+PUBLIC_URL = "https://sms.netexcleaners.com"      # Twilio signs the exact URL it posts to
+# Twilio (IDs, not secrets)
+TWILIO_MESSAGING_SERVICE_SID = "MG508b0778e381ef25cdc2f59752a5bd9d"   # "Basic", on the verified A2P campaign
+TWILIO_FROM = "+19036899487"
+FORWARD_TO = "neal@towncountryclean.com"   # every incoming text is also emailed here (comma-separated list)
+FORWARD_MODE = "all"                      # all | unrouted (only texts that aren't replies to an app) | none
+MAX_PER_APP_PER_DAY = "200"               # safety cap on texts any one app can send in 24 hours
+
+# Secrets (Workers > netex-sms > Settings > Variables and Secrets). Never in GitHub.
+#   TWILIO_ACCOUNT_SID      - required: the AC… id on Twilio Console › Account home (GitHub treats it as a secret)
+#   TWILIO_AUTH_TOKEN       - required: checks that webhooks really come from Twilio (and sends, if no API key is set)
+#   TWILIO_API_KEY_SID      - optional but preferred for sending: a Standard API key named "netex-sms"
+#   TWILIO_API_KEY_SECRET
+#   CF_API_TOKEN            - optional; lets Users & access keep the "Netex users" Access group in step

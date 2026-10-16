@@ -44,7 +44,7 @@ Cloudflare for domain, DNS, sign-in (Zero Trust Access), hosting (Workers) and d
 ## Database: D1 `netex-apps` (ID `1657081e-9193-4636-a12b-88e0f1f86438`)
 - One database for every app, binding `DB`. Schema in `db/migrations/*.sql` (comments explain each table). Prefixes:
   `core_` shared (org, locations, departments, people, users, apps, roles, settings, audit log) · `int_` integrations and sync runs ·
-  `pos_` full copy of SMRT orders and pieces · `labor_` Rippling hours and pay rates · `plan_` planner · `supply_` supplies · `auth_` text sign-in ·
+  `pos_` full copy of SMRT orders and pieces · `labor_` Rippling hours and pay rates · `plan_` planner · `supply_` supplies · `sms_` texts · `auth_` text sign-in ·
   `mcp_` Claude connector.
 - Org id is `'tcc'` (`env.ORG_ID`). IDs are ULIDs (`ulid()` in `workers/planner/src/util.js`); small lookups use readable ids.
 - Each app is a row in `core_apps` (`id`, `name`, `subdomain`); a person's access to it is a row in `core_user_app_roles`.
@@ -65,6 +65,7 @@ Cloudflare for domain, DNS, sign-in (Zero Trust Access), hosting (Workers) and d
 | SMRT POS GraphQL `towncountryclean.smrtapp.com/graphql` | sync, mcp | saved reports, read-only; key expires ~Jan 2027 | `SMRT_KEY` |
 | Rippling time clock | sync | CSV report emailed every 10 min, Mon–Fri 4 AM–6 PM | none |
 | Twilio Verify | auth | texts sign-in codes | `TWILIO_API_KEY_SID`, `TWILIO_API_KEY_SECRET`, `OIDC_CLIENT_SECRET` |
+| Twilio Messaging | sms | every other text, in and out, from (903) 689-9487; other apps call netex-sms's `Texts` entrypoint (service binding), never Twilio directly | `TWILIO_AUTH_TOKEN` (+ optional `TWILIO_API_KEY_SID`/`_SECRET`) |
 | Cloudflare API | planner, retail | keeps the "Netex users" group in step | `CF_API_TOKEN` |
 SMRT notes: end dates are exclusive; ask for `columns` and `values` in separate calls; 5,000-row cap per call (`workers/sync/src/smrt.js`).
 
