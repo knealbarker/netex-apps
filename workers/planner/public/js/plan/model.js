@@ -791,7 +791,9 @@ export function moveAt(crew, code, toCode, at, breakMin = 30) {
   const { start, end } = shiftOf(c, breakMin);
   if (at <= start + 1e-6) { // from clock-in: they simply start there
     if (toCode === code) { C[code] = { ...c, moves: [], source: "user" }; return C; }
-    if (C[toCode] && C[toCode].emp) throw new Error("Someone already starts on that station. Move them first, or pick a later time.");
+    // Station already has its own person: still allowed (Neal, Oct 16) — they start there as a move at clock-in,
+    // and the board shades any overlap red so the manager sees it.
+    if (C[toCode] && C[toCode].emp) { C[code] = { ...withHours(c, breakMin), moves: [{ at: hhmm(start), to: toCode }], source: "user" }; return C; }
     C[toCode] = { ...withHours(c, breakMin), moves: [], source: "user" }; C[code] = { emp: "", start: c.start, hrs: c.hrs, stop: "", source: "", moves: [], brk: "" };
     return C;
   }

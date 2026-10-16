@@ -433,7 +433,7 @@ export async function render(main, ctx) {
       ${rows.map(g => {
         // one row per station (Neal, Oct 14); the kind of work's count and finish show on its first station
         const gi = groups.findIndex(x => x.key === g.key), lastG = groups.length - 1;
-        const free = !people && !st.crew[g.code].emp, lanes = g.nLanes, add = can && free && !reorder;
+        const free = !people && !st.crew[g.code].emp, lanes = g.nLanes, add = can && !people && !reorder;   // any station can take someone (overlaps show red)
         if (people) {   // a person's line: their name, their own station and hours; tap = the move sheet
           const pi = info[g.empId], sub = `${((POS.find(p => p.id === g.code) || {}).label || g.code).replace(/Starch Laundry/i, "SL").replace(/Dry Cleaning/i, "DC")}${pi ? ` · ${hmShort(pi.startH)}–${hmShort(pi.end)}` : ""}`;
           const hmTxt = h => `${Math.floor(Math.round(h * 60) / 60)}h ${String(Math.round(h * 60) % 60).padStart(2, "0")}m`;
@@ -575,13 +575,16 @@ export async function render(main, ctx) {
         const id = form.who.value, e = people.find(p => p.id === id), fn = first(e.name), t0 = parseTime(form.t0.value);
         if (t0 == null) throw new Error("Pick a time.");
         if (onCrew.has(id)) {
-          const from = onCrew.get(id), target = g.codes.find(c => !st.crew[c].emp || c === one) || g.codes[0];
+          const from = onCrew.get(id), target = one || g.codes.find(c => !st.crew[c].emp) || g.codes[0];
           const C = M.moveAt(st.crew, from, target, t0, s.breakMin);
           edit(() => { st.crew = C; }, { msg: `${fn} → ${posLabel(target)} at ${hm(t0)}.` }); return;
         }
-        const spot = g.codes.find(c => !st.crew[c].emp); if (!spot) throw new Error(`Every ${g.label} spot is taken. Move someone off first.`);
         const t1 = parseTime(form.t1.value); if (t1 == null || t1 <= t0 + 0.25) throw new Error("Clock out has to be after clock in.");
-        edit(() => { st.crew[spot] = { emp: id, start: hhmm(t0), stop: hhmm(t1), hrs: Math.round((t1 - t0) * 100) / 100, brk: "", source: "user", moves: [] }; }, { msg: `${fn} on ${posLabel(spot)} ${hm(t0)}–${hm(t1)}. Tap their bar to set a break.` });
+        // a free spot of this kind, else any free row with a start move here (the station is already staffed; the overlap shows red)
+        const own = g.codes.find(c => !st.crew[c].emp), spot = own || Object.keys(st.crew).find(c => !st.crew[c].emp);
+        if (!spot) throw new Error("The plan has no free rows left. Take someone off first.");
+        const where = own || one || g.codes[0];
+        edit(() => { st.crew[spot] = { emp: id, start: hhmm(t0), stop: hhmm(t1), hrs: Math.round((t1 - t0) * 100) / 100, brk: "", source: "user", moves: own ? [] : [{ at: hhmm(t0), to: where }] }; }, { msg: `${fn} on ${posLabel(where)} ${hm(t0)}–${hm(t1)}. Tap their bar to set a break.` });
       },
     });
   }
