@@ -412,6 +412,35 @@ ok("custom work days: Saturday as a work day waits", !backfillAllowed({ day: "20
   ok("POST /check without the SMRT key says so", res.status === 503);
 }
 
+// ============ a piece moved to another order: SMRT keeps both rows (old one removed). Neal, Oct 18: dress 4409995,
+// 26281-2845 (removed) and 26281-3166 (racked G LONG) took turns owning one stored row every sync.
+{
+  const { sqlite: S, db: mdb } = freshDb();
+  const f = new FakeSmrt(), D = "2026-10-08";
+  f.addOrder(D, "262812845", { status: "processing", pieces: 1, store: "TCC Greenville", barcodes: ["4409995"], due: "2026-10-09T14:00:00-05:00" });
+  const s2 = new Smrt({ url: "https://x/graphql", key: "k", fetchImpl: f.fetchImpl });
+  const read = async () => ingestDay(mdb, { orgId: "tcc", runId: null, mode: "live", day: D }, await s2.dayObjects("ebe7b9bb-20b7-472b-9925-2b729fe2a38b", D), await s2.dayObjects("8f6e82e5-8e64-466c-935a-35a22ee5fd01", D));
+  await read();
+  // moved: the old row gets a removal date, a new order holds the same tag
+  f.days.get(D).items[0]["Item removal date"] = "2026-10-08T09:17:58-05:00";
+  f.addOrder(D, "262813166", { status: "ready", pieces: 1, store: "TCC Greenville", barcodes: ["4409995"], due: "2026-10-09T14:00:00-05:00" });
+  Object.assign(f.days.get(D).items.at(-1), { "Last Rack Location": "G LONG", "Last racked store": "TCC Greenville", "Item Status": "racked" });
+  for (let i = 0; i < 3; i++) await read();
+  const rows = S.prepare("SELECT o.smrt_order_no AS no, i.removed_at, i.last_rack_location AS rack FROM pos_items i JOIN pos_orders o ON o.id=i.order_id WHERE i.barcode='4409995' ORDER BY o.smrt_order_no").all();
+  ok("moved piece: each order keeps its own row (old one removed, new one racked)", rows.length === 2 && rows[0].no === "262812845" && rows[0].removed_at && rows[1].no === "262813166" && !rows[1].removed_at && rows[1].rack === "G LONG", rows);
+  const st = await read();
+  ok("moved piece: reading again changes nothing (no more flip-flop)", st.itemsWritten === 0 && st.changes === 0, st);
+  // the stored state the flip-flop left behind (one row, sitting on either order) heals on the next read
+  for (const order of ["262812845", "262813166"]) {
+    S.prepare("DELETE FROM pos_changes WHERE item_id IN (SELECT id FROM pos_items WHERE barcode='4409995')").run();
+    S.prepare("DELETE FROM pos_items WHERE barcode='4409995' AND order_id<>(SELECT id FROM pos_orders WHERE smrt_order_no=?)").run(order);
+    S.prepare("UPDATE pos_items SET row_hash='old' WHERE barcode='4409995'").run();
+    await read();
+    const n = S.prepare("SELECT COUNT(*) n FROM pos_items WHERE barcode='4409995' AND removed_at IS NULL").get().n + S.prepare("SELECT COUNT(*) n FROM pos_items WHERE barcode='4409995'").get().n;
+    ok(`flip-flopped row (left on ${order}) heals: 2 rows, 1 active`, n === 3, n);
+  }
+}
+
 console.log(`\nSMRT calls made by the fake: ${fake.calls}`);
 console.log(failures ? `${failures} FAILED` : "all passed");
 process.exit(failures ? 1 : 0);

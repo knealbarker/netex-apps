@@ -91,12 +91,17 @@ async function existingOrders(db, orgId, nos) {
  *  - a row on the same order is this piece;
  *  - a row on another order is the same piece moved there (SMRT's Split) only when it was created within a day of this one;
  *  - otherwise it's an earlier visit with the same tag, and this piece gets its own row.
+ * When a piece is moved to another order, SMRT's report keeps BOTH rows: the old order's (with a removal date) and the new
+ * order's (Neal, Oct 18: dress 4409995 on 26281-2845 removed and 26281-3166 racked G LONG). Each report row keeps its own
+ * stored row: a stored row is never matched twice in one read (`claimed`), and a row on an order the report still lists
+ * with this tag isn't taken as "moved" (`stillThere`). Before this, the two rows took turns owning one stored row every sync.
  */
-function samePiece(rows, orderId, createdAt) {
+function samePiece(rows, orderId, createdAt, { claimed = new Set(), stillThere = () => false } = {}) {
   if (!rows || !rows.length) return null;
-  const same = rows.find(x => x.order_id === orderId); if (same) return same;
+  const free = rows.filter(x => !claimed.has(x.id));
+  const same = free.find(x => x.order_id === orderId); if (same) return same;
   const t = Date.parse(createdAt);
-  const near = rows.filter(x => isFinite(t) && Math.abs(Date.parse(x.smrt_created_at) - t) < 864e5);
+  const near = free.filter(x => isFinite(t) && Math.abs(Date.parse(x.smrt_created_at) - t) < 864e5 && !stillThere(x));
   return near.length ? near[near.length - 1] : null;
 }
 async function existingItems(db, orgId, barcodes, sinceIso) {
@@ -191,12 +196,24 @@ export async function ingestDay(db, ctx, orders, items) {
   const barcodes = [...new Set(items.map(r => text(r["Barcode"])).filter(Boolean))];
   const knownItems = await existingItems(db, ctx.orgId, barcodes, since);
   const lineNo = new Map();
+  // every piece's order first, so "is this tag still on that order in the report?" can be answered for any stored row
+  const orderOf = new Map();
   for (const r of items) {
-    const no = orderNo(r["Sale Id"]); let o = orderIds.get(no);
+    const no = orderNo(r["Sale Id"]); if (orderOf.has(no)) continue;
+    let o = orderIds.get(no);
     if (!o) { // piece whose order row is on another created day: look it up
-      const ex = (await existingOrders(db, ctx.orgId, [no])).get(no); if (!ex) continue;
-      o = { id: ex.id, existed: true }; orderIds.set(no, o);
+      const ex = (await existingOrders(db, ctx.orgId, [no])).get(no);
+      if (ex) { o = { id: ex.id, existed: true }; orderIds.set(no, o); }
     }
+    orderOf.set(no, o || null);
+  }
+  const inReport = new Set();
+  for (const r of items) { const o = orderOf.get(orderNo(r["Sale Id"])); const b = text(r["Barcode"]); if (o && b) inReport.add(`${b}|${o.id}`); }
+  const claimed = new Set();
+  const stillThere = x => inReport.has(`${x.barcode}|${x.order_id}`);
+  for (const r of items) {
+    const no = orderNo(r["Sale Id"]); const o = orderOf.get(no);
+    if (!o) continue;
     stats.items++;
     const ln = (lineNo.get(no) || 0) + 1; lineNo.set(no, ln);
     const ist = L.itemStatus(r["Item Status"]);
@@ -212,7 +229,8 @@ export async function ingestDay(db, ctx, orders, items) {
       base_cents: int(r["Item base price"]), upcharge_cents: int(r["Up Charge Amount"]), discount_cents: int(r["Discounted amount"]), price_cents: int(r["Price"]),
     };
     const hash = await sha1(ITEM_HASH + JSON.stringify(r));
-    const old = v.barcode ? samePiece(knownItems.get(v.barcode), o.id, v.smrt_created_at) : null;
+    const old = v.barcode ? samePiece(knownItems.get(v.barcode), o.id, v.smrt_created_at, { claimed, stillThere }) : null;
+    if (old) claimed.add(old.id);
     const cols = Object.keys(v);
     if (old) {
       if (old.row_hash === hash && old.order_id === o.id) continue;
@@ -227,6 +245,7 @@ export async function ingestDay(db, ctx, orders, items) {
         .bind(id, ...cols.map(c => v[c]), hash, ctx.runId));
       if (o.existed && ctx.mode === "live") change(o.id, id, "item_added", null, v.barcode);
       if (v.barcode) (knownItems.get(v.barcode) || knownItems.set(v.barcode, []).get(v.barcode)).push({ id, barcode: v.barcode, order_id: o.id, row_hash: hash, notes: v.notes, removed_at: v.removed_at, smrt_created_at: v.smrt_created_at });
+      claimed.add(id);
     }
     stats.itemsWritten++;
   }
