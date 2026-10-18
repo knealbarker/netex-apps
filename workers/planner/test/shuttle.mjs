@@ -51,7 +51,7 @@ let n = 0;
 function order(created, { due, store = "TCC Quitman", status = "processing", pieces = [], count, route = false, picked = null, note = null }) {
   const id = `2629${String(++n).padStart(5, "0")}`;
   const d = days.get(created) || days.set(created, { orders: [], items: [] }).get(created);
-  d.orders.push({ "ID": id, "Customer Id": "C" + n, "Status": status, "Due date": due, "Created": ts(created), "Piece Count": String(count ?? pieces.length), "Return Location": store, "Agent": store,
+  d.orders.push({ "ID": id, "Customer Id": "C" + n, "Customer Name": store === "TCC Greenville" ? `Pat Customer${n}` : null, "Status": status, "Due date": due, "Created": ts(created), "Piece Count": String(count ?? pieces.length), "Return Location": store, "Agent": store,
     "Is Route Delivery": route ? "true" : "", "Financial department(s)": "Dry Cleaning Tops" });
   pieces.forEach((p, i) => d.items.push({ "Sale Id": id, "Customer Internal ID": "cust" + n, "Barcode": `${id}${i}`, "Item Status": p.status || "detailed", "Financial department": "Dry Cleaning Tops",
     "Item Type": p.type || "Shirt L", "Colors": p.colors || "blue", "Created": ts(created), "Item assembly date": p.asm || null, "Lot status": p.lot || null, "Picked up date": picked,
@@ -132,6 +132,8 @@ await t("API: GET /api/shuttle with a store, any signed-in role", async () => {
   const r = await call("GET", `/api/shuttle?store=${stores.Greenville}`, { as: "larry@example.com" });
   eq(r.status, 200); eq(r.body.rows.length, 2); ok(r.body.asOf && r.body.sync === true);
   eq((await call("GET", `/api/shuttle?store=${stores["Sulphur Springs"]}`)).status, 404, "not a shuttle store");
+  ok(/^Pat Customer\d+$/.test(r.body.rows[0].customer), "name from the report's Customer Name column");
+  eq(q.rows[0].customer, "C1", "no name column: the SMRT customer id");
 });
 await t("Check now sends that store's created days to netex-sync, then answers with the fresh view", async () => {
   syncCalls = [];

@@ -54,6 +54,9 @@ export function dayRanges(days, max) {
 const BUSY_MIN = 4;
 export async function runningSync(db, integrationId, { onlyChecks = false, now = Date.now() } = {}) {
   const since = new Date(now - BUSY_MIN * 60e3).toISOString();
+  // runs that died partway (the Worker was stopped) never finish: close them so the log doesn't say "running" forever
+  await db.prepare("UPDATE int_sync_runs SET status='error', finished_at=?, message=message || ' — stopped before it finished' WHERE integration_id=? AND status='running' AND started_at<?")
+    .bind(new Date(now).toISOString(), integrationId, new Date(now - 15 * 60e3).toISOString()).run();
   return db.prepare(`SELECT id, started_at, message FROM int_sync_runs WHERE integration_id=? AND status='running' AND started_at>=?
       ${onlyChecks ? "AND message LIKE 'check now%'" : ""} ORDER BY started_at DESC LIMIT 1`).bind(integrationId, since).first();
 }

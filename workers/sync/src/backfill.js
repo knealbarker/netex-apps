@@ -22,6 +22,10 @@ async function putState(db, orgId, s) {
  */
 export async function runBackfill(db, smrt, { orgId, integrationId, today, reports = {}, ...opts }) {
   const o = { ...DEFAULTS, ...opts };
+  // a Shuttle status "Check now" is reading SMRT: wait for the next round
+  const busy = await db.prepare("SELECT id FROM int_sync_runs WHERE integration_id=? AND status='running' AND message LIKE 'check now%' AND started_at>=?")
+    .bind(integrationId, new Date(Date.now() - 4 * 60e3).toISOString()).first();
+  if (busy) return { status: "skipped", loaded: [], reason: "a Check now is running" };
   let s = await getState(db, orgId);
   if (!s) s = { next: addDays(today, -1), emptyStreak: 0, finished: false, started: nowIso() };
   if (s.finished) return { status: "finished", loaded: [], state: s };

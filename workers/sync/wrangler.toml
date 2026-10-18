@@ -30,3 +30,10 @@ FORWARD_TO = "neal@towncountryclean.com"   # emails to reports@ that aren't a re
 
 # Secret (set once in the Cloudflare dashboard: Workers > netex-sync > Settings > Variables and Secrets):
 #   SMRT_KEY  - the SMRT API key. Never put it in this file or in GitHub.
+
+[observability]
+enabled = true
+
+# a Check now (Shuttle status) or the daily full run can rewrite thousands of pieces in one go
+[limits]
+cpu_ms = 300000

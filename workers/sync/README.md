@@ -39,7 +39,9 @@ logged in `pos_changes` (due date, notes, status, piece moved/added/removed). In
 later opens a `plan_followups` row — `noted` if SMRT already has a note, otherwise `needs_note`.
 
 Pieces also keep SMRT's "Last racked store" (`last_rack_store_id`) and "Item return date" (`returned_at`); orders keep
-"Customer Internal ID" (for links into SMRT). `ITEM_HASH` in ingest.js forces every piece to be rewritten once when a column is added.
+"Customer Internal ID" (for links into SMRT) and the customer's name when a report has a name column (`customerName()`:
+"Customer Name", "Customer", "Name", or "First Name" + "Last Name" — add one to "TCC All Orders This Year" in SMRT).
+The backfill also waits while a check runs; runs still "running" after 15 minutes are closed as stopped. `ITEM_HASH` in ingest.js forces every piece to be rewritten once when a column is added.
 
 ## Setup (once)
 1. The D1 migrations in `db/migrations` are applied to `netex-apps` by the planner's deploy (this Worker deploys with `npx wrangler deploy`).

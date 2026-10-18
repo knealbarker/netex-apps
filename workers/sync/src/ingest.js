@@ -18,6 +18,17 @@ const BARCODE_DAYS = 180;    // a barcode seen within this many days is the same
 // (v2, Oct 18: last racked store, item return date).
 const ITEM_HASH = "v2|";
 
+/** The customer's name from whichever name column the report has (SMRT lets the report's columns be chosen). */
+export function customerName(...rows) {
+  for (const r of rows) {
+    if (!r) continue;
+    for (const k of ["Customer Name", "Customer name", "Customer Full Name", "Customer", "Name", "Full Name"]) { const v = text(r[k]); if (v) return v.slice(0, 80); }
+    const first = text(r["First Name"] ?? r["Customer First Name"] ?? r["First name"]), last = text(r["Last Name"] ?? r["Customer Last Name"] ?? r["Last name"]);
+    if (first || last) return [first, last].filter(Boolean).join(" ").slice(0, 80);
+  }
+  return null;
+}
+
 const chunks = (a, n) => { const out = []; for (let i = 0; i < a.length; i += n) out.push(a.slice(i, i + n)); return out; };
 const orderNo = v => String(v ?? "").replace(/\D/g, "");
 
@@ -135,6 +146,7 @@ export async function ingestDay(db, ctx, orders, items) {
       piece_count: int(r["Piece Count"]), original_piece_count: int(r["Original Piece Count"]),
       weight_in_lbs: num(r["Weight In"]), weight_out_lbs: num(r["Weight Out"]),
       notes: firstOf(its, "Order Notes"), customer_internal_id: firstOf(its, "Customer Internal ID"),
+      customer_name: customerName(r, ...its),
       before_discount_cents: int(r["Before Discount Amount"]), discount_cents: int(r["Discounted Amount"]), surcharge_cents: int(r["Surcharge Amount"]),
       taxable_cents: int(r["Taxable Amount"]), tax_cents: int(r["Total Tax"]), price_cents: int(r["Price"]), paid_cents: int(r["Paid amount (inc. deposits)"]),
       payment_setting: text(r["Payment Setting"]), promotion: text(r["Promotion"]),
@@ -144,7 +156,7 @@ export async function ingestDay(db, ctx, orders, items) {
       returned_at: stamp(r["Returned date"]) || firstOf(its, "Returned date"), picked_up_at: firstOf(its, "Picked up date"),
       delivered_at: firstOf(its, "Delivered date"), paid_at: stamp(r["Paid date"]), smrt_deleted_at: stamp(r["Deleted date"]),
     };
-    const hash = await sha1(JSON.stringify([r, v.notes, v.picked_up_at, v.delivered_at, v.customer_internal_id]));
+    const hash = await sha1(JSON.stringify([r, v.notes, v.picked_up_at, v.delivered_at, v.customer_internal_id, v.customer_name]));
     const old = known.get(no);
     if (old) {
       orderIds.set(no, { id: old.id, existed: true });

@@ -43,7 +43,7 @@ export async function shuttleStores(db, orgId) {
   return out;
 }
 
-const COLS = `o.id AS oid, o.smrt_order_no AS no, o.return_location_id AS store, o.due_at AS due, o.piece_count AS opieces, o.customer_ref AS customer,
+const COLS = `o.id AS oid, o.smrt_order_no AS no, o.return_location_id AS store, o.due_at AS due, o.piece_count AS opieces, o.customer_ref AS customer, o.customer_name AS cname,
   o.customer_internal_id AS cid, o.notes AS onote, o.smrt_created_at AS created, s.name AS ostatus,
   i.id AS iid, i.line_no AS line, i.barcode, t.name AS type, i.colors, i.brand, d.name AS dep, st.name AS istatus, COALESCE(st.is_assembled,0) AS isAsm,
   i.assembled_at AS asm, i.lot_status AS lot, i.last_rack_location AS rack, i.last_rack_store_id AS rackStoreId, rs.name AS rackStore, i.racked_at AS rackedAt,
@@ -88,7 +88,7 @@ const GONE_RACK = /^(returned|delivered)$/i;
 /** One table row for a piece (or an order with no pieces detailed yet), or null when it isn't part of the run any more. */
 export function classify(r, transit, today, { held = false } = {}) {
   const base = {
-    orderId: r.oid, order: fmtNo(r.no), orderNo: String(r.no), store: r.store, link: smrtLink(r.cid, r.no), customer: r.customer || "",
+    orderId: r.oid, order: fmtNo(r.no), orderNo: String(r.no), store: r.store, link: smrtLink(r.cid, r.no), customer: r.cname || r.customer || "", customerId: r.customer || "",
     due: r.due || null, created: String(r.created || "").slice(0, 10) || null, orderNote: r.onote || null,
   };
   if (!r.iid) { // the order hasn't been detailed: SMRT only knows how many pieces
@@ -170,7 +170,16 @@ export async function checkNow(db, env, me, storeId, { at = new Date() } = {}) {
   try {
     const r = await env.SYNC.fetch("https://netex-sync/check", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ days, label: store.name }) });
     result = await r.json().catch(() => ({ status: "error", error: `netex-sync answered ${r.status}` }));
-  } catch (e) { result = { status: "error", error: String(e && e.message || e) }; }
-  const view = await shuttleView(db, env, { storeId, at });
+  } catch (e) {
+    console.error(JSON.stringify({ job: "shuttle-check", store: store.name, error: String(e && e.message || e) }));
+    result = { status: "error", error: "SMRT couldn't be read just now. Try again in a minute." };
+  }
+  let view;
+  try { view = await shuttleView(db, env, { storeId, at }); }
+  catch (e) { // the database can be slow right after a big check: try once more before giving up
+    console.error(JSON.stringify({ job: "shuttle-check-view", error: String(e && e.message || e) }));
+    await new Promise(r => setTimeout(r, 1500));
+    view = await shuttleView(db, env, { storeId, at });
+  }
   return { ...view, check: { status: result.status, error: result.error ? String(result.error).slice(0, 200) : undefined, at: result.at || null, calls: result.calls || 0, days: days.length, by: me?.name || null } };
 }

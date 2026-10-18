@@ -46,3 +46,6 @@ ACCESS_GROUP_ID = "2c00c66c-8c20-44bd-95b1-07639add45ab"
 
 # Secrets (set in the Cloudflare dashboard: Workers > netex-prodplanner > Settings > Variables and Secrets). Never in GitHub.
 #   CF_API_TOKEN  - optional; lets the user list add/remove people in the "Netex users" Access group
+
+[observability]
+enabled = true
