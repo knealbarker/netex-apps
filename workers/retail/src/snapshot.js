@@ -131,11 +131,16 @@ async function gather(db, env, from, to, { s = {}, now = Date.now() } = {}) {
 const norm = v => String(v || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z ]/g, " ").replace(/\s+/g, " ").trim();
 /** Does SMRT's staff name ("Karla V", "Karla Velasquez", "Karla") name this Rippling person? */
 export function nameMatches(smrt, first, last) {
-  const a = norm(smrt).split(" "), f = norm(first), l = norm(last);
-  if (!a[0] || a[0] !== f.split(" ")[0]) return false;
+  const a = norm(smrt).split(" "), f = norm(first).split(" ")[0], l = norm(last);
+  if (!a[0] || !f) return false;
+  // "Cecilia" in SMRT, "Ceci" in Rippling: one first name starting the other (3+ letters) counts
+  const short = a[0].length <= f.length ? a[0] : f, long = short === a[0] ? f : a[0];
+  if (a[0] !== f && !(short.length >= 3 && long.startsWith(short))) return false;
   if (a.length === 1) return true;
   const rest = a.slice(1).join(" ");
-  return l.startsWith(rest) || (rest.length >= 1 && l[0] === rest[0] && rest.length <= 2);
+  // any part of a double last name ("Jackson-Colegrove" is matched by "Colegrove" and "C")
+  const parts = [l, ...l.split(" ")];
+  return parts.some(w => w.startsWith(rest) || (rest.length <= 2 && w[0] === rest[0]));
 }
 
 /**

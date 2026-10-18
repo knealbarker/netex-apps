@@ -4,6 +4,7 @@ import { freshDb, fakeAccess, makeEnv } from "./harness.mjs";
 import { handle } from "../src/index.js";
 import { order, items, entry } from "./seed.mjs";
 import { countVisits, detailGaps } from "../src/counter.js";
+import { nameMatches } from "../src/snapshot.js";
 import { ingestDay } from "../../sync/src/ingest.js";
 import { ingestRippling } from "../../sync/src/rippling.js";
 
@@ -26,6 +27,11 @@ await t("detail gaps: under 90 s is work, 90 s or more a distraction gap; a diff
   const at = s => `2026-10-15T09:${s}-05:00`;
   const g = detailGaps([{ at: at("00:00"), who: "a" }, { at: at("00:30"), who: "a" }, { at: at("02:00"), who: "a" }, { at: at("02:20"), who: "b" }, { at: at("02:40"), who: "b" }], 90);
   eq(g.map(x => [x.sec, x.distraction]), [[30, false], [90, true], [20, false]]);
+});
+
+await t("SMRT names match Rippling: short first names and double last names", async () => {
+  ok(nameMatches("Cecilia G", "Ceci", "Giron")); ok(nameMatches("Kirsty Colegrove", "Kirsty", "Jackson-Colegrove")); ok(nameMatches("Kirsty C", "Kirsty", "Jackson-Colegrove"));
+  ok(!nameMatches("Faith G", "Faith", "Smith")); ok(!nameMatches("Al B", "Alice", "Brown"));   // 2 letters isn't enough of a first name
 });
 
 // ---------- one made-up day (Thu Oct 15) ----------
