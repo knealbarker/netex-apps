@@ -7,9 +7,15 @@ preview_urls = false
 
 routes = [{ pattern = "retailview.netexcleaners.com", custom_domain = true }]
 
-# hourly at :05; the summary email itself goes out at the hour set in Settings (Central time)
+# every 10 minutes: the wrong-store text (Settings › Counter); the summary email goes out once a day at the hour set in Settings
 [triggers]
-crons = ["5 * * * *"]
+crons = ["*/10 * * * *"]
+
+# Texts (netex-sms): sends the wrong-store text to the retail manager
+[[services]]
+binding = "TEXTS"
+service = "netex-sms"
+entrypoint = "Texts"
 
 # Daily summary email through Cloudflare Email Routing (sender: reports@netexcleaners.com).
 # Recipients must be verified under Email Routing > Destination addresses.

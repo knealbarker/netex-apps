@@ -102,6 +102,8 @@ export async function render(main, ctx) {
           <label class="field"><span>Clock check grace</span><div class="suffix"><input class="input" name="graceMin" inputmode="numeric" value="${s.counter.graceMin}"><i>min</i></div><small>SMRT work this close to a clock-in or clock-out isn't flagged.</small></label>
         </div>
         <label class="field"><span>Salaried staff</span><textarea class="input" name="salaried" rows="3" placeholder="One name per line">${s.counter.salaried.join("\n")}</textarea><small>People paid a salary who don't clock in. Their SMRT work isn't flagged, and their detailing and pickup time counts as counter hours.</small></label>
+        <label class="switch"><div><b>Text when someone works at a different store than their punch</b><small>Checked every 10 minutes: someone on the clock with ${s.counter.alertMin}+ SMRT tickets or pieces in the last ${s.counter.alertLookbackMin} minutes, most of them at another store. One text per person per day.</small></div><input type="checkbox" name="alertOn" ${raw(s.counter.alertOn ? "checked" : "")}></label>
+        <label class="field"><span>Text to</span><input class="input" name="alertTo" value="${s.counter.alertTo.join(", ")}" placeholder="karla@towncountryclean.com"><small>Their email under Users &amp; access; the text goes to the mobile number saved there.</small></label>
       </section>
 
       <section class="card set-card">
@@ -124,7 +126,7 @@ export async function render(main, ctx) {
     const el = f.elements, body = { targetRetail: el.targetRetail.value, targetPlant: el.targetPlant.value, burdenPct: el.burdenPct.value, defaultRate: el.defaultRate.value,
       weekStart: el.weekStart.value, managersSeeLabor: el.managersSeeLabor.checked, avgRates: {}, rollup: {}, hidden: [],
       overtime: el.overtime.checked, overtimeAfter: el.overtimeAfter.value, overtimeMultiplier: el.overtimeMultiplier.value,
-      counter: { ...s.counter, gapSec: el.gapSec.value, pickupMin: el.pickupMin.value, visitWindowMin: el.visitWindowMin.value, graceMin: el.graceMin.value, salaried: el.salaried.value },
+      counter: { ...s.counter, gapSec: el.gapSec.value, pickupMin: el.pickupMin.value, visitWindowMin: el.visitWindowMin.value, graceMin: el.graceMin.value, salaried: el.salaried.value, alertOn: el.alertOn.checked, alertTo: el.alertTo.value },
       summary: { enabled: el.sumOn.checked, to: el.sumTo.value, hour: +el.sumHour.value, days: [...f.querySelectorAll("[name=sumDay]:checked")].map(i => +i.value) } };
     for (const i of f.querySelectorAll("[name^='rate:']")) body.avgRates[i.name.slice(5)] = i.value;
     for (const i of f.querySelectorAll("[name^='roll:']")) if (i.value) body.rollup[i.name.slice(5)] = i.value;

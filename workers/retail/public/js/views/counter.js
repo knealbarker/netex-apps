@@ -75,6 +75,14 @@ export async function render(main, ctx) {
     catch (e) { if (mine === seq) body.innerHTML = html`<div class="card empty"><h2>Couldn't add this up</h2><p>${e.message}</p></div>`; return; }
     if (mine !== seq) return;
     draw(body, d, { manager, admin, reload: load });
+    // right now: anyone on the clock who looks to be working at another store (same check as the text to the manager)
+    if (st.to >= today) api("/counter/now").then(r => {
+      if (mine !== seq || !r.wrongStore.length) return;
+      const el = document.createElement("div");
+      el.className = "banner warn now-banner";
+      el.innerHTML = html`<b>Right now:</b> ${r.wrongStore.map(w => `${w.person} is clocked in at ${w.clockedAt} but has ${w.actions} SMRT tickets/pieces at ${w.workingAt} in the last hour`).join("; ")}. Fix the work location in Rippling.`;
+      body.prepend(el);
+    }).catch(() => {});
   };
   shell();
   await load();

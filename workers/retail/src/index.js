@@ -9,6 +9,7 @@ import { snapshot, localToday, addDays } from "./snapshot.js";
 import { buildSummary, deliver, scheduledSummary } from "./summary.js";
 import { loadSettings, saveSettings, settingsContext } from "./settings.js";
 import { counter, markCheck } from "./counter.js";
+import { wrongStoreAlerts, wrongStoreNow } from "./alerts.js";
 
 const SECURITY_HEADERS = {
   "x-content-type-options": "nosniff",
@@ -35,6 +36,7 @@ const routes = [
     const u = new URL(req.url);
     return json(await counter(env.DB, env, me, u.searchParams.get("from"), u.searchParams.get("to"), { now: env.NOW ? Date.parse(env.NOW) : Date.now() }));
   }],
+  ["GET", /^\/api\/counter\/now$/, async (req, env) => json({ wrongStore: await wrongStoreNow(env.DB, env, { now: env.NOW ? Date.parse(env.NOW) : Date.now() }) })],
   ["POST", /^\/api\/counter\/check$/, async (req, env, me) => json(await markCheck(env.DB, env, me, await readJson(req)))],
   ["GET", /^\/api\/settings$/, async (req, env, me) => {
     requireRole(me, "admin");
@@ -113,8 +115,10 @@ export async function handle(req, env, opts = {}) {
 
 export default {
   async fetch(req, env) { return withHeaders(await handle(req, env)); },
-  // hourly: the daily summary email goes out at the hour set in Settings
+  // every 10 minutes: the wrong-store text; the daily summary email goes out once, at the hour set in Settings
   async scheduled(event, env, ctx) {
+    try { console.log(JSON.stringify({ job: "wrong-store-text", ...(await wrongStoreAlerts(env)) })); }
+    catch (e) { console.log(JSON.stringify({ job: "wrong-store-text", status: "error", error: String(e.message || e) })); }
     try { console.log(JSON.stringify({ job: "retail-summary", ...(await scheduledSummary(env)) })); }
     catch (e) { console.log(JSON.stringify({ job: "retail-summary", status: "error", error: String(e.message || e) })); }
   },

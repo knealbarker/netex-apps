@@ -27,7 +27,10 @@ export const DEFAULTS = {
   // detailing speed; a salaried person gets pickupMin for each pickup while they're at the counter; one customer's
   // tickets and pickups within visitWindowMin are one visit; clock check allows graceMin around punches and needs
   // minEvents SMRT actions before it flags anything. salaried = SMRT/Rippling names of people paid a salary.
-  counter: { gapSec: 90, pickupMin: 2, visitWindowMin: 20, graceMin: 15, minEvents: 3, salaried: ["Karla Velasquez", "Debra Norton"] },
+  // alertOn/alertTo: text these users (by email; their mobile number from Users & access) when someone on the clock has
+  // done at least alertMin SMRT actions in the last alertLookbackMin minutes, most of them at another store (Neal: Karla)
+  counter: { gapSec: 90, pickupMin: 2, visitWindowMin: 20, graceMin: 15, minEvents: 3, salaried: ["Karla Velasquez", "Debra Norton"],
+    alertOn: true, alertTo: ["karla@towncountryclean.com"], alertMin: 5, alertLookbackMin: 60 },
 };
 
 const num = (v, min, max, what) => {
@@ -55,6 +58,14 @@ function cleanSummary(v = {}) {
   return { enabled: !!v.enabled, to, hour, days };
 }
 
+function cleanEmails(v, what) {
+  const list = [...new Set((Array.isArray(v) ? v : String(v || "").split(/[\s,;]+/)).map(e => String(e).trim().toLowerCase()).filter(Boolean))];
+  const bad = list.find(e => !EMAIL.test(e));
+  if (bad) throw new HttpError(400, `“${bad}” isn't an email address.`);
+  if (list.length > 5) throw new HttpError(400, `Send the ${what} to 5 people at most.`);
+  return list;
+}
+
 function cleanCounter(v = {}) {
   const d = DEFAULTS.counter;
   const names = (Array.isArray(v.salaried) ? v.salaried : String(v.salaried ?? d.salaried.join("\n")).split(/[\n,;]+/)).map(name).filter(Boolean);
@@ -66,6 +77,10 @@ function cleanCounter(v = {}) {
     graceMin: Math.round(num(v.graceMin ?? d.graceMin, 0, 120, "Clock check grace")),
     minEvents: Math.round(num(v.minEvents ?? d.minEvents, 1, 50, "Clock check minimum")),
     salaried: [...new Set(names)],
+    alertOn: v.alertOn === undefined ? d.alertOn : !!v.alertOn,
+    alertTo: cleanEmails(v.alertTo ?? d.alertTo, "text"),
+    alertMin: Math.round(num(v.alertMin ?? d.alertMin, 1, 100, "Text after")),
+    alertLookbackMin: Math.round(num(v.alertLookbackMin ?? d.alertLookbackMin, 10, 240, "Look back")),
   };
 }
 

@@ -67,6 +67,24 @@ export function detailGaps(pieces, gapSec = 90) {
   return res;
 }
 
+/**
+ * Who is who: SMRT staff names ("Ashton D", "Ashton Davis") -> one Rippling person, or a name key when there's none.
+ * Returns Map(staff id -> {key, pid, smrt, name, salaried}).
+ */
+export function matchStaff(staff, people, salaried = []) {
+  const personName = new Map(people.map(p => [p.id, p.name]));
+  const salariedKeys = new Set(salaried.map(nameKey).filter(Boolean));
+  const out = new Map();
+  for (const st of staff) {
+    let pid = st.pid;
+    if (!pid) { const hits = people.filter(p => nameMatches(st.name, p.f, p.l)); if (hits.length === 1) pid = hits[0].id; }
+    const key = pid || nameKey(st.name);
+    out.set(st.id, { key, pid, smrt: st.name, name: pid ? personName.get(pid) : st.name,
+      salaried: salariedKeys.has(nameKey(pid ? personName.get(pid) : st.name)) || salariedKeys.has(nameKey(st.name)) });
+  }
+  return out;
+}
+
 async function all(db, sql, ...b) { return (await db.prepare(sql).bind(...b).all()).results; }
 
 async function gather(db, env, from, to) {
@@ -105,17 +123,7 @@ export async function counter(db, env, me, from, to, { now = Date.now() } = {}) 
   const loc = new Map(g.locs.map(l => [l.id, l]));
   const hidden = new Set(s.hidden.map(h => h.toLowerCase()));
 
-  // ---- who is who: SMRT names ("Ashton D", "Ashton Davis") -> one Rippling person, or a name key when there's none
-  const personName = new Map(g.people.map(p => [p.id, p.name]));
-  const salariedKeys = new Set(c.salaried.map(nameKey).filter(Boolean));
-  const staffOf = new Map();
-  for (const st of g.staff) {
-    let pid = st.pid;
-    if (!pid) { const hits = g.people.filter(p => nameMatches(st.name, p.f, p.l)); if (hits.length === 1) pid = hits[0].id; }
-    const key = pid || nameKey(st.name);
-    staffOf.set(st.id, { key, pid, smrt: st.name, name: pid ? personName.get(pid) : st.name,
-      salaried: salariedKeys.has(nameKey(pid ? personName.get(pid) : st.name)) || salariedKeys.has(nameKey(st.name)) });
-  }
+  const staffOf = matchStaff(g.staff, g.people, c.salaried);
   const who = sid => staffOf.get(sid) || null;
   // keep the longest SMRT spelling as the display name for people Rippling doesn't know
   const display = new Map();

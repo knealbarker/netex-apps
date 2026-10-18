@@ -43,6 +43,10 @@ Customer visits, detailing speed, visits per labor hour and the **clock check** 
 SMRT staff names ("Ashton D", "Ashton Davis") are matched to Rippling people by name (`nameMatches`), the same way as
 assemblers. Flags marked OK live in `core_settings` retail/clock_ok (kept 120 days). Everyone with a Retail Snapshot role sees
 the Counter; Managers and up can mark flags OK; Admins can mark someone salaried from a "No punch" flag.
+**Wrong-store text** (`src/alerts.js`, 10-minute cron): someone on the clock now with 5+ SMRT actions in the last hour, most of
+them at another store, is texted once a day (ref `wrongstore:<day>:<person>`) through the `TEXTS` binding (netex-sms) to the
+users in Settings › Counter › Text to (default Karla), at the mobile number on their user record. The Counter page shows the
+same check as a "Right now" banner (`GET /api/counter/now`).
 
 ## Daily summary email
 Settings › Daily summary email: on/off, recipients, hour (Central) and days. The Worker's hourly cron (:05) sends yesterday's

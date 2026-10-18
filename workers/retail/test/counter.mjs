@@ -5,6 +5,7 @@ import { handle } from "../src/index.js";
 import { order, items, entry } from "./seed.mjs";
 import { countVisits, detailGaps } from "../src/counter.js";
 import { nameMatches } from "../src/snapshot.js";
+import { wrongStoreAlerts } from "../src/alerts.js";
 import { ingestDay } from "../../sync/src/ingest.js";
 import { ingestRippling } from "../../sync/src/rippling.js";
 
@@ -170,6 +171,40 @@ await t("bad counter settings refused; ranges over 31 days refused", async () =>
   eq((await call("GET", "/api/counter?from=2026-08-01&to=2026-10-15")).status, 400);
 });
 await t("Viewers see the Counter", async () => { eq((await call("GET", `/api/counter?from=${DAY}&to=${DAY}`, { as: "view@x.com" })).status, 200); });
+
+console.log("wrong-store text");
+await t("someone clocked in at Sulphur Springs doing Greenville work now: Karla gets one text, once a day", async () => {
+  // today (Oct 16) 11:00–11:50: Ash does 6 Greenville pieces; Rippling has him clocked in at SS since 8 (still on the clock)
+  const day = TODAY, list = [];
+  for (let k = 0; k < 2; k++) list.push(ticket({ store: "TCC Greenville", day, created: `${day}T11:${k}0:00-05:00`, by: "Ash D", det: "Ash Davis",
+    times: [`${day}T11:${k}1:00-05:00`, `${day}T11:${k}2:00-05:00`] }));
+  await ingestDay(db, { orgId: "tcc", runId: "seed", mode: "backfill", day }, list, its.filter(i => list.some(o => o.ID === i["Sale Id"])));
+  await ingestRippling(db, { orgId: "tcc", integrationId: "rippling", today: TODAY, csv: [HDR, entry("e9", "Ash Davis", "502", "Retail", "TCC SS Retail", TODAY, 0, "15", { open: true, start: 8 })].join("\n") });
+  sqlite.prepare("INSERT INTO core_users(id, org_id, email, display_name, phone) VALUES('01KARLA0000000000000000000','tcc','karla@towncountryclean.com','Karla','+19035550100')").run();
+  const sends = [];
+  const texts = { async send(m) { sends.push(m); sqlite.prepare("INSERT INTO sms_messages(id, org_id, direction, phone, body, app_id, ref, status) VALUES(?,?,?,?,?,?,?,?)").run("m" + sends.length, "tcc", "out", m.to, m.body, m.app, m.ref, "sent"); return { id: "m" + sends.length }; } };
+  const tenv = { ...env, TEXTS: texts };
+  const now = Date.parse(`${TODAY}T11:55:00-05:00`);
+  const r = await wrongStoreAlerts(tenv, { now });
+  eq(r.status, "sent", JSON.stringify(r)); eq(sends.length, 1);
+  eq(sends[0].to, "+19035550100"); ok(/Ash Davis is clocked in at Sulphur Springs/.test(sends[0].body) && /at Greenville/.test(sends[0].body), sends[0].body);
+  eq((await wrongStoreAlerts(tenv, { now: now + 2 * 6e4 })).status, "already sent"); eq(sends.length, 1);
+  // the Counter page shows it too
+  const live = (await call("GET", "/api/counter/now")).body.wrongStore;
+  ok(Array.isArray(live));
+});
+await t("no text when the work matches the punch, when it's turned off, or without the Texts service", async () => {
+  const now = Date.parse(`${TODAY}T11:55:00-05:00`);
+  eq((await wrongStoreAlerts(env, { now })).status, "no texts binding");
+  const cur = (await call("GET", "/api/settings")).body.settings;
+  await call("PUT", "/api/settings", { body: { ...cur, counter: { ...cur.counter, alertOn: false } } });
+  eq((await wrongStoreAlerts({ ...env, TEXTS: { send() { throw new Error("should not send"); } } }, { now })).status, "off");
+  await call("PUT", "/api/settings", { body: cur });
+  // Ash's punch moved to Greenville: nothing to report
+  sqlite.prepare("UPDATE labor_clock_today SET location_id=(SELECT id FROM core_locations WHERE name='Greenville')").run();
+  sqlite.prepare("DELETE FROM sms_messages").run();
+  eq((await wrongStoreAlerts({ ...env, TEXTS: { send() { throw new Error("should not send"); } } }, { now })).status, "none");
+});
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
