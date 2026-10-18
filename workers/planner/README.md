@@ -18,7 +18,7 @@ With the `CF_API_TOKEN` secret set, every change also rewrites the Netex users g
   the crew (suggest from history, auto-assign, all full day, call-outs, typed piece counts), the minute-by-minute timeline,
   deadlines, checks with fixes, labor and revenue (Admins/Owner, with each person's Rippling pay rate), the washer schedule,
   **Changes today**, **Print** (one landscape page; Save as PDF from the print dialog) and publishing.
-- **Floor** — the published plan replayed live for the TV (`#/floor?tv`), English/Español, alerts, the labor streak.
+- **Floor** — no tab since Oct 18 (Neal: it will run on its own big screen, like the station tablets); still opens at `#/floor`. The published plan replayed live for the TV (`#/floor?tv`), English/Español, alerts, the labor streak.
 - **Review** — any past day against its plan, the 15-day trend, follow-ups, and the next work day's projection.
 - **Team** — trainings in order, pay rates (Admins/Owner), **Order from history** (training order from where people worked).
 - **Settings** — everything the plan uses, shuttle alerts (and Windows pop-ups per PC), the **daily summary email**,

@@ -50,11 +50,17 @@ await t("account menu opens, shows Users link, closes on Escape", async () => {
   await p.keyboard.press("Escape"); ok(!(await p.isVisible("#meMenu")));
 });
 await t("tabs switch sections and update the title", async () => {
-  for (const v of ["floor", "review", "team", "settings"]) {
+  ok(!(await p.$('#nav a[data-view="floor"]')), "no Floor tab (Neal, Oct 18: the Floor runs on its own big screen)");
+  for (const v of ["review", "team", "settings"]) {
     await p.click(`#nav a[data-view="${v}"]`);
     await p.waitForFunction(v => document.querySelector(`#nav a[data-view="${v}"]`).getAttribute("aria-current") === "page", v);
   }
   ok((await p.title()).startsWith("Settings"));
+  // the Floor screen still opens at its own address (the TV), in a page of its own
+  const fp = await p.context().newPage();
+  await fp.goto(url + "/#/floor");
+  await fp.waitForFunction(() => document.title.startsWith("Floor"));
+  await fp.close();
 });
 await t("Users: add a Manager through the dialog", async () => {
   await p.goto(url + "/#/users");
