@@ -1036,3 +1036,7 @@ dialog.sheet .dlg-body { max-height: min(70vh, 640px); overflow: auto; }
 .verdict .v-sub { margin: 6px 0 0 34px; }
 .rv-bars .c-bv { font-size: 11px; font-weight: 700; fill: var(--text); }
 .rv-bars .c-bv.in { fill: #fff; }
+
+/* Shuttles tab: a dot when a van leaves within the hour and that store isn't all on VAN (js/app.js shuttleDot) */
+.tabs a { position: relative; }
+.tab-dot { position: absolute; top: 5px; right: 6px; width: 9px; height: 9px; border-radius: 50%; background: var(--bad); box-shadow: 0 0 0 2px var(--bg2); }

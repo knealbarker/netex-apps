@@ -129,3 +129,24 @@ async function start() {
 }
 start();
 window.addEventListener("unhandledrejection", e => toast(e.reason?.message || "Something went wrong.", "bad"));
+
+// ---------- Shuttles tab: red dot when a van leaves within the hour and that store isn't all on VAN ----------
+// (the page itself is /shuttlestatus; this only reads its totals, every 2 minutes while the planner is showing)
+async function shuttleDot() {
+  const tab = document.getElementById("shuttleTab"); if (!tab || document.visibilityState !== "visible") return;
+  try {
+    const v = await api("/shuttle");
+    const now = new Date(), mins = now.getHours() * 60 + now.getMinutes();
+    const toMin = t => { const m = /^(\d\d):(\d\d)$/.exec(t || ""); return m ? +m[1] * 60 + +m[2] : null; };
+    const soon = v.stores.filter(s => { const l = toMin(s.leaves); return l != null && !s.ok && !s.nothing && l - mins <= 60 && l - mins >= -15; })
+      .sort((a, b) => toMin(a.leaves) - toMin(b.leaves));
+    const dot = tab.querySelector(".tab-dot");
+    dot.hidden = !soon.length;
+    const slug = n => String(n).toLowerCase().replace(/[^a-z0-9]+/g, "-");
+    tab.href = soon.length ? `/shuttlestatus/#${slug(soon[0].name)}` : "/shuttlestatus/";
+    tab.title = soon.length ? soon.map(s => `${s.name}: ${s.blocked} not on VAN${s.heldNoNote ? `, ${s.heldNoNote} need a note` : ""}`).join(" · ") : "Is everything due at each store on the van?";
+  } catch { /* offline or no access: no dot */ }
+}
+setTimeout(shuttleDot, 4000);
+setInterval(shuttleDot, 2 * 60 * 1000);
+document.addEventListener("visibilitychange", shuttleDot);

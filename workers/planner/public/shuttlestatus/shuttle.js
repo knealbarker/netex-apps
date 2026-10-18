@@ -88,7 +88,7 @@ function storeLine(s) {
 }
 function render() {
   if (!data) return;
-  $("sh-day").textContent = shortDay(data.day).replace(",", "") + (data.stores.length ? "" : "");
+  $("sh-day").textContent = `Shuttle status · ${shortDay(data.day).replace(",", "")}`;
   const stale = !data.asOf || (Date.now() - Date.parse(data.asOf)) / 60e3 > STALE_MIN;
   $("sh-fresh").innerHTML = html`<span class="sync ${stale ? "warn" : "ok"}"><i></i>SMRT as of ${data.asOf ? time(data.asOf) : "—"} (${ago(data.asOf)})</span>`;
 

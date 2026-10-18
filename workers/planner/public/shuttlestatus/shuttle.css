@@ -1,8 +1,7 @@
 /* Shuttle status — on top of /app.css (same tokens, dark/light). Made for a phone or tablet at the van and a PC. */
 body.sh { min-height: 100vh; }
-.sh-top { position: sticky; top: 0; z-index: 20; display: flex; align-items: center; gap: 16px; padding: 10px 22px; flex-wrap: wrap;
-  background: color-mix(in srgb, var(--bg) 88%, transparent); backdrop-filter: blur(10px); border-bottom: 1px solid var(--line); }
-.sh-fresh { margin-left: auto; }
+/* the top bar and tabs are the planner's own (.top, .tabs in /app.css) */
+.sh-fresh .sync { white-space: nowrap; }
 .sh main, main#main { max-width: 1320px; margin: 0 auto; padding: 18px 22px 60px; outline: none; }
 
 /* stores */
@@ -79,8 +78,7 @@ body.sh { min-height: 100vh; }
 .sh-error .btn { align-self: flex-start; margin-top: 6px; }
 
 @media (max-width: 700px) {
-  .sh-top { padding: 10px 16px; }
-  main#main { padding: 14px 16px 60px; }
+  main#main { padding: 14px 16px 90px; } /* room for the planner's bottom tab bar */
   .sh-stores { grid-template-columns: 1fr 1fr; gap: 8px; }
   .sh-tab { padding: 10px; gap: 9px; }
   .sh-tab-ico { width: 24px; height: 24px; } .sh-tab-ico svg { width: 15px; height: 15px; }

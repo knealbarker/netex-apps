@@ -208,6 +208,15 @@ else {
       await p.waitForFunction(() => /OK to leave for Greenville/.test(document.querySelector(".sh-banner h1")?.textContent || ""));
       await p.screenshot({ path: join(SHOTS, "shuttle-ok.png"), fullPage: true });
     });
+    await t("page: the planner's tabs link both ways (Shuttles tab in the planner, Plan tab here)", async () => {
+      eq(await p.getAttribute('#nav a[data-view="shuttles"]', "aria-current"), "page");
+      await p.click('#nav a[data-view="plan"]');
+      await p.waitForSelector("#shuttleTab");
+      ok(/\/#\/plan$/.test(p.url()), p.url());
+      ok((await p.getAttribute("#shuttleTab", "href")).startsWith("/shuttlestatus/"));
+      await p.click("#shuttleTab");
+      await p.waitForSelector(".sh-banner");
+    });
     const m = await open({ width: 390, height: 844 }, "light");
     await t("page: phone width, no sideways page scroll (the table scrolls in its box)", async () => {
       await m.goto(`${url}/shuttlestatus/#quitman`);

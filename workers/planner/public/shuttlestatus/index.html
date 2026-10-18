@@ -13,12 +13,20 @@
 </head>
 <body class="sh">
   <a class="skip" href="#main">Skip to content</a>
-  <header class="sh-top">
-    <a class="brand" href="/" aria-label="Production Planner">
+  <header class="top sh-top">
+    <a class="brand" href="/#/plan" aria-label="Production Planner home">
       <svg class="mark" viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" rx="9" fill="currentColor"/><path d="M9 23V9h3.2l7.6 9.4V9H23v14h-3.2L12.2 13.6V23z" fill="var(--bg)"/></svg>
-      <span class="brand-text"><b>Shuttle status</b><small id="sh-day"></small></span>
+      <span class="brand-text"><b>Production Planner</b><small id="sh-day">Shuttle status</small></span>
     </a>
-    <div class="sh-fresh" id="sh-fresh" aria-live="polite"></div>
+    <nav class="tabs" id="nav" aria-label="Sections">
+      <a href="/#/plan" data-view="plan"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16M4 12h16M4 19h10"/></svg><span>Plan</span></a>
+      <a href="/#/floor" data-view="floor"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="3"/><path d="M3 10h18M9 10v10"/></svg><span>Floor</span></a>
+      <a href="/#/review" data-view="review"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 19V9m6 10V5m6 14v-7m4 7H3"/></svg><span>Review</span></a>
+      <a href="/#/team" data-view="team"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="9" cy="8" r="3.2"/><path d="M3.5 19c.6-3.2 2.9-5 5.5-5s4.9 1.8 5.5 5"/><circle cx="17" cy="9" r="2.4"/><path d="M16 14.2c2.3.1 4 1.6 4.5 4.8"/></svg><span>Team</span></a>
+      <a href="/shuttlestatus/" data-view="shuttles" aria-current="page" title="Is everything due at each store on the van?"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2.5 7.5h11v9h-11zM13.5 10.5h4l3 3v3h-7"/><circle cx="6.5" cy="17.5" r="1.8"/><circle cx="17" cy="17.5" r="1.8"/></svg><span>Shuttles</span></a>
+      <a href="/#/settings" data-view="settings"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M12 2.8v2.4M12 18.8v2.4M2.8 12h2.4M18.8 12h2.4M5.5 5.5l1.7 1.7M16.8 16.8l1.7 1.7M5.5 18.5l1.7-1.7M16.8 7.2l1.7-1.7"/></svg><span>Settings</span></a>
+    </nav>
+    <div class="top-right"><div class="sh-fresh" id="sh-fresh" aria-live="polite"></div></div>
   </header>
   <main id="main" tabindex="-1">
     <nav class="sh-stores" id="sh-stores" aria-label="Stores"><div class="loading"><span class="spin"></span>Loading…</div></nav>

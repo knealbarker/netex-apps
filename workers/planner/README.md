@@ -56,6 +56,9 @@ unlocks once that person has a punch today, or after a long press on "they're cl
 
 ## Shuttle status (`/shuttlestatus`, `src/shuttle.js`, `public/shuttlestatus/`)
 For the van driver: is everything due at a store on VAN? (Neal, Oct 18.) Signed in like the rest of the planner (any role).
+- **Linked both ways**: a Shuttles tab in the planner's tabs (red dot when a van leaves within the hour and that store isn't
+  all on VAN; the tab then opens that store; `shuttleDot` in js/app.js, every 2 minutes), and the page uses the planner's
+  own top bar and tabs.
 - **Stores** = the stops of Settings › Shuttle runs, with when the van leaves (first stop's arrival less the drive).
 - **Counted**: open orders returned to that store, due today or up to 45 days before (not voided/deleted/closed, not returned,
   picked up or delivered, not route deliveries). **Left out**: pieces back with the customer (item return date, rack
