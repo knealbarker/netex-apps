@@ -54,6 +54,23 @@ unlocks once that person has a punch today, or after a long press on "they're cl
 - **Plan** shows SLB 1/SLB 2 tiles; **Review** compares pressed with SMRT's starch bottoms assembled, lists every count
   (managers add or remove; a count added there goes to whoever was planned on the station at that time).
 
+## Shuttle status (`/shuttlestatus`, `src/shuttle.js`, `public/shuttlestatus/`)
+For the van driver: is everything due at a store on VAN? (Neal, Oct 18.) Signed in like the rest of the planner (any role).
+- **Stores** = the stops of Settings › Shuttle runs, with when the van leaves (first stop's arrival less the drive).
+- **Counted**: open orders returned to that store, due today or up to 45 days before (not voided/deleted/closed, not returned,
+  picked up or delivered, not route deliveries). **Left out**: pieces back with the customer (item return date, rack
+  RETURNED/DELIVERED, status customer) and pieces whose last rack scan was at that store (SMRT "Last racked store"; taken early).
+- **On VAN** = last rack location equals Settings › SMRT mapping › "Rack location for orders on the van" (VAN is a rack at
+  Sulphur Springs). Anything else is **not on VAN**, with why: not detailed, not ready, ready on a plant rack, ready not racked.
+- **Held over** = the order's due date moved today from today-or-earlier to later (or the piece was split onto such an order).
+  SMRT's API can't change due dates, so that's done in SMRT (each order links there). A held-over piece without a note
+  (piece or order note) still holds up the run.
+- **OK to leave** when nothing is "not on VAN" and every held-over piece has a note. Rows: not on VAN first, then held over
+  (no note first), then on VAN; every column sorts. A piece on VAN since an earlier day is flagged (likely never scanned at the store).
+- **Check now** re-reads that store's created days from SMRT right away: `POST /api/shuttle/check` → netex-sync `POST /check`
+  over the `SYNC` service binding (the planner has no SMRT key). Same ingest as the live sync; skipped if a sync is mid-run;
+  the same days again within 45 s return the last answer. The page polls the database every minute.
+
 ## Layout
 - `src/index.js` routes, security headers and the cron; `src/auth.js` sign-in; `src/users.js` users and the Access group.
 - `src/team.js`, `src/settings.js`, `src/import.js`, `src/pieces.js` (SMRT pieces), `src/plan.js` (save/publish),
@@ -68,7 +85,7 @@ Secret: `CF_API_TOKEN` (Account › Access: Organizations, Identity Providers, a
 
 ## Tests (Node 22; Node's SQLite stands in for D1, headless Chromium for the pages)
 - `test/run.mjs` sign-in and users · `test/stage2.mjs` team, settings, import · `test/pieces.mjs` · `test/plan.mjs` · `test/model.mjs`
-- `test/tally.mjs` station tablets (pairing, credit, pace, photos) · `test/station-ui.mjs` the tablet page and its Plan/Review/Settings/Team parts in Chromium
+- `test/shuttle.mjs` shuttle status (rules, Check now, the page in Chromium) · `test/tally.mjs` station tablets (pairing, credit, pace, photos) · `test/station-ui.mjs` the tablet page and its Plan/Review/Settings/Team parts in Chromium
 - `test/breakpay.mjs` paid break rule · `test/review.mjs` · `test/stage5.mjs` pay rates, any day, changes, events, streak, summary email · `test/engine-parity.mjs`
 - Browser: `test/browser.mjs`, `test/review-ui.mjs`, and **`test/e2e.mjs`** — the whole planner end to end,
   offline included. Screenshots (and the printed plan as a PDF) in `test/shots`.

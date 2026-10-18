@@ -30,7 +30,7 @@ self.addEventListener("fetch", e => {
     e.respondWith(apiFirst(req, url));
     return;
   }
-  if (url.pathname.startsWith("/cdn-cgi/")) return;
+  if (url.pathname.startsWith("/cdn-cgi/") || url.pathname.startsWith("/shuttlestatus") || url.pathname.startsWith("/station")) return; // pages of their own
   e.respondWith(shellFirst(req, url));
 });
 

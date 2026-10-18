@@ -10,7 +10,7 @@ import { runBackfill, backfillProgress } from "../src/backfill.js";
 import { ingestDay } from "../src/ingest.js";
 import { addDays, ulid } from "../src/util.js";
 import worker, { backfillAllowed, liveAllowed, fromRippling } from "../src/index.js";
-import { runLive, dayRanges } from "../src/live.js";
+import { runLive, dayRanges, runCheck, CHECK_REPEAT_S } from "../src/live.js";
 import { ingestRippling, parseCsv, ripTime } from "../src/rippling.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -365,6 +365,51 @@ ok("custom work days: Saturday as a work day waits", !backfillAllowed({ day: "20
   const noCsv = msg("no-reply@rippling.com", "dkim=pass header.d=rippling.com", false);
   await worker.email(noCsv, env, {});
   ok("email: Rippling email without a CSV forwarded", noCsv.fw[0] === "neal@example.com");
+}
+
+// ============ Shuttle status: rack store, item return date, SMRT customer id, and "Check now"
+{
+  const { sqlite: S, db: sdb } = freshDb();
+  const f = new FakeSmrt(), T = "2026-10-19";
+  const o1 = f.addOrder("2026-10-16", "262891001", { status: "processing", pieces: 3, store: "TCC Greenville", due: `${T}T14:00:00-05:00` });
+  const its = f.days.get("2026-10-16").items;
+  its.forEach(i => { i["Customer Internal ID"] = "6p9avfo0b"; });
+  Object.assign(its[0], { "Last Rack Location": "VAN", "Last racked store": "TCC Sulphur Springs", "Last racked on date": `${T}T13:10:00-05:00`, "Item Status": "racked" });
+  Object.assign(its[1], { "Last Rack Location": "G30", "Last racked store": "TCC Greenville", "Item return date": null });
+  Object.assign(its[2], { "Last Rack Location": "RETURNED", "Last racked store": "TCC Greenville", "Item return date": `${T}T15:00:00-05:00` });
+  const s1 = new Smrt({ url: "https://x/graphql", key: "k", fetchImpl: f.fetchImpl });
+  let c = await runCheck(sdb, s1, { orgId: "tcc", integrationId: "smrt", today: T, days: ["2026-10-16", "bad", "2025-01-01", "2026-10-30"], label: "Greenville" });
+  ok("check: reads the days sent (+ today), drops bad or far-off days", c.status === "ok" && JSON.stringify(c.ranges) === JSON.stringify([["2026-10-16", "2026-10-17"], [T, "2026-10-20"]]), c);
+  ok("check: pieces stored", c.items === 3 && one(S, "SELECT COUNT(*) n FROM pos_items").n === 3, c);
+  const p = one(S, `SELECT l.name AS store, i.returned_at FROM pos_items i JOIN core_locations l ON l.id=i.last_rack_store_id WHERE i.last_rack_location='VAN'`);
+  ok("rack store stored ('TCC Sulphur Springs' -> Sulphur Springs)", p && p.store === "Sulphur Springs" && p.returned_at === null, p);
+  ok("item return date stored", !!one(S, "SELECT returned_at FROM pos_items WHERE last_rack_location='RETURNED'").returned_at);
+  ok("SMRT customer id stored on the order", one(S, "SELECT customer_internal_id c FROM pos_orders").c === "6p9avfo0b");
+  const run = one(S, "SELECT status, message FROM int_sync_runs ORDER BY started_at DESC LIMIT 1");
+  ok("check: logged as a sync run", run.status === "ok" && /^check now Greenville: 1 orders, 3 pieces/.test(run.message), run);
+  const calls = f.calls;
+  c = await runCheck(sdb, s1, { orgId: "tcc", integrationId: "smrt", today: T, days: ["2026-10-16"] });
+  ok(`check: same days again within ${CHECK_REPEAT_S}s doesn't call SMRT`, c.status === "recent" && f.calls === calls, c);
+  c = await runCheck(sdb, s1, { orgId: "tcc", integrationId: "smrt", today: T, days: ["2026-10-16"], now: Date.now() + (CHECK_REPEAT_S + 5) * 1000 });
+  ok("check: after that it reads again", c.status === "ok" && f.calls > calls, c);
+  // a run in progress: Check now waits; the live sync skips while a check runs
+  S.prepare("INSERT INTO int_sync_runs(id,integration_id,started_at,status,message) VALUES('r1','smrt',?,'running','live')").run(new Date().toISOString());
+  c = await runCheck(sdb, s1, { orgId: "tcc", integrationId: "smrt", today: T, days: ["2026-10-15"] });
+  ok("check: busy while the live sync is reading SMRT", c.status === "busy" && c.what === "sync", c);
+  S.prepare("UPDATE int_sync_runs SET message='check now Quitman' WHERE id='r1'").run();
+  const lv = await runLive(sdb, s1, { orgId: "tcc", integrationId: "smrt", today: T });
+  ok("live sync skips a round while a Check now is running", lv.status === "skipped", lv);
+  S.prepare("UPDATE int_sync_runs SET started_at=? WHERE id='r1'").run(new Date(Date.now() - 5 * 60e3).toISOString());
+  c = await runCheck(sdb, s1, { orgId: "tcc", integrationId: "smrt", today: T, days: ["2026-10-15"] });
+  ok("a run stuck for over 4 minutes no longer blocks", c.status === "ok", c);
+  // pieces stored before v2 are rewritten once with the new columns
+  S.prepare("UPDATE pos_items SET last_rack_store_id=NULL, row_hash='old'").run();
+  const st = await ingestDay(sdb, { orgId: "tcc", runId: null, mode: "live", day: "2026-10-16" }, await s1.dayObjects("ebe7b9bb-20b7-472b-9925-2b729fe2a38b", "2026-10-16"), await s1.dayObjects("8f6e82e5-8e64-466c-935a-35a22ee5fd01", "2026-10-16"));
+  ok("older pieces get the rack store on their next read", st.itemsWritten === 3 && one(S, "SELECT COUNT(*) n FROM pos_items WHERE last_rack_store_id IS NOT NULL").n === 3, st);
+  // the worker endpoint
+  const env = { DB: sdb, ORG_ID: "tcc", SMRT_INTEGRATION_ID: "smrt", TIMEZONE: "America/Chicago", SMRT_URL: "https://x/graphql" };
+  let res = await worker.fetch(new Request("https://sync/check", { method: "POST", body: "{}" }), env);
+  ok("POST /check without the SMRT key says so", res.status === 503);
 }
 
 console.log(`\nSMRT calls made by the fake: ${fake.calls}`);

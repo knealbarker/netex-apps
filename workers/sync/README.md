@@ -9,6 +9,12 @@ Background jobs for the netexcleaners.com apps (Cloudflare Worker).
   created day in the last 45 days that has any open order (alterations, repairs).
 - Stores through the same ingest as the history load, in live mode: due dates moved later open follow-ups.
 
+## Check now (`runCheck` in `src/live.js`, POST /check)
+The planner's Shuttle status page asks for a store's open orders to be read from SMRT right away (service binding `SYNC`;
+netex-sync has no public address). The body lists created days; they're read in 3-day calls (at most 6 ranges, plus today)
+with the live ingest. A check waits if any SMRT run is mid-run (a run stuck over 4 minutes stops counting), and the live
+sync skips a round while a check runs, so the same pieces are never written twice at once. Logged in int_sync_runs as "check now <store>".
+
 ## Rippling hours (`src/rippling.js`, email)
 - Email Routing sends reports@netexcleaners.com to this Worker. A Rippling export that's read is not forwarded; any other
   email, or a Rippling email that couldn't be read, is forwarded to `FORWARD_TO`.
@@ -31,6 +37,9 @@ Background jobs for the netexcleaners.com apps (Cloudflare Worker).
 Shared by the backfill and (later) the live sync. Pieces are matched by barcode. Changes to stored rows are
 logged in `pos_changes` (due date, notes, status, piece moved/added/removed). In live mode a due date moved
 later opens a `plan_followups` row — `noted` if SMRT already has a note, otherwise `needs_note`.
+
+Pieces also keep SMRT's "Last racked store" (`last_rack_store_id`) and "Item return date" (`returned_at`); orders keep
+"Customer Internal ID" (for links into SMRT). `ITEM_HASH` in ingest.js forces every piece to be rewritten once when a column is added.
 
 ## Setup (once)
 1. The D1 migrations in `db/migrations` are applied to `netex-apps` by the planner's deploy (this Worker deploys with `npx wrangler deploy`).

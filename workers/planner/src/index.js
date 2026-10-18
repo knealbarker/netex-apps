@@ -16,6 +16,7 @@ import { checkAttendance } from "./attendance.js";
 import { localNow } from "./pieces.js";
 import { listTimeOff, addTimeOff, removeTimeOff } from "./timeoff.js";
 import * as T from "./tally.js";
+import { shuttleView, checkNow } from "./shuttle.js";
 
 const SECURITY_HEADERS = {
   "x-content-type-options": "nosniff",
@@ -89,6 +90,9 @@ const routes = [
   ["POST", /^\/api\/station-devices\/([0-9A-Z]{26})\/code$/, async (req, env, me, m) => json(await T.deviceCode(env.DB, env, me, m[1]))],
   ["PATCH", /^\/api\/station-devices\/([0-9A-Z]{26})$/, async (req, env, me, m) => json(await T.updateDevice(env.DB, env, me, m[1], await readJson(req)))],
   ["DELETE", /^\/api\/station-devices\/([0-9A-Z]{26})$/, async (req, env, me, m) => json(await T.removeDevice(env.DB, env, me, m[1]))],
+  // Shuttle status (/shuttlestatus): is everything due at a store on the van? Check now re-reads that store from SMRT.
+  ["GET", /^\/api\/shuttle$/, async (req, env) => { const st = new URL(req.url).searchParams.get("store"); return json(await shuttleView(env.DB, env, { storeId: /^[0-9A-Za-z_-]{1,40}$/.test(st || "") ? st : null })); }],
+  ["POST", /^\/api\/shuttle\/check$/, async (req, env, me) => { const b = await readJson(req); if (!/^[0-9A-Za-z_-]{1,40}$/.test(String(b.store || ""))) throw new HttpError(400, "Pick a store."); return json(await checkNow(env.DB, env, me, b.store)); }],
   ["GET", /^\/api\/system$/, async (req, env) => {
     const db = env.DB;
     const s = await db.prepare("SELECT value_json FROM core_settings WHERE org_id=? AND app_id='core' AND key='smrt_backfill'").bind(env.ORG_ID).first();
@@ -152,6 +156,7 @@ export async function handle(req, env, opts = {}) {
       const anyPath = routes.some(([, re]) => re.test(url.pathname));
       throw new HttpError(anyPath ? 405 : 404, anyPath ? "Method not allowed." : "Not found.");
     }
+    if (url.pathname === "/shuttlestatus" || url.pathname === "/shuttle") return new Response(null, { status: 302, headers: { location: "/shuttlestatus/" } });
     // The page itself holds no company data, so anyone Access let in gets it; the data comes from /api, which checks the user list.
     if (!(env.DEV_EMAIL && ["localhost", "127.0.0.1"].includes(url.hostname))) {
       const token = req.headers.get("cf-access-jwt-assertion") || (req.headers.get("cookie") || "").match(/(?:^|;\s*)CF_Authorization=([^;]+)/)?.[1];

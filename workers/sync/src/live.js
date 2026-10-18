@@ -50,7 +50,18 @@ export function dayRanges(days, max) {
   return out;
 }
 
+/** An SMRT run started in the last few minutes that hasn't finished (a run that crashed stops counting after BUSY_MIN). */
+const BUSY_MIN = 4;
+export async function runningSync(db, integrationId, { onlyChecks = false, now = Date.now() } = {}) {
+  const since = new Date(now - BUSY_MIN * 60e3).toISOString();
+  return db.prepare(`SELECT id, started_at, message FROM int_sync_runs WHERE integration_id=? AND status='running' AND started_at>=?
+      ${onlyChecks ? "AND message LIKE 'check now%'" : ""} ORDER BY started_at DESC LIMIT 1`).bind(integrationId, since).first();
+}
+
 export async function runLive(db, smrt, { orgId, integrationId, today, reports = {} }) {
+  // a "Check now" (Shuttle status) is reading SMRT right now: skip this round rather than write the same pieces twice
+  const busy = await runningSync(db, integrationId, { onlyChecks: true });
+  if (busy) return { status: "skipped", reason: "a Check now is running", calls: 0 };
   const state = await getState(db, orgId);
   const full = state.fullDay !== today;
   const recentFrom = addDays(today, -(LIVE_RECENT_DAYS - 1)), end = addDays(today, 1);
@@ -91,4 +102,54 @@ export async function runLive(db, smrt, { orgId, integrationId, today, reports =
     .bind(nowIso(), error ? "error" : "ok", totals.orders + totals.items, totals.ordersWritten + totals.itemsWritten,
       error ? `live: ${error}` : `live${full ? " (daily full refresh)" : ""}: ${totals.orders} orders, ${totals.items} pieces read; ${totals.changes} changes${full ? `; ${totals.paymentsChanged || 0} payments updated` : ""}; ${smrt.calls} SMRT calls`, runId).run();
   return { status: error ? "error" : "ok", error, full, olderDays: older.length, calls: smrt.calls, ...totals };
+}
+
+// ---------------- "Check now" (Shuttle status page) ----------------
+// The page asks for a store's pieces to be read from SMRT right away instead of waiting up to 10 minutes for the live sync.
+// SMRT's reports can only be filtered by the day an order was created, so this re-reads the created days the page sends
+// (the days of that store's open orders due today or earlier), orders and pieces, through the same ingest as the live sync.
+export const CHECK_RANGE_DAYS = 3;   // created days per SMRT call (as the live sync)
+export const CHECK_MAX_RANGES = 6;   // at most 12 report calls; the oldest days are left to the live sync
+export const CHECK_REPEAT_S = 45;    // the same days checked again this soon get the answer just read
+const CHECK_LOOKBACK = 60;
+
+async function getCheck(db, orgId) {
+  const r = await db.prepare("SELECT value_json FROM core_settings WHERE org_id=? AND app_id='core' AND key='smrt_check'").bind(orgId).first();
+  return r ? JSON.parse(r.value_json) : {};
+}
+async function putCheck(db, orgId, s) {
+  await db.prepare(`INSERT INTO core_settings(org_id,app_id,key,value_json) VALUES(?, 'core', 'smrt_check', ?)
+    ON CONFLICT(org_id,app_id,key) DO UPDATE SET value_json=excluded.value_json, updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now'), rev=rev+1`).bind(orgId, JSON.stringify(s)).run();
+}
+
+export async function runCheck(db, smrt, { orgId, integrationId, today, days, label = "", reports = {}, now = Date.now() }) {
+  const clean = [...new Set((Array.isArray(days) ? days : []).map(String).filter(d => /^\d{4}-\d{2}-\d{2}$/.test(d) && d <= today && d >= addDays(today, -CHECK_LOOKBACK)))].sort();
+  if (!clean.includes(today)) clean.push(today); // orders entered today
+  const ranges = dayRanges(clean, CHECK_RANGE_DAYS).slice(-CHECK_MAX_RANGES);
+  const key = ranges.map(r => r.join("~")).join(",");
+  const prev = await getCheck(db, orgId);
+  if (prev.key === key && prev.at && now - Date.parse(prev.at) < CHECK_REPEAT_S * 1000) return { status: "recent", at: prev.at, calls: 0 };
+  const busy = await runningSync(db, integrationId, { now });
+  if (busy) return { status: "busy", since: busy.started_at, what: /^check/.test(busy.message || "") ? "check" : "sync", calls: 0 };
+
+  const runId = ulid(), started = nowIso();
+  await db.prepare("INSERT INTO int_sync_runs(id,integration_id,started_at,status,message) VALUES(?,?,?,?,?)").bind(runId, integrationId, started, "running", `check now${label ? " " + label : ""}`).run();
+  const ctx = { orgId, runId, mode: "live", lookups: await new Lookups(db, orgId).load() };
+  const ordersId = reports.orders || REPORT_ORDERS, itemsId = reports.items || REPORT_ITEMS;
+  const totals = { orders: 0, items: 0, ordersWritten: 0, itemsWritten: 0, changes: 0, followups: 0 };
+  let error = null;
+  try {
+    for (const [a, b] of ranges) {
+      const orders = await smrt.rangeObjects(ordersId, a, b), items = await smrt.rangeObjects(itemsId, a, b);
+      ctx.day = a;
+      const st = await ingestDay(db, ctx, orders, items);
+      for (const k in totals) totals[k] += st[k] || 0;
+    }
+  } catch (e) { error = String(e.message || e); }
+  const at = nowIso();
+  if (!error) await putCheck(db, orgId, { at, key, label });
+  await db.prepare("UPDATE int_sync_runs SET finished_at=?, status=?, rows_read=?, rows_changed=?, message=? WHERE id=?")
+    .bind(at, error ? "error" : "ok", totals.orders + totals.items, totals.ordersWritten + totals.itemsWritten,
+      `check now${label ? " " + label : ""}: ${error || `${totals.orders} orders, ${totals.items} pieces read; ${totals.changes} changes`}; ${smrt.calls} SMRT calls; days ${key}`, runId).run();
+  return { status: error ? "error" : "ok", error, at, started, ranges, calls: smrt.calls, ...totals };
 }

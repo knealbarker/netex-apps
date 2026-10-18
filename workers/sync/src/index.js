@@ -5,7 +5,7 @@
 import PostalMime from "postal-mime";
 import { Smrt } from "./smrt.js";
 import { runBackfill, backfillProgress } from "./backfill.js";
-import { runLive } from "./live.js";
+import { runLive, runCheck } from "./live.js";
 import { ingestRippling } from "./rippling.js";
 import { localNow } from "./util.js";
 
@@ -89,10 +89,21 @@ export default {
     if (!handled) await message.forward(forwardTo(env));
   },
 
-  // GET /status -> history progress (only reachable once a netexcleaners.com route behind Cloudflare Access is added)
+  // No public address (workers_dev off, no route): only other Workers reach this, through a service binding.
+  //  GET /status -> history progress
+  //  POST /check {days: ["YYYY-MM-DD", ...], label} -> re-read those created days from SMRT now (the planner's Shuttle status "Check now")
   async fetch(req, env) {
     const url = new URL(req.url);
     if (url.pathname === "/status") return Response.json(await backfillProgress(env.DB, env.ORG_ID, env.SMRT_INTEGRATION_ID));
+    if (url.pathname === "/check" && req.method === "POST") {
+      if (!env.SMRT_KEY) return Response.json({ status: "error", error: "The SMRT key isn't set on netex-sync." }, { status: 503 });
+      let body = {}; try { body = await req.json(); } catch { /* empty */ }
+      const smrt = new Smrt({ url: env.SMRT_URL, key: env.SMRT_KEY });
+      const res = await runCheck(env.DB, smrt, { orgId: env.ORG_ID, integrationId: env.SMRT_INTEGRATION_ID, today: localNow(env.TIMEZONE || "America/Chicago").day,
+        days: body.days, label: String(body.label || "").slice(0, 40) });
+      log({ job: "smrt-check", ...res, ranges: undefined });
+      return Response.json(res, { status: res.status === "error" ? 502 : 200 });
+    }
     return new Response("netex-sync", { status: 200 });
   },
 };

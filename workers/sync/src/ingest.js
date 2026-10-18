@@ -14,6 +14,9 @@ const ASSEMBLED = new Set(["assembled", "racked", "customer"]);
 const CHUNK = 90;            // ids per IN (...) lookup (D1 allows 100 bound values)
 const BATCH = 100;           // statements per D1 batch
 const BARCODE_DAYS = 180;    // a barcode seen within this many days is the same piece
+// Bumped when a new piece column is stored, so every piece is rewritten once the next time its day is read
+// (v2, Oct 18: last racked store, item return date).
+const ITEM_HASH = "v2|";
 
 const chunks = (a, n) => { const out = []; for (let i = 0; i < a.length; i += n) out.push(a.slice(i, i + n)); return out; };
 const orderNo = v => String(v ?? "").replace(/\D/g, "");
@@ -131,7 +134,7 @@ export async function ingestDay(db, ctx, orders, items) {
       is_route_delivery: bool(r["Is Route Delivery"]), is_route_pickup: bool(r["Is Route Pickup"]),
       piece_count: int(r["Piece Count"]), original_piece_count: int(r["Original Piece Count"]),
       weight_in_lbs: num(r["Weight In"]), weight_out_lbs: num(r["Weight Out"]),
-      notes: firstOf(its, "Order Notes"),
+      notes: firstOf(its, "Order Notes"), customer_internal_id: firstOf(its, "Customer Internal ID"),
       before_discount_cents: int(r["Before Discount Amount"]), discount_cents: int(r["Discounted Amount"]), surcharge_cents: int(r["Surcharge Amount"]),
       taxable_cents: int(r["Taxable Amount"]), tax_cents: int(r["Total Tax"]), price_cents: int(r["Price"]), paid_cents: int(r["Paid amount (inc. deposits)"]),
       payment_setting: text(r["Payment Setting"]), promotion: text(r["Promotion"]),
@@ -141,7 +144,7 @@ export async function ingestDay(db, ctx, orders, items) {
       returned_at: stamp(r["Returned date"]) || firstOf(its, "Returned date"), picked_up_at: firstOf(its, "Picked up date"),
       delivered_at: firstOf(its, "Delivered date"), paid_at: stamp(r["Paid date"]), smrt_deleted_at: stamp(r["Deleted date"]),
     };
-    const hash = await sha1(JSON.stringify([r, v.notes, v.picked_up_at, v.delivered_at]));
+    const hash = await sha1(JSON.stringify([r, v.notes, v.picked_up_at, v.delivered_at, v.customer_internal_id]));
     const old = known.get(no);
     if (old) {
       orderIds.set(no, { id: old.id, existed: true });
@@ -193,9 +196,10 @@ export async function ingestDay(db, ctx, orders, items) {
       detailed_by_staff_id: L.staff(r["Detailed by"]), assembled_by_staff_id: L.staff(r["Assembled by"]), racked_by_staff_id: L.staff(r["Last racked by"]),
       last_rack_location: text(r["Last Rack Location"]), smrt_created_at: stamp(r["Created"]) || ctx.day, detailed_at: stamp(r["Item detail date"]) || stamp(r["Detailed date"]),
       assembled_at: stamp(r["Item assembly date"]), racked_at: stamp(r["Last racked on date"]), removed_at: stamp(r["Item removal date"]),
+      last_rack_store_id: L.location(r["Last racked store"]), returned_at: stamp(r["Item return date"]),
       base_cents: int(r["Item base price"]), upcharge_cents: int(r["Up Charge Amount"]), discount_cents: int(r["Discounted amount"]), price_cents: int(r["Price"]),
     };
-    const hash = await sha1(JSON.stringify(r));
+    const hash = await sha1(ITEM_HASH + JSON.stringify(r));
     const old = v.barcode ? samePiece(knownItems.get(v.barcode), o.id, v.smrt_created_at) : null;
     const cols = Object.keys(v);
     if (old) {

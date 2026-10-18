@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Shuttle Status</title>
+  <meta name="color-scheme" content="dark light">
+  <meta name="theme-color" content="#0f1420">
+  <link rel="icon" href="/icon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/app.css">
+  <link rel="stylesheet" href="/shuttlestatus/shuttle.css">
+  <script type="module" src="/shuttlestatus/shuttle.js"></script>
+</head>
+<body class="sh">
+  <a class="skip" href="#main">Skip to content</a>
+  <header class="sh-top">
+    <a class="brand" href="/" aria-label="Production Planner">
+      <svg class="mark" viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" rx="9" fill="currentColor"/><path d="M9 23V9h3.2l7.6 9.4V9H23v14h-3.2L12.2 13.6V23z" fill="var(--bg)"/></svg>
+      <span class="brand-text"><b>Shuttle status</b><small id="sh-day"></small></span>
+    </a>
+    <div class="sh-fresh" id="sh-fresh" aria-live="polite"></div>
+  </header>
+  <main id="main" tabindex="-1">
+    <nav class="sh-stores" id="sh-stores" aria-label="Stores"><div class="loading"><span class="spin"></span>Loading…</div></nav>
+    <section id="sh-store" class="sh-store" hidden></section>
+  </main>
+  <div class="toasts" id="toasts" aria-live="polite" aria-atomic="false"></div>
+  <noscript><p class="noscript">This page needs JavaScript turned on.</p></noscript>
+</body>
+</html>

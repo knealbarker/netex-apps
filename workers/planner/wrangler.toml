@@ -22,6 +22,11 @@ directory = "./public"
 binding = "ASSETS"
 run_worker_first = true   # the Worker checks the sign-in before any file is served
 
+# Shuttle status "Check now": asks netex-sync to re-read a store's orders from SMRT (netex-sync has the SMRT key; the planner doesn't)
+[[services]]
+binding = "SYNC"
+service = "netex-sync"
+
 [[d1_databases]]
 binding = "DB"
 database_name = "netex-apps"

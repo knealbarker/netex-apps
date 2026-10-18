@@ -55,6 +55,7 @@ Cloudflare for domain, DNS, sign-in (Zero Trust Access), hosting (Workers) and d
 - Data freshness: SMRT copied every 10 min on work days 4 AM–9 PM, nightly history backfill; Rippling every 10 min (emailed CSV).
 
 ## Email
+- **Service bindings**: planner → netex-sync (`SYNC`, Shuttle status "Check now": `POST /check`); apps → netex-sms (`Texts`).
 - **Email Routing** on netexcleaners.com: `reports@` → Worker netex-sync (reads Rippling's CSV; anything else is forwarded to Neal).
 - **Sending:** a `[[send_email]]` binding named `SEND_EMAIL`, from `reports@netexcleaners.com`. Recipients must be verified under
   Email Routing › Destination addresses. Examples: `workers/planner/src/summary.js`, `workers/retail/src/summary.js` (`mime`, `deliver`).
