@@ -100,9 +100,21 @@ export async function fillRackStores(db, rows, today) {
         GROUP BY 1, 2, 3`).bind(addDays(today, -60), ...part).all()).results;
     for (const x of res) (byRack.get(x.rack) || byRack.set(x.rack, []).get(x.rack)).push(x);
   }
+  // a numbered rack never seen with a store (Q100): its letters decide, when every known rack with them is one store's (Q → Quitman)
+  const prefix = rack => { const m = /^([A-Za-z][A-Za-z ]*?)\s*\d+$/.exec(String(rack).trim()); return m ? m[1].toUpperCase() : null; };
+  const prefixes = [...new Set(labels.filter(l => { const s = byRack.get(l); return !(s && s.length === 1); }).map(prefix).filter(Boolean))];
+  const byPrefix = new Map();
+  if (prefixes.length) {
+    const res = (await db.prepare(`SELECT upper(rtrim(rtrim(i.last_rack_location, '0123456789'), ' ')) AS p, i.last_rack_store_id AS sid, l.name AS store, COUNT(*) AS n
+        FROM pos_items i JOIN core_locations l ON l.id=i.last_rack_store_id
+        WHERE i.assembled_at >= ? AND i.last_rack_store_id IS NOT NULL AND i.last_rack_location GLOB '*[0-9]'
+        GROUP BY 1, 2, 3`).bind(addDays(today, -60)).all()).results;
+    for (const x of res) if (prefixes.includes(x.p)) (byPrefix.get(x.p) || byPrefix.set(x.p, []).get(x.p)).push(x);
+  }
   for (const r of rows) {
     if (!r.iid || !r.rack || r.rackStoreId) continue;
-    const seen = byRack.get(r.rack);
+    let seen = byRack.get(r.rack);
+    if (!(seen && seen.length === 1)) seen = byPrefix.get(prefix(r.rack));
     if (seen && seen.length === 1) { r.rackStoreId = seen[0].sid; r.rackStore = seen[0].store; r.rackStoreGuessed = true; }
   }
 }

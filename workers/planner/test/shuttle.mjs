@@ -139,6 +139,11 @@ await t("a piece read before rack stores were kept counts as at the store when i
   sqlite.prepare("UPDATE pos_items SET removed_at=? WHERE id='xlong'").run(ts(YDAY));
   const v = await shuttleView(db, env, { storeId: gv });
   eq(v.rows.filter(r => r.status === "blocked").map(r => r.rack), ["LONG"], "G LONG left out (Greenville's rack); LONG still listed");
+  // a numbered rack never seen with a store: its letters decide (G77 -> Greenville, like G LONG... and the known G racks)
+  sqlite.prepare("UPDATE pos_items SET last_rack_location='G30', last_rack_store_id=? WHERE id='xlong'").run(gv);
+  sqlite.prepare("UPDATE pos_items SET last_rack_location='G77' WHERE id=?").run(ids[1]);
+  const v2 = await shuttleView(db, env, { storeId: gv });
+  eq(v2.rows.filter(r => r.status === "blocked").length, 0, "G77 taken as Greenville's (G30 is)");
   // put the test data back for the rest of the suite
   sqlite.prepare("UPDATE pos_items SET last_rack_location='VAN', last_rack_store_id=? WHERE id IN (?, ?)").run(stores["Sulphur Springs"], ids[0], ids[1]);
   sqlite.prepare("UPDATE pos_items SET last_rack_location=NULL, last_rack_store_id=NULL WHERE last_rack_location='LONG' AND id<>'xlong'").run();
