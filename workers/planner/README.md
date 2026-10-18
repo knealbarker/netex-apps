@@ -63,6 +63,8 @@ For the van driver: is everything due at a store on VAN? (Neal, Oct 18.) Signed 
 - **Counted**: open orders returned to that store, due today or up to 45 days before (not voided/deleted/closed, not returned,
   picked up or delivered, not route deliveries). **Left out**: pieces back with the customer (item return date, rack
   RETURNED/DELIVERED, status customer) and pieces whose last rack scan was at that store (SMRT "Last racked store"; taken early).
+  A piece without a stored rack store (read before Oct 18) gets it from its rack label when every other piece on that rack in
+  60 days was at one store (G18 → Greenville); shared labels (LONG, SHELF) stay unknown (`fillRackStores`).
 - **On VAN** = last rack location equals Settings › SMRT mapping › "Rack location for orders on the van" (VAN is a rack at
   Sulphur Springs). Anything else is **not on VAN**, with why: not detailed, not ready, ready on a plant rack, ready not racked.
 - **Held over** = the order's due date moved today from today-or-earlier to later (or the piece was split onto such an order).

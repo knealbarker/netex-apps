@@ -126,6 +126,23 @@ await t("Greenville is OK to leave; Emory has nothing due; a deleted order doesn
   eq([s.Greenville.ok, s.Greenville.van, s.Greenville.pieces], [true, 2, 2]);
   eq([s.Emory.nothing, s.Winnsboro.nothing], [true, true]);
 });
+await t("a piece read before rack stores were kept counts as at the store when its rack is that store's (G18), not when the rack is shared (LONG)", async () => {
+  const gv = stores.Greenville;
+  // two Greenville pieces with the store blanked (as read before Oct 18): one on G LONG (only ever Greenville's), one on LONG (shared)
+  const ids = sqlite.prepare("SELECT i.id FROM pos_items i JOIN pos_orders o ON o.id=i.order_id WHERE o.return_location_id=? AND i.last_rack_location='VAN' ORDER BY i.id").all(gv).map(r => r.id);
+  sqlite.prepare("UPDATE pos_items SET last_rack_location='G LONG', last_rack_store_id=NULL WHERE id=?").run(ids[0]);
+  sqlite.prepare("UPDATE pos_items SET last_rack_location='LONG', last_rack_store_id=NULL WHERE id=?").run(ids[1]);
+  // other pieces show LONG at two stores
+  sqlite.prepare("UPDATE pos_items SET last_rack_location='LONG', last_rack_store_id=? WHERE id IN (SELECT i.id FROM pos_items i JOIN pos_orders o ON o.id=i.order_id WHERE o.smrt_order_no=? LIMIT 1)").run(stores["Sulphur Springs"], h);
+  sqlite.prepare("UPDATE pos_items SET assembled_at=? WHERE last_rack_location IN ('G LONG','LONG')").run(ts(YDAY, "09:00"));
+  sqlite.prepare("INSERT INTO pos_items(id, order_id, barcode, line_no, item_type_id, department_id, last_rack_location, last_rack_store_id, assembled_at, smrt_created_at, row_hash) SELECT 'xlong', order_id, 'x1', 99, item_type_id, department_id, 'LONG', ?, ?, smrt_created_at, 'x' FROM pos_items WHERE id=?").run(gv, ts(YDAY, "09:00"), ids[0]);
+  sqlite.prepare("UPDATE pos_items SET removed_at=? WHERE id='xlong'").run(ts(YDAY));
+  const v = await shuttleView(db, env, { storeId: gv });
+  eq(v.rows.filter(r => r.status === "blocked").map(r => r.rack), ["LONG"], "G LONG left out (Greenville's rack); LONG still listed");
+  // put the test data back for the rest of the suite
+  sqlite.prepare("UPDATE pos_items SET last_rack_location='VAN', last_rack_store_id=? WHERE id IN (?, ?)").run(stores["Sulphur Springs"], ids[0], ids[1]);
+  sqlite.prepare("UPDATE pos_items SET last_rack_location=NULL, last_rack_store_id=NULL WHERE last_rack_location='LONG' AND id<>'xlong'").run();
+});
 await t("API: GET /api/shuttle with a store, any signed-in role", async () => {
   const u = await call("POST", "/api/users", { body: { name: "Larry N", email: "larry@example.com", role: "viewer" } });
   ok(u.status === 201, JSON.stringify(u.body));

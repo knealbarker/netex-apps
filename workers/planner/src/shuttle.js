@@ -79,7 +79,32 @@ async function loadRows(db, orgId, storeIds, today) {
   for (const r of [...moved, ...split].sort((a, b) => String(b.heldAt).localeCompare(String(a.heldAt)))) {
     const k = r.iid || "o" + r.oid; if (seen.has(k)) continue; seen.add(k); held.push(r);
   }
+  await fillRackStores(db, [...due, ...held], today);
   return { due, held };
+}
+
+/**
+ * Pieces read before Oct 18 (or not re-read since) don't have SMRT's "Last racked store" yet. A rack label belongs to one
+ * store (G18 is Greenville's, PH84 the plant's), so when the store is missing it's taken from other pieces on the same rack
+ * in the last 60 days, if they all say the same store. Labels used at several stores (LONG, SHELF) stay unknown.
+ */
+export async function fillRackStores(db, rows, today) {
+  const labels = [...new Set(rows.filter(r => r.iid && r.rack && !r.rackStoreId).map(r => r.rack))];
+  if (!labels.length) return;
+  const byRack = new Map();
+  for (let i = 0; i < labels.length; i += 80) {
+    const part = labels.slice(i, i + 80);
+    const res = (await db.prepare(`SELECT i.last_rack_location AS rack, i.last_rack_store_id AS sid, l.name AS store, COUNT(*) AS n FROM pos_items i
+        JOIN core_locations l ON l.id=i.last_rack_store_id
+        WHERE i.assembled_at >= ? AND i.last_rack_store_id IS NOT NULL AND i.last_rack_location IN (${part.map(() => "?").join(",")})
+        GROUP BY 1, 2, 3`).bind(addDays(today, -60), ...part).all()).results;
+    for (const x of res) (byRack.get(x.rack) || byRack.set(x.rack, []).get(x.rack)).push(x);
+  }
+  for (const r of rows) {
+    if (!r.iid || !r.rack || r.rackStoreId) continue;
+    const seen = byRack.get(r.rack);
+    if (seen && seen.length === 1) { r.rackStoreId = seen[0].sid; r.rackStore = seen[0].store; r.rackStoreGuessed = true; }
+  }
 }
 
 const ASSEMBLED_ORDER = /^(assembled|racked|ready|complete|completed)$/i;
