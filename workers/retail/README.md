@@ -36,6 +36,14 @@ Users & access (Admins and the Owner) is the same screen and code as the planner
 - Deleted orders are left out. Each range is compared with the same number of days just before it.
 - Not yet: ADP history before Rippling.
 
+## Counter (#/counter, Oct 18 2026)
+Customer visits, detailing speed, visits per labor hour and the **clock check** (SMRT work vs. Rippling punches), for up to
+31 days. Rules in `docs/business-rules.md` › Counter and at the top of `src/counter.js`. Settings › Counter: distraction gap
+(90 s), time per pickup (2 min), same-visit window (20 min), clock-check grace (15 min), salaried staff.
+SMRT staff names ("Ashton D", "Ashton Davis") are matched to Rippling people by name (`nameMatches`), the same way as
+assemblers. Flags marked OK live in `core_settings` retail/clock_ok (kept 120 days). Everyone with a Retail Snapshot role sees
+the Counter; Managers and up can mark flags OK; Admins can mark someone salaried from a "No punch" flag.
+
 ## Daily summary email
 Settings › Daily summary email: on/off, recipients, hour (Central) and days. The Worker's hourly cron (:05) sends yesterday's
 store table plus week-to-date and month-to-date once a day, from reports@netexcleaners.com through the `SEND_EMAIL`
@@ -54,4 +62,5 @@ The custom domain `retailview.netexcleaners.com` is created by the deploy. Optio
 
 ## Tests
 - `node workers/retail/test/run.mjs` — sign-in and roles, every number above against made-up data, settings, the CSV import.
+- `node workers/retail/test/counter.mjs` — visits, distraction gaps, salaried hours, the clock check and marking flags OK.
 - `node workers/retail/test/browser.mjs` — the real pages in headless Chromium (dark, light, phone, Manager view); screenshots in `test/shots`.

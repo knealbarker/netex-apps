@@ -93,6 +93,18 @@ export async function render(main, ctx) {
       </section>
 
       <section class="card set-card">
+        <h2>Counter</h2>
+        <p class="dlg-lead">How the Counter tab measures visits, detailing speed and salaried time, and how strict the clock check is.</p>
+        <div class="two">
+          <label class="field"><span>Distraction gap</span><div class="suffix"><input class="input" name="gapSec" inputmode="numeric" value="${s.counter.gapSec}"><i>seconds</i></div><small>A pause this long or longer between two pieces is left out of seconds per piece and counted as a distraction gap.</small></label>
+          <label class="field"><span>Time per pickup</span><div class="suffix"><input class="input" name="pickupMin" inputmode="decimal" value="${s.counter.pickupMin}"><i>min</i></div><small>Counted for salaried staff for each pickup while they're at the counter, shared with whoever else is on the clock.</small></label>
+          <label class="field"><span>Same visit within</span><div class="suffix"><input class="input" name="visitWindowMin" inputmode="numeric" value="${s.counter.visitWindowMin}"><i>min</i></div><small>One customer's tickets and pickups this close together are one visit.</small></label>
+          <label class="field"><span>Clock check grace</span><div class="suffix"><input class="input" name="graceMin" inputmode="numeric" value="${s.counter.graceMin}"><i>min</i></div><small>SMRT work this close to a clock-in or clock-out isn't flagged.</small></label>
+        </div>
+        <label class="field"><span>Salaried staff</span><textarea class="input" name="salaried" rows="3" placeholder="One name per line">${s.counter.salaried.join("\n")}</textarea><small>People paid a salary who don't clock in. Their SMRT work isn't flagged, and their detailing and pickup time counts as counter hours.</small></label>
+      </section>
+
+      <section class="card set-card">
         <h2>Who sees labor cost</h2>
         <label class="switch"><div><b>Managers and Viewers see labor $ and labor %</b><small>Admins and the Owner always do. Nobody sees individual pay rates here.</small></div><input type="checkbox" name="managersSeeLabor" ${raw(s.managersSeeLabor ? "checked" : "")}></label>
       </section>
@@ -112,6 +124,7 @@ export async function render(main, ctx) {
     const el = f.elements, body = { targetRetail: el.targetRetail.value, targetPlant: el.targetPlant.value, burdenPct: el.burdenPct.value, defaultRate: el.defaultRate.value,
       weekStart: el.weekStart.value, managersSeeLabor: el.managersSeeLabor.checked, avgRates: {}, rollup: {}, hidden: [],
       overtime: el.overtime.checked, overtimeAfter: el.overtimeAfter.value, overtimeMultiplier: el.overtimeMultiplier.value,
+      counter: { ...s.counter, gapSec: el.gapSec.value, pickupMin: el.pickupMin.value, visitWindowMin: el.visitWindowMin.value, graceMin: el.graceMin.value, salaried: el.salaried.value },
       summary: { enabled: el.sumOn.checked, to: el.sumTo.value, hour: +el.sumHour.value, days: [...f.querySelectorAll("[name=sumDay]:checked")].map(i => +i.value) } };
     for (const i of f.querySelectorAll("[name^='rate:']")) body.avgRates[i.name.slice(5)] = i.value;
     for (const i of f.querySelectorAll("[name^='roll:']")) if (i.value) body.rollup[i.name.slice(5)] = i.value;

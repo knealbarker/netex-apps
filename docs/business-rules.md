@@ -36,5 +36,18 @@ Town & Country Cleaners: dry cleaning and starched laundry, about 900–1,100 pi
   **Overtime**: hours past 40 in a Monday-start week, all locations together, at 1.5×.
 - **Pay rates are for Admins and the Owner only**, in every app and report.
 
+## Counter (Retail Snapshot › Counter, Neal Oct 18 2026)
+- Staff create the SMRT ticket when the customer walks in, so a **drop-off = ticket created**; a **pickup = order picked up**.
+  One customer's drop-offs and pickups at one store within 20 min (Settings) are **one visit**: drop-off only, pickup only, both.
+  Route orders, deleted tickets and stores with no one on the clock (Winnsboro) are left out.
+- **Detailing speed** = average time between two pieces of one order by the same person. A gap of **90 s or more**
+  (Settings) is a **distraction gap**: counted separately, left out of the speed.
+- **Salaried staff** (Karla, Debra; list in Settings) don't clock in. Their counter hours = their detailing time (gaps under
+  90 s + one typical piece per order) + **2 min per pickup** (measured median, Settings) while they're working, shared
+  with whoever is on the clock. **Visits per labor hour** = visits ÷ (Rippling store hours + salaried hours).
+- **Clock check**: SMRT work at a store Rippling doesn't have the person at, SMRT work with no punch (not salaried), or
+  SMRT work more than 15 min outside punches. **Rippling is the source of truth**: fix it there and the flag clears;
+  a Manager can mark a flag OK with a note.
+
 ## Times
 - Central time (America/Chicago). SMRT and Rippling stamps are stored as Central local with offset; app timestamps are UTC.

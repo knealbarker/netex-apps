@@ -141,3 +141,21 @@
 .asm-nm { display: flex; flex-direction: column; min-width: 0; }
 .asm-nm small { color: var(--muted); font-size: 12px; }
 .asm-list { margin-bottom: 8px; }
+
+/* Counter */
+.tile.warn { background: var(--warn-soft); border-color: transparent; }
+.tile.warn .t-num { color: var(--warn); }
+.ctable .srow, .people-card .srow { min-width: 760px; }
+.people-card, .clock-card { padding: 16px 0 6px; margin-bottom: 14px; }
+.people-card .daily-head, .clock-card .daily-head, .clock-card .dlg-lead { padding: 0 18px; }
+.people-card .stable { box-shadow: none; border: 0; margin: 0; }
+.checks { display: grid; gap: 10px; padding: 6px 18px 14px; }
+.check { border: 1px solid var(--line2); border-radius: 12px; padding: 12px 14px; display: grid; gap: 6px; }
+.check.is-ok { opacity: .7; }
+.check-top { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.check-text, .check-fix, .check-ok { margin: 0; font-size: 14px; }
+.check-fix { color: var(--muted); }
+.check-facts { display: grid; grid-template-columns: auto 1fr; gap: 2px 12px; margin: 0; font-size: 13.5px; }
+.check-facts dt { color: var(--faint); font-weight: 700; font-size: 12px; text-transform: uppercase; letter-spacing: .05em; padding-top: 2px; }
+.check-facts dd { margin: 0; font-variant-numeric: tabular-nums; min-width: 0; overflow-wrap: anywhere; }
+.check-actions { display: flex; flex-wrap: wrap; gap: 8px; }

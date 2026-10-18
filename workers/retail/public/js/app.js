@@ -1,14 +1,15 @@
-// App shell: who's signed in, the header, the theme and the section router (#/snapshot, #/hours, #/settings, #/users).
+// App shell: who's signed in, the header, the theme and the section router (#/snapshot, #/hours, #/counter, #/settings, #/users).
 import { api } from "./api.js";
 import { html, initials, roleName, RANK, toast } from "./ui.js";
 import * as users from "./views/users.js";
 import * as snap from "./views/snapshot.js";
 import * as settings from "./views/settings.js";
+import * as counter from "./views/counter.js";
 
 const $ = s => document.querySelector(s);
 const main = $("#main");
-const VIEWS = { snapshot: m => snap.render(m, ctx, "snapshot"), hours: m => snap.render(m, ctx, "hours"), settings: m => settings.render(m, ctx), users: m => users.render(m, ctx) };
-const TITLES = { snapshot: "Snapshot", hours: "Hours", settings: "Settings", users: "Users & access" };
+const VIEWS = { snapshot: m => snap.render(m, ctx, "snapshot"), hours: m => snap.render(m, ctx, "hours"), counter: m => counter.render(m, ctx), settings: m => settings.render(m, ctx), users: m => users.render(m, ctx) };
+const TITLES = { snapshot: "Snapshot", hours: "Hours", counter: "Counter", settings: "Settings", users: "Users & access" };
 const ctx = { me: null, today: null };
 
 const THEMES = ["system", "dark", "light"];

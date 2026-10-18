@@ -21,6 +21,12 @@ sqlite.prepare("UPDATE pos_items SET assembled_by_staff_id='STHUB' WHERE assembl
 sqlite.prepare("UPDATE pos_items SET assembled_by_staff_id='STCONV' WHERE assembled_at IS NOT NULL AND assembled_by_staff_id IS NULL").run();
 sqlite.prepare("INSERT INTO core_users(id, org_id, email, display_name) VALUES('01MGR00000000000000000000A','tcc','mgr@x.com','Store Manager')").run();
 sqlite.prepare("INSERT INTO core_user_app_roles(user_id, app_id, role_id, granted_at) VALUES('01MGR00000000000000000000A','retail','manager','x')").run();
+// Counter: Sam details Sulphur Springs tickets (a piece every ~40 s, one 3-minute pause per order); Pat details
+// Greenville's with no Rippling punch, so the clock check flags it
+sqlite.prepare("INSERT INTO pos_staff(id, org_id, smrt_name) VALUES('STSAM','tcc','Sam Counter'),('STPAT','tcc','Pat Quill')").run();
+sqlite.prepare(`UPDATE pos_items SET detailed_by_staff_id = CASE (SELECT l.name FROM pos_orders o JOIN core_locations l ON l.id=o.drop_location_id WHERE o.id=pos_items.order_id)
+    WHEN 'Sulphur Springs' THEN 'STSAM' WHEN 'Greenville' THEN 'STPAT' END,
+  detailed_at = substr(smrt_created_at,1,11) || printf('09:%02d:%02d', 16 + line_no + (CASE WHEN line_no >= 3 THEN 3 ELSE 0 END), (line_no * 40) % 60) || '-05:00'`).run();
 let who = "neal@towncountryclean.com";
 const { server, url } = await serve(makeEnv(db, { NOW: "2026-10-10T12:00:00-05:00" }), { fetchImpl: A.fetchImpl, token: A.token, who: () => who });
 
@@ -140,6 +146,38 @@ await t("a Manager sees no labor $ or labor %, and no Settings tab", async () =>
   ok(!(await m.isVisible("#settingsTab")));
   await m.screenshot({ path: join(SHOTS, "7-manager.png") });
   who = "neal@towncountryclean.com";
+});
+await t("Counter: visits, speed, people and the clock check; Mark OK asks for a note", async () => {
+  await p.goto(url + "/#/counter?p=lastweek");
+  await p.waitForSelector(".ctable .srow.grand");
+  ok((await p.textContent("main h1")) === "Counter");
+  ok((await p.locator(".kpis .tile").count()) === 5);
+  ok((await p.textContent(".people-card")).includes("Sam Counter"));
+  ok((await p.locator(".check").count()) > 0, "a clock check for Pat");
+  ok((await p.textContent(".clock-card")).includes("No punch"));
+  await p.screenshot({ path: join(SHOTS, "12-counter.png"), fullPage: true });
+  await p.locator(".check [data-ok]").first().click();
+  await p.waitForSelector("dialog[open]");
+  await p.click('dialog [type="submit"]');
+  ok(await p.isVisible("dialog .form-error"), "note required");
+  await p.fill('dialog [name="note"]', "Training day");
+  await p.click('dialog [type="submit"]');
+  await p.waitForFunction(() => document.querySelector(".check.is-ok"));
+  ok((await p.textContent(".check.is-ok")).includes("Training day"));
+});
+await t("Counter settings: 90-second gap and salaried names", async () => {
+  await p.goto(url + "/#/settings");
+  await p.waitForSelector('input[name="gapSec"]');
+  ok((await p.inputValue('input[name="gapSec"]')) === "90");
+  ok((await p.inputValue('textarea[name="salaried"]')).includes("Karla Velasquez"));
+  await p.locator(".set-card").filter({ hasText: "Distraction gap" }).screenshot({ path: join(SHOTS, "13-counter-settings.png") });
+});
+await t("Counter on a phone: no sideways page scroll", async () => {
+  await phone.goto(url + "/#/counter?p=lastweek");
+  await phone.waitForSelector(".ctable .srow.grand");
+  const w = await phone.evaluate(() => document.documentElement.scrollWidth);
+  ok(w <= 391, `page is ${w}px wide`);
+  await phone.screenshot({ path: join(SHOTS, "14-counter-phone.png"), fullPage: true });
 });
 await t("no browser errors", async () => { ok(!errors.length, errors.join(" | ")); });
 

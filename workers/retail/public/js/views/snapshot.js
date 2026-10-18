@@ -4,7 +4,7 @@
 import { api } from "../api.js";
 import { html, raw, esc } from "../ui.js";
 
-const PRESETS = [
+export const PRESETS = [
   ["today", "Today"], ["yesterday", "Yesterday"], ["last7", "Last 7 days"], ["week", "This week"],
   ["lastweek", "Last week"], ["month", "This month"], ["lastmonth", "Last month"],
 ];

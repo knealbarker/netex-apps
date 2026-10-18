@@ -8,6 +8,7 @@ import { ingestRippling } from "../../sync/src/rippling.js";
 import { snapshot, localToday, addDays } from "./snapshot.js";
 import { buildSummary, deliver, scheduledSummary } from "./summary.js";
 import { loadSettings, saveSettings, settingsContext } from "./settings.js";
+import { counter, markCheck } from "./counter.js";
 
 const SECURITY_HEADERS = {
   "x-content-type-options": "nosniff",
@@ -29,6 +30,12 @@ const routes = [
     const u = new URL(req.url);
     return json(await snapshot(env.DB, env, me, u.searchParams.get("from"), u.searchParams.get("to"), { now: env.NOW ? Date.parse(env.NOW) : Date.now() }));
   }],
+  // Counter: visits, detailing speed, visits per labor hour and the clock check (SMRT work vs Rippling punches)
+  ["GET", /^\/api\/counter$/, async (req, env, me) => {
+    const u = new URL(req.url);
+    return json(await counter(env.DB, env, me, u.searchParams.get("from"), u.searchParams.get("to"), { now: env.NOW ? Date.parse(env.NOW) : Date.now() }));
+  }],
+  ["POST", /^\/api\/counter\/check$/, async (req, env, me) => json(await markCheck(env.DB, env, me, await readJson(req)))],
   ["GET", /^\/api\/settings$/, async (req, env, me) => {
     requireRole(me, "admin");
     return json({ settings: await loadSettings(env.DB, env), ...(await settingsContext(env.DB, env)) });

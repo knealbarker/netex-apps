@@ -23,6 +23,11 @@ export const DEFAULTS = {
     "Dry Cleaning Tops": "Workshop", "Dry Cleaning Bottoms": "Workshop", "Laundry Tops": "Workshop", "Laundry Bottoms": "Workshop",
     "Household": "Workshop", "Wash & Fold": "Laundry Hub",
   },   // daily email: local hour, days of week it goes out (0 = Sunday)
+  // Counter tab (Neal, Oct 18): a gap of gapSec or more between two detailed pieces is a distraction gap, left out of
+  // detailing speed; a salaried person gets pickupMin for each pickup while they're at the counter; one customer's
+  // tickets and pickups within visitWindowMin are one visit; clock check allows graceMin around punches and needs
+  // minEvents SMRT actions before it flags anything. salaried = SMRT/Rippling names of people paid a salary.
+  counter: { gapSec: 90, pickupMin: 2, visitWindowMin: 20, graceMin: 15, minEvents: 3, salaried: ["Karla Velasquez", "Debra Norton"] },
 };
 
 const num = (v, min, max, what) => {
@@ -35,7 +40,7 @@ const name = v => String(v ?? "").trim().replace(/\s+/g, " ").slice(0, 60);
 export async function loadSettings(db, env) {
   const r = await db.prepare("SELECT value_json FROM core_settings WHERE org_id=? AND app_id='retail' AND key='snapshot'").bind(env.ORG_ID).first();
   const s = r ? JSON.parse(r.value_json) : {};
-  return { ...DEFAULTS, ...s, avgRates: { ...DEFAULTS.avgRates, ...(s.avgRates || {}) }, rollup: s.rollup || DEFAULTS.rollup, hidden: s.hidden || [], summary: { ...DEFAULTS.summary, ...(s.summary || {}) }, plantWork: s.plantWork || DEFAULTS.plantWork, assemblers: s.assemblers || DEFAULTS.assemblers };
+  return { ...DEFAULTS, ...s, avgRates: { ...DEFAULTS.avgRates, ...(s.avgRates || {}) }, rollup: s.rollup || DEFAULTS.rollup, hidden: s.hidden || [], summary: { ...DEFAULTS.summary, ...(s.summary || {}) }, counter: { ...DEFAULTS.counter, ...(s.counter || {}) }, plantWork: s.plantWork || DEFAULTS.plantWork, assemblers: s.assemblers || DEFAULTS.assemblers };
 }
 
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -48,6 +53,20 @@ function cleanSummary(v = {}) {
   const days = [...new Set((Array.isArray(v.days) ? v.days : [1, 2, 3, 4, 5, 6]).map(Number).filter(d => d >= 0 && d <= 6))].sort();
   if (v.enabled && !to.length) throw new HttpError(400, "Add at least one email address for the daily summary.");
   return { enabled: !!v.enabled, to, hour, days };
+}
+
+function cleanCounter(v = {}) {
+  const d = DEFAULTS.counter;
+  const names = (Array.isArray(v.salaried) ? v.salaried : String(v.salaried ?? d.salaried.join("\n")).split(/[\n,;]+/)).map(name).filter(Boolean);
+  if (names.length > 30) throw new HttpError(400, "List 30 salaried people at most.");
+  return {
+    gapSec: Math.round(num(v.gapSec ?? d.gapSec, 15, 900, "Distraction gap")),
+    pickupMin: num(v.pickupMin ?? d.pickupMin, 0, 30, "Time per pickup"),
+    visitWindowMin: Math.round(num(v.visitWindowMin ?? d.visitWindowMin, 1, 120, "Same visit within")),
+    graceMin: Math.round(num(v.graceMin ?? d.graceMin, 0, 120, "Clock check grace")),
+    minEvents: Math.round(num(v.minEvents ?? d.minEvents, 1, 50, "Clock check minimum")),
+    salaried: [...new Set(names)],
+  };
 }
 
 export function cleanSettings(b) {
@@ -63,6 +82,7 @@ export function cleanSettings(b) {
     overtimeAfter: num(b.overtimeAfter ?? 40, 0, 80, "Overtime after"),
     overtimeMultiplier: num(b.overtimeMultiplier ?? 1.5, 1, 3, "Overtime rate"),
     summary: cleanSummary(b.summary),
+    counter: cleanCounter(b.counter),
     plantWork: {}, assemblers: {},
   };
   for (const [k, v] of Object.entries(b.plantWork || {})) { const d = name(k), pl = name(v); if (d && pl) out.plantWork[d] = pl; }
