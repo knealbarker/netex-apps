@@ -67,7 +67,8 @@ For the van driver: is everything due at a store on VAN? (Neal, Oct 18.) Signed 
   (piece or order note) still holds up the run.
 - **OK to leave** when nothing is "not on VAN" and every held-over piece has a note. Rows: not on VAN first, then held over
   (no note first), then on VAN; every column sorts. A piece on VAN since an earlier day is flagged (likely never scanned at the store).
-- **Check now** re-reads that store's created days from SMRT right away: `POST /api/shuttle/check` → netex-sync `POST /check`
+- **Check now** re-reads from SMRT right away the created days of that store's orders that still hold up the run (pieces not on
+  VAN, held over without a note) plus today: `POST /api/shuttle/check` → netex-sync `POST /check`
   over the `SYNC` service binding (the planner has no SMRT key). Same ingest as the live sync; skipped if a sync is mid-run;
   the same days again within 45 s return the last answer. The page polls the database every minute.
 

@@ -135,12 +135,12 @@ await t("API: GET /api/shuttle with a store, any signed-in role", async () => {
   ok(/^Pat Customer\d+$/.test(r.body.rows[0].customer), "name from the report's Customer Name column");
   eq(q.rows[0].customer, "C1", "no name column: the SMRT customer id");
 });
-await t("Check now sends that store's created days to netex-sync, then answers with the fresh view", async () => {
+await t("Check now sends only the created days of orders still holding up the run, then answers with the fresh view", async () => {
   syncCalls = [];
   const r = await call("POST", "/api/shuttle/check", { body: { store: stores.Quitman }, as: "larry@example.com" });
   eq(r.status, 200); eq(r.body.check.status, "ok"); eq(r.body.rows.length, 7);
   eq(syncCalls.length, 1); eq(syncCalls[0].label, "Quitman");
-  eq(syncCalls[0].days, [addDays(TODAY, -3), YDAY, TODAY].sort());
+  eq(syncCalls[0].days, [YDAY, TODAY], "order b (all on VAN or at the store) isn't re-read");
 });
 await t("Check now without the SYNC binding says so", async () => {
   const r = await call("POST", "/api/shuttle/check", { body: { store: stores.Quitman }, e: makeEnv(db, { TIMEZONE: "America/Chicago" }) });

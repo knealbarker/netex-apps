@@ -164,8 +164,15 @@ export async function checkNow(db, env, me, storeId, { at = new Date() } = {}) {
   const stores = await shuttleStores(db, env.ORG_ID);
   const store = stores.find(s => s.id === storeId);
   if (!store) throw new HttpError(404, "That store isn't on a shuttle run (Settings › Shuttle runs).");
+  // only the created days of orders that still hold up the run (not on VAN, or held over without a note): pieces already on
+  // VAN or at the store don't need re-reading, so a check near departure is a few SMRT calls, not every open day (+ today, always)
+  const groups = await loadGroups(db, env.ORG_ID);
+  const transitName = String(groups.smrt.transitRack || "Van").trim() || "Van";
+  const transit = new RegExp(`^\\s*${transitName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\s*$`, "i");
   const { due, held } = await loadRows(db, env.ORG_ID, [store.id], today);
-  const days = [...new Set([...due, ...held].map(r => String(r.created || "").slice(0, 10)).filter(Boolean))].sort();
+  const open = [...due.map(r => [r, classify(r, transit, today)]), ...held.map(r => [r, classify(r, transit, today, { held: true })])]
+    .filter(([, c]) => c && (c.status === "blocked" || (c.status === "held" && !c.noted)));
+  const days = [...new Set(open.map(([r]) => String(r.created || "").slice(0, 10)).filter(Boolean))].sort();
   let result;
   try {
     const r = await env.SYNC.fetch("https://netex-sync/check", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ days, label: store.name }) });
