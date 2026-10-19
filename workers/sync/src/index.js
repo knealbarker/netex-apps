@@ -115,8 +115,10 @@ export default {
       const res = days.length || !body.racksOnly
         ? await runCheck(env.DB, smrt, { orgId: env.ORG_ID, integrationId: env.SMRT_INTEGRATION_ID, today: localNow(tz).day, days, label })
         : { status: "ok", calls: 0 };
-      const out = { ...res, racks: { status: racks.status, scans: racks.scans, error: racks.error }, status: res.status === "ok" || res.status === "recent" ? (racks.status === "ok" ? res.status : "error") : res.status,
-        error: res.error || racks.error, calls: smrt.calls };
+      // the scans are what Shuttle status needs most: when they were read, a busy/recent order re-read still counts as checked
+      const status = racks.status !== "ok" ? "error" : res.status === "error" ? "error" : "ok";
+      const out = { ...res, racks: { status: racks.status, scans: racks.scans, error: racks.error }, orders: res.status, status, at: res.at || new Date().toISOString(),
+        error: racks.error || (res.status === "error" ? res.error : undefined), calls: smrt.calls };
       log({ job: "smrt-check", ...out, ranges: undefined });
       return Response.json(out, { status: out.status === "error" ? 502 : 200 });
     }
