@@ -115,24 +115,34 @@ else {
     const n = await a.call("POST", `/api/station-devices/${c.body.id}/code`);
     eq((await a.tab("POST", "/pair", { body: { code: n.body.code } })).status, 200, "a new code works");
   });
-  await t("the tablet follows the plan: locked until the person clocks in, then counts go to them", async () => {
+  await t("counts go in before clock-in (time clock down), credited to the planned person; hours true up when punches arrive", async () => {
     const a = await setup();
     await a.call("PUT", `/api/plan/${L.day}`, { body: { rev: 0, crew: { slb1: { personId: a.carnell, start: hm(NOW - 150), hours: 8 }, slb2: { personId: a.diana, start: hm(NOW - 150), hours: 8 } } } });
     await pairNew(a);
     let s = (await a.tab("GET", "/state")).body;
-    eq([s.person.name, s.locked, s.planSource], ["Carnell Jones", true, "saved"]);
-    eq((await a.tab("POST", "/count", { body: { count: 12 } })).status, 409, "locked");
-    clockIn(a.sqlite, a.carnell, NOW - 140);
-    s = (await a.tab("GET", "/state")).body;
-    eq([s.locked, s.person.clockedIn], [false, true]);
+    eq([s.person.name, s.locked, s.person.clockedIn, s.planSource], ["Carnell Jones", false, false, "saved"]);
+    // no punch yet: the count is taken, credited to Carnell, hours from the plan (2h30m since his planned start)
     const r = await a.tab("POST", "/count", { body: { count: 40 } });
     eq(r.status, 201);
-    eq([r.body.state.totals.count, r.body.state.entries[0].name, r.body.state.entries[0].undo], [40, "Carnell Jones", true]);
-    near(r.body.state.totals.perHour, 40 / (140 / 60), "40 pairs over 2h20m");
-    eq(r.body.state.totals.color, "yellow", "17.1/hr is 14% under 20"); eq(r.body.state.mine, null, "only one person: no separate line");
+    eq([r.body.state.totals.count, r.body.state.entries[0].name, r.body.state.entries[0].undo, r.body.state.totals.estimated], [40, "Carnell Jones", true, true]);
+    near(r.body.state.totals.perHour, 40 / 2.5, "40 pairs over the planned 2h30m");
+    // the punch arrives later (clock-in machine fixed): same count, hours now from the time clock (in 10 min after his planned start)
+    clockIn(a.sqlite, a.carnell, NOW - 140);
+    s = (await a.tab("GET", "/state")).body;
+    eq([s.person.clockedIn, s.totals.count, s.totals.estimated], [true, 40, false]);
+    near(s.totals.perHour, 40 / (140 / 60), "40 pairs over 2h20m on the clock");
+    eq(s.totals.color, "yellow", "17.1/hr is 14% under 20"); eq(s.mine, null, "only one person: no separate line");
+    const d = (await a.call("GET", `/api/tally/${L.day}`)).body.stations.find(x => x.code === "slb1");
+    eq([d.people[0].name, d.people[0].count, d.people[0].estimated], ["Carnell Jones", 40, false]);
     // undo
     const u = await a.tab("DELETE", `/count/${r.body.id}`);
     eq([u.status, u.body.totals.count], [200, 0]);
+  });
+  await t("no one planned on the station: the count is still taken", async () => {
+    const a = await setup();
+    await pairNew(a, "slb2");
+    const r = await a.tab("POST", "/count", { body: { count: 9 } });
+    eq([r.status, r.body.state.totals.count, r.body.state.entries[0].name], [201, 9, null]);
   });
   await t("a plan change moves the credit; the person's own line shows when the station had someone else", async () => {
     const a = await setup();
@@ -151,17 +161,6 @@ else {
     eq(st.people.map(p => [p.name, p.count]).sort(), [["Carnell Jones", 38], ["Maria Lopez", 22]]);
     eq(st.current.name, "Maria Lopez"); eq(d.total, 60);
     eq((await a.call("POST", "/api/tally", { as: "vi@example.com", body: { day: L.day, station: "slb1", count: 3, at: "08:00" } })).status, 403, "viewers can't add");
-  });
-  await t("'They're clocked in' opens the tablet early and is written to Changes today", async () => {
-    const a = await setup();
-    await a.call("PUT", `/api/plan/${L.day}`, { body: { rev: 0, crew: { slb2: { personId: a.diana, start: hm(NOW - 30), hours: 8 } } } });
-    await pairNew(a, "slb2");
-    eq((await a.tab("GET", "/state")).body.locked, true);
-    const o = await a.tab("POST", "/open");
-    eq([o.body.locked, o.body.opened], [false, true]);
-    eq((await a.tab("POST", "/count", { body: { count: 9 } })).status, 201);
-    const ev = a.sqlite.prepare("SELECT text FROM plan_events WHERE key LIKE 'tally-open:%'").all();
-    ok(ev.length === 1 && /Diana Vergara/.test(ev[0].text));
   });
   await t("photos: stored with the count, only Admins see them, removed with the count and after Settings' days", async () => {
     const a = await setup();

@@ -48,7 +48,7 @@ function draw() {
   const T = S.totals, P = S.person, M = S.mine;
   const status = !P ? "No one is on this station in the plan" :
     P.status === "upcoming" && !P.clockedIn ? `Planned from ${clock(P.from)}` :
-    !P.clockedIn ? (S.opened ? "Opened for counts before the time clock showed them" : "Not clocked in yet") :
+    !P.clockedIn ? "Not on the time clock yet" :
     !P.onNow ? `Clocked out — break or done` : `Clocked in ${clock(P.firstIn)}`;
   const goalTxt = P ? `${P.ownGoal ? "Own goal" : "Goal"} ${goal(P.goal)}/hr` : "";
   const sinceLast = T.lastMin != null ? nowMin() - T.lastMin : null;
@@ -56,7 +56,7 @@ function draw() {
   app.innerHTML = `
     <header class="head">
       <span class="st-chip">${esc(S.station.label)}</span>
-      <div class="who"><b>${esc(P ? P.name : "No one planned")}</b><small>${esc(status)}${P && P.clockedIn ? ` · ${esc(goalTxt)}` : ""}${S.planSource === "suggested" ? " · from the suggested plan" : ""}</small></div>
+      <div class="who"><b>${esc(P ? P.name : "No one planned")}</b><small>${esc(status)}${P ? ` · ${esc(goalTxt)}` : ""}${S.planSource === "suggested" ? " · from the suggested plan" : ""}</small></div>
       <div class="clock">${esc(clock(nowMin()))}<small>${S.photos ? `<span class="dot ${cam.classList.contains("on") ? "on" : ""}"></span>${cam.classList.contains("on") ? "Camera on" : "Camera off"} · ` : ""}<span class="dot ${offline ? "bad" : "ok"}"></span>${offline ? "Offline" : "Online"}</small></div>
     </header>
     <main class="main">
@@ -68,7 +68,7 @@ function draw() {
         </div>
         <div class="foot">
           ${T.lastHour ? `<span class="hour"><i class="${T.lastHour.color}"></i>Last hour ${esc(rate(T.lastHour.perHour))}/hr</span>` : ""}
-          <span class="stale">${T.lastMin == null ? "Starts with the first batch to IAB" : `Last count ${clock(T.lastMin)}${sinceLast > 1 ? ` · ${sinceLast} min ago` : ""}`}</span>
+          <span class="stale">${T.lastMin == null ? "Starts with the first batch to IAB" : `Last count ${clock(T.lastMin)}${sinceLast > 1 ? ` · ${sinceLast} min ago` : ""}`}${T.estimated ? " · hours from the plan until the time clock catches up" : ""}</span>
           <span class="goal">Goal ${esc(goal(T.goal))}/hr</span>
         </div>
       </div>

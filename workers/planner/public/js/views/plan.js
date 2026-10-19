@@ -329,7 +329,7 @@ export async function render(main, ctx) {
           <div class="pr-top"><b>${s.label}</b><span>${s.current ? `${s.current.name}${s.current.status === "upcoming" ? ` · from ${hm(s.current.from / 60)}` : ""}` : "No one planned"}</span></div>
           <div class="pr-nums"><div><b>${fmtN(S.count)}</b><span>pairs</span></div><div><b class="pr-rate">${r1(S.perHour)}</b><span>per hour${S.pct != null ? ` · ${Math.round(S.pct * 100)}%` : ""}</span></div>
             <div><b class="pr-hr ${S.lastHour ? S.lastHour.color : ""}">${S.lastHour ? r1(S.lastHour.perHour) : "—"}</b><span>last hour</span></div></div>
-          <p class="pr-foot">${S.lastMin == null ? "No counts yet today." : `Last count ${hm(S.lastMin / 60)} · ${ago(S.lastMin)}`}${others.length > 1 ? raw(html`<br>${others.map(p => raw(html`<span class="pr-who c-${p.color}">${first(p.name)} ${p.count} · ${r1(p.perHour)}/hr${p.ownGoal ? ` (goal ${g1(p.goal)})` : ""}</span>`))}`) : ""}</p>
+          <p class="pr-foot">${S.lastMin == null ? "No counts yet today." : `Last count ${hm(S.lastMin / 60)} · ${ago(S.lastMin)}`}${S.estimated ? " · hours from the plan (not on the time clock yet)" : ""}${others.length > 1 ? raw(html`<br>${others.map(p => raw(html`<span class="pr-who c-${p.color}">${first(p.name)} ${p.count} · ${r1(p.perHour)}/hr${p.ownGoal ? ` (goal ${g1(p.goal)})` : ""}</span>`))}`) : ""}</p>
         </div>`); })}</div>`;
   }
 

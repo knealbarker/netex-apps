@@ -74,13 +74,15 @@ await t("installable as a full-screen app (manifest + service worker)", async ()
   ok(m && m.display === "fullscreen" && m.start_url === "/station/" && m.icons.length === 2, JSON.stringify(m));
   ok(await p1.evaluate(async () => !!(await navigator.serviceWorker.getRegistration("/station/"))), "service worker registered");
 });
-await t("locked until clocked in; the camera turns on", async () => {
-  await p1.waitForSelector(".lockbar");
+await t("not on the time clock yet: Enter pairs still works; the camera turns on", async () => {
+  await p1.waitForSelector("[data-open]");
+  ok(!(await p1.$(".lockbar")), "no clock-in lock");
+  ok(/Not on the time clock yet/.test(await p1.textContent(".who small")));
   await p1.waitForSelector("#cam.on", { timeout: 5000 });
-  await p1.screenshot({ path: join(SHOTS, "station-2-locked.png") });
+  await p1.screenshot({ path: join(SHOTS, "station-2-not-clocked-in.png") });
   clockIn(carnell, NOW - 182); clockIn(maria, NOW - 178);
   await p1.reload(); await p1.waitForSelector(".st-chip");
-  ok(!(await p1.$(".lockbar")) && await p1.$("[data-open]"), "opens once Maria is clocked in");
+  ok(/Clocked in/.test(await p1.textContent(".who small")));
 });
 await t("a count saves with a photo; the person's own line shows next to the station's", async () => {
   await add("slb1", 41, NOW - 61); // Carnell's batch before the move

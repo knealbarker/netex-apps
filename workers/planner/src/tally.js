@@ -150,11 +150,13 @@ export function pace(entries, segs, punches, who, code, goal, now) {
   const T = entries[entries.length - 1].minute;
   const hrs = (a, b) => who.reduce((t, p) => t + workedMin(segs, punches, p, code, a, b, now), 0);
   const minutes = hrs(0, T);
+  // hours still from the plan: someone counted here has no punches yet today (the time clock is behind or down)
+  const estimated = who.some(p => !(punches[p] && punches[p].length) && workedMin(segs, punches, p, code, 0, T, now) > 0);
   const perHour = minutes >= 10 ? count / (minutes / 60) : null;
   const k = entries.findIndex(e => e.minute > T - 60);
   const from = k > 0 ? entries[k - 1].minute : 0, lhCount = entries.slice(k).reduce((t, e) => t + e.count, 0), lhMin = hrs(from, T);
   const lastHour = k > 0 && lhMin >= 15 ? { count: lhCount, minutes: lhMin, perHour: lhCount / (lhMin / 60), ...judge(lhCount / (lhMin / 60), goal) } : null;
-  return { count, minutes, perHour, lastMin: T, goal, ...judge(perHour, goal), lastHour };
+  return { count, minutes, perHour, lastMin: T, goal, ...judge(perHour, goal), lastHour, estimated };
 }
 
 async function peopleNames(db, orgId) {
@@ -270,7 +272,9 @@ export async function tabletState(db, env, dev) {
   const clockedIn = ins.length > 0;
   const firstIn = clockedIn ? Math.min(...ins.map(x => x[0])) : null;
   const onNow = clockedIn && ins.some(x => x[1] == null);
-  const locked = !(clockedIn || opened.has(cur ? cur.personId : "none"));
+  // Counts are never blocked by the time clock (Neal, Oct 19: the clock-in machine was down and nothing could be entered).
+  // They go to whoever the plan has on the station; hours come from the plan until the punches arrive, then the clock.
+  const locked = false;
   const me = cur ? S.people.find(p => p.personId === cur.personId) : null;
   // the person's own line shows when someone else has pressed on this station today too
   const showPerson = !!(me && me.count > 0 && me.count !== S.station.count);
@@ -309,7 +313,6 @@ export async function tabletCount(db, env, dev, body) {
   const n = Math.round(+body.count);
   if (!(n >= 1 && n <= 999)) throw new HttpError(400, "Enter how many pairs (1 or more).");
   const S = await tabletState(db, env, dev);
-  if (S.locked) throw new HttpError(409, S.person ? `${S.person.name} isn't clocked in yet.` : "No one is on this station in the plan.");
   const tz = env.TIMEZONE || "America/Chicago", L = localMin(tz), id = ulid();
   await db.prepare(`INSERT INTO plan_station_tally(id, org_id, day, station_code, person_id, count, at, minute, source, device_id) VALUES(?,?,?,?,?,?,?,?,?,?)`)
     .bind(id, env.ORG_ID, L.day, dev.code, S.person ? S.person.id : null, n, nowIso(), L.min, body.source === "button" ? "button" : "tablet", dev.id).run();

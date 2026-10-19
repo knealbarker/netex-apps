@@ -196,9 +196,9 @@ export async function render(main, ctx) {
       </div>
       <p class="small ${check.c ? "c-" + check.c : "muted"}">${check.t}</p>
       ${rows.length ? raw(html`<div class="t-scroll"><table class="rt"><thead><tr><th>Station</th><th>Person</th><th class="num">Pairs</th><th class="num">Hours</th><th class="num">Per hour</th><th class="num">Goal</th></tr></thead><tbody>
-        ${T.stations.map(s => raw(html`<tr class="rt-sub"><td><b>${s.label}</b></td><td class="muted">whole station</td><td class="num"><b>${fmtN(s.station.count)}</b></td><td class="num">${s.station.minutes ? fmtH(s.station.minutes / 60) : "—"}</td>
+        ${T.stations.map(s => raw(html`<tr class="rt-sub"><td><b>${s.label}</b></td><td class="muted">whole station</td><td class="num"><b>${fmtN(s.station.count)}</b></td><td class="num">${s.station.minutes ? fmtH(s.station.minutes / 60) : "—"}${s.station.estimated ? raw(' <small class="c-warn" title="Not on the time clock yet: hours come from the plan until the punches arrive">plan</small>') : ""}</td>
           <td class="num c-${tc(s.station.color)}">${r1(s.station.perHour)}</td><td class="num">${g1(s.station.goal)}</td></tr>
-          ${s.people.filter(p => p.count > 0).map(p => raw(html`<tr><td></td><td>${p.name}</td><td class="num">${fmtN(p.count)}</td><td class="num">${p.minutes ? fmtH(p.minutes / 60) : "—"}</td>
+          ${s.people.filter(p => p.count > 0).map(p => raw(html`<tr><td></td><td>${p.name}</td><td class="num">${fmtN(p.count)}</td><td class="num">${p.minutes ? fmtH(p.minutes / 60) : "—"}${p.estimated ? raw(' <small class="c-warn" title="Not on the time clock yet: hours come from the plan until the punches arrive">plan</small>') : ""}</td>
             <td class="num c-${tc(p.color)}">${r1(p.perHour)}${p.pct != null ? raw(html` <small>${Math.round(p.pct * 100)}%</small>`) : ""}</td><td class="num">${g1(p.goal)}${p.ownGoal ? "" : raw(' <small class="muted">station</small>')}</td></tr>`))}`))}
         </tbody></table></div>`) : ""}
       ${E.length || can ? raw(html`<details class="rv-counts"${E.length && E.length <= 8 ? " open" : ""}><summary>Every count (${E.length})${can ? " · add or remove" : ""}</summary>
