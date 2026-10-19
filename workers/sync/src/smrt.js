@@ -7,6 +7,7 @@ import { addDays } from "./util.js";
 
 export const REPORT_ORDERS = "ebe7b9bb-20b7-472b-9925-2b729fe2a38b"; // TCC All Orders This Year
 export const REPORT_ITEMS = "8f6e82e5-8e64-466c-935a-35a22ee5fd01";  // TCC All Items This Year
+export const REPORT_RACKS = "ddef672f-d852-44bf-a8a0-30b8dd39d298";  // TCC Racked Last 12 Hours (every rack scan, filtered by scan time)
 const LIMIT = 5000;
 
 export class Smrt {

@@ -6,12 +6,14 @@ import PostalMime from "postal-mime";
 import { Smrt } from "./smrt.js";
 import { runBackfill, backfillProgress } from "./backfill.js";
 import { runLive, runCheck } from "./live.js";
+import { runRacks } from "./racks.js";
 import { ingestRippling } from "./rippling.js";
 import { localNow } from "./util.js";
 
 const inWindow = (hour, start, end) => (start <= end ? hour >= start && hour < end : hour >= start || hour < end);
 const weekday = day => new Date(day + "T12:00:00Z").getUTCDay(); // 0 = Sunday
 export const LIVE_CRON = "*/10 * * * *";
+export const RACKS_CRON = "*/2 * * * *";
 
 /** History loads overnight on work days, and all day on days off (nobody is using SMRT for production then). */
 export function backfillAllowed({ day, hour, workDays = [1, 2, 3, 4, 5], start = 20, end = 5 }) {
@@ -51,6 +53,13 @@ export default {
     if (!env.SMRT_KEY) { log({ job: "smrt", status: "waiting", reason: "SMRT_KEY secret not set" }); return; }
     const smrt = new Smrt({ url: env.SMRT_URL, key: env.SMRT_KEY });
 
+    // rack scans (tickets on VAN, at the stores) every 2 minutes in the live sync's hours
+    if (event.cron === RACKS_CRON) {
+      if (!liveAllowed({ day, hour, workDays: wd, start: +(env.LIVE_START_HOUR ?? 4), end: +(env.LIVE_END_HOUR ?? 21) })) return;
+      const res = await runRacks(env.DB, smrt, { orgId: env.ORG_ID, integrationId: env.SMRT_INTEGRATION_ID, tz });
+      if (res.status !== "ok" || res.scans || res.history.length) log({ job: "smrt-racks", ...res });
+      return;
+    }
     if (event.cron === LIVE_CRON) {
       if (!liveAllowed({ day, hour, workDays: wd, start: +(env.LIVE_START_HOUR ?? 4), end: +(env.LIVE_END_HOUR ?? 21) })) return;
       const res = await runLive(env.DB, smrt, { orgId: env.ORG_ID, integrationId: env.SMRT_INTEGRATION_ID, today: day });
@@ -99,10 +108,17 @@ export default {
       if (!env.SMRT_KEY) return Response.json({ status: "error", error: "The SMRT key isn't set on netex-sync." }, { status: 503 });
       let body = {}; try { body = await req.json(); } catch { /* empty */ }
       const smrt = new Smrt({ url: env.SMRT_URL, key: env.SMRT_KEY });
-      const res = await runCheck(env.DB, smrt, { orgId: env.ORG_ID, integrationId: env.SMRT_INTEGRATION_ID, today: localNow(env.TIMEZONE || "America/Chicago").day,
-        days: body.days, label: String(body.label || "").slice(0, 40) });
-      log({ job: "smrt-check", ...res, ranges: undefined });
-      return Response.json(res, { status: res.status === "error" ? 502 : 200 });
+      const label = String(body.label || "").slice(0, 40), tz = env.TIMEZONE || "America/Chicago";
+      // the newest rack scans first (tickets on VAN: a call or two, seconds), then the created days of orders still without scans
+      const racks = await runRacks(env.DB, smrt, { orgId: env.ORG_ID, integrationId: env.SMRT_INTEGRATION_ID, tz, label: `racks (check now ${label})`, history: false });
+      const days = Array.isArray(body.days) ? body.days : [];
+      const res = days.length || !body.racksOnly
+        ? await runCheck(env.DB, smrt, { orgId: env.ORG_ID, integrationId: env.SMRT_INTEGRATION_ID, today: localNow(tz).day, days, label })
+        : { status: "ok", calls: 0 };
+      const out = { ...res, racks: { status: racks.status, scans: racks.scans, error: racks.error }, status: res.status === "ok" || res.status === "recent" ? (racks.status === "ok" ? res.status : "error") : res.status,
+        error: res.error || racks.error, calls: smrt.calls };
+      log({ job: "smrt-check", ...out, ranges: undefined });
+      return Response.json(out, { status: out.status === "error" ? 502 : 200 });
     }
     return new Response("netex-sync", { status: 200 });
   },

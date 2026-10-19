@@ -161,6 +161,26 @@ await t("a piece read before rack stores were kept counts as at the store when i
   sqlite.prepare("UPDATE pos_items SET last_rack_location='VAN', last_rack_store_id=? WHERE id IN (?, ?)").run(stores["Sulphur Springs"], ids[0], ids[1]);
   sqlite.prepare("UPDATE pos_items SET last_rack_location=NULL, last_rack_store_id=NULL WHERE last_rack_location='LONG' AND id<>'xlong'").run();
 });
+await t("tickets: an order with ticket scans is listed ticket by ticket (+ its items not ready); at the store = left out", async () => {
+  const tk = (id, loc, store, hhmm = "11:30", name = "MIKE FOUNTAIN") => sqlite.prepare("INSERT INTO pos_tickets(org_id,ticket_id,order_no,letter,location,store_id,at,racked_by,customer_name,first_at) VALUES('tcc',?,?,?,?,?,?,?,?,?)")
+    .run(`${a.slice(0, 5)}-${a.slice(5)}-${id}`.replace(a.slice(0, 5) + "-" + a.slice(5), id.includes("|") ? "" : `${a.slice(0, 5)}-${a.slice(5)}`), a, id, loc, store, ts(TODAY, hhmm), "Larry N", name, ts(TODAY, "09:00"));
+  tk("A", "VAN", stores["Sulphur Springs"]); tk("B", "Bagging", stores["Sulphur Springs"], "11:00");
+  // order b: its ticket was scanned at Quitman (taken earlier) -> nothing left for this run
+  sqlite.prepare("INSERT INTO pos_tickets(org_id,ticket_id,order_no,letter,location,store_id,at,racked_by,first_at) VALUES('tcc',?,?,'A','Q12',?,?,'Kay Q',?)").run(`${b.slice(0, 5)}-${b.slice(5)}-A`, b, stores.Quitman, ts(YDAY, "12:20"), ts(YDAY, "09:00"));
+  // the W&F order still washing at Winnsboro has a ticket on VAN -> on VAN like everything else
+  sqlite.prepare("INSERT INTO pos_tickets(org_id,ticket_id,order_no,letter,location,store_id,at,racked_by,first_at) VALUES('tcc',?,?,'A','VAN',?,?,'Larry N',?)").run(`${wfWashing.slice(0, 5)}-${wfWashing.slice(5)}-A`, wfWashing, stores["Sulphur Springs"], ts(TODAY, "11:33"), ts(TODAY, "09:00"));
+  try {
+    const v = await shuttleView(db, env, { storeId: stores.Quitman });
+    const ra = v.rows.filter(r => r.orderNo === a).map(r => [r.kind, r.status, r.tag || r.item, r.reason || ""]);
+    eq(ra, [["items", "blocked", "1 item not in a ticket yet", "Not ready"], ["ticket", "blocked", `${a.slice(0, 5)}-${a.slice(5)}-B`, "Ticket at Bagging"], ["ticket", "van", `${a.slice(0, 5)}-${a.slice(5)}-A`, ""]]);
+    eq(v.rows.filter(r => r.orderNo === b).length, 0, "order b's ticket is at Quitman");
+    eq(v.rows.find(r => r.kind === "ticket").customer, "MIKE FOUNTAIN");
+    const s = v.stores.find(x => x.id === stores.Quitman);
+    ok(s.vanTickets === 1 && s.blockedTickets === 1, JSON.stringify(s));
+    const w = await shuttleView(db, env, { storeId: stores.Winnsboro });
+    eq(w.rows.find(r => r.orderNo === wfWashing).status, "van", "W&F ticket on VAN");
+  } finally { sqlite.prepare("DELETE FROM pos_tickets").run(); }
+});
 await t("API: GET /api/shuttle with a store, any signed-in role", async () => {
   const u = await call("POST", "/api/users", { body: { name: "Larry N", email: "larry@example.com", role: "viewer" } });
   ok(u.status === 201, JSON.stringify(u.body));
@@ -214,7 +234,7 @@ else {
       await p.goto(`${url}/shuttlestatus`);
       await p.waitForSelector(".sh-banner");
       const h1 = await p.textContent(".sh-banner h1");
-      ok(/Not yet — 5 pieces aren't on VAN/.test(h1), h1);
+      ok(/Not yet — 5 items aren't on VAN/.test(h1), h1);
       ok((await p.getAttribute('.sh-tab[aria-pressed="true"]', "data-id")) === stores.Quitman);
       ok(p.url().endsWith("#quitman"));
       await p.screenshot({ path: join(SHOTS, "shuttle-desktop.png"), fullPage: true });

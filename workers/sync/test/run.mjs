@@ -11,6 +11,7 @@ import { ingestDay } from "../src/ingest.js";
 import { addDays, ulid } from "../src/util.js";
 import worker, { backfillAllowed, liveAllowed, fromRippling } from "../src/index.js";
 import { runLive, dayRanges, runCheck, CHECK_REPEAT_S, shuttleCreatedDays } from "../src/live.js";
+import { runRacks, ticketParts, localStamp, RACK_HISTORY_DAYS } from "../src/racks.js";
 import { ingestRippling, parseCsv, ripTime } from "../src/rippling.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -476,6 +477,62 @@ ok("custom work days: Saturday as a work day waits", !backfillAllowed({ day: "20
     const n = S.prepare("SELECT COUNT(*) n FROM pos_items WHERE barcode='4409995' AND removed_at IS NULL").get().n + S.prepare("SELECT COUNT(*) n FROM pos_items WHERE barcode='4409995'").get().n;
     ok(`flip-flopped row (left on ${order}) heals: 2 rows, 1 active`, n === 3, n);
   }
+}
+
+// ============ rack scans: tickets ('26287-5444-A') and items, read by scan time
+{
+  const { sqlite: S, db: rdb } = freshDb();
+  const RCOLS = ["Is current","Inventory type","Location barcode","Location label","Location type","Rack","Missing from inventory","Is rerack event","ID","Price","Date of entry","Racked by","Store","Station","Customer full Name","Agent"];
+  const scans = [];
+  const scan = (id, label, at, { kind = "ticket", store = "TCC Sulphur Springs", by = "Larry N", name = "MIKE FOUNTAIN", agent = "TCC Quitman" } = {}) =>
+    scans.push(Object.fromEntries(RCOLS.map(c => [c, null])) && Object.assign(Object.fromEntries(RCOLS.map(c => [c, null])),
+      { "Inventory type": kind, "Location barcode": label, "Location label": label, "ID": id, "Date of entry": at, "Racked by": by, "Store": store, "Customer full Name": name, "Agent": agent, "Price": "2403" }));
+  const windows = [];
+  const local = v => Date.parse(/[+-]\d\d:\d\d$/.test(v) ? v : (v.length === 10 ? v + "T00:00:00" : v) + "-05:00");
+  const fetchImpl = async (url, init) => {
+    const q = JSON.parse(init.body).query;
+    const start = /startDate:"([^"]+)"/.exec(q)[1], end = /endDate:"([^"]+)"/.exec(q)[1];
+    if (q.includes("columns")) return new Response(JSON.stringify({ data: { business: { getReport: { columns: RCOLS.map(name => ({ name })) } } } }));
+    windows.push([start, end]);
+    const rows = scans.filter(r => local(r["Date of entry"]) >= local(start) && local(r["Date of entry"]) < local(end)).map(r => RCOLS.map(c => r[c]));
+    return new Response(JSON.stringify({ data: { business: { getReport: { values: rows } } } }));
+  };
+  const T = "2026-10-19", at = hm => `${T}T${hm}:00-05:00`, NOW = Date.parse(`${T}T16:00:00-05:00`);
+  ok("ticket id -> order number and letter", JSON.stringify(ticketParts("26287-5444-A")) === '{"orderNo":"262875444","letter":"A"}' && ticketParts("26292-007-B").orderNo === "26292007" && ticketParts("4405699") === null);
+  ok("local time stamp for SMRT", localStamp(NOW) === "2026-10-19T16:00:00");
+  scan("26287-5444-A", "Bagging", at("09:10"), { by: "Conveyor" });
+  scan("26287-5444-A", "VAN", at("11:33"));
+  scan("26289-6356-A", "VAN", at("10:50"), { agent: "TCC Sulphur Springs", name: "Pat  Doe" });
+  scan("26289-6356-A", "DELIVERED", at("11:36"), { store: "TCC Winnsboro", name: "Pat  Doe" });
+  scan("4405699", "11", at("11:17"), { kind: "item", by: "Conveyor" });
+  scan("26280-1111-A", "Q153", "2026-10-17T12:20:00-05:00", { store: "TCC Quitman", by: "Kay Q" }); // an earlier day (history)
+  const mk = () => new Smrt({ url: "https://x/graphql", key: "k", fetchImpl });
+  let r = await runRacks(rdb, mk(), { orgId: "tcc", integrationId: "smrt", now: NOW });
+  ok("first read: all of today, ending tomorrow", r.status === "ok" && r.scans === 5 && windows[0][0] === `${T}T00:00:00` && windows[0][1] === "2026-10-20", { r, windows });
+  ok("history: the two days before, newest first", JSON.stringify(windows.slice(1).map(w => w[0])) === '["2026-10-18","2026-10-17"]' && r.history.length === 2, windows);
+  const tk = S.prepare("SELECT t.ticket_id, t.order_no, t.letter, t.location, l.name AS store, t.at, t.first_at, t.customer_name FROM pos_tickets t LEFT JOIN core_locations l ON l.id=t.store_id ORDER BY ticket_id").all();
+  ok("tickets: latest scan wins (W&F bag on VAN, delivered one at Winnsboro)", tk.length === 3 && tk[1].ticket_id === "26287-5444-A" && tk[1].location === "VAN" && tk[1].first_at.includes("09:10") && tk[2].location === "DELIVERED" && tk[2].store === "Winnsboro" && tk[2].customer_name === "Pat Doe", tk);
+  ok("every scan kept (items too)", S.prepare("SELECT COUNT(*) n FROM pos_rack_events").get().n === 6 && S.prepare("SELECT COUNT(*) n FROM pos_rack_events WHERE kind='item'").get().n === 1);
+  // next read: from the last read less 10 minutes; an older scan arriving late doesn't move the ticket back
+  windows.length = 0;
+  scan("26287-5444-A", "Q12", at("16:05"), { store: "TCC Quitman", by: "Kay Q" });
+  scan("26289-6356-A", "VAN", at("10:51")); // duplicate-ish older scan
+  r = await runRacks(rdb, mk(), { orgId: "tcc", integrationId: "smrt", now: NOW + 8 * 60e3 });
+  ok("next read starts 10 minutes before the last one", windows[0][0] === "2026-10-19T15:50:00", windows);
+  const t2 = S.prepare("SELECT ticket_id, location FROM pos_tickets ORDER BY ticket_id").all();
+  ok("ticket moves to the store rack; an older scan doesn't move it back", t2[1].location === "Q12" && t2[2].location === "DELIVERED", t2);
+  const again = S.prepare("SELECT COUNT(*) n FROM pos_rack_events").get().n;
+  await runRacks(rdb, mk(), { orgId: "tcc", integrationId: "smrt", now: NOW + 10 * 60e3 });
+  ok("re-reading the same scans adds nothing", S.prepare("SELECT COUNT(*) n FROM pos_rack_events").get().n === again);
+  ok("racks runs are logged and never make a check wait", /^racks: /.test(S.prepare("SELECT message FROM int_sync_runs ORDER BY started_at DESC LIMIT 1").get().message));
+  // customer names fill orders without one
+  S.prepare("INSERT INTO pos_order_statuses(id,org_id,name,is_done,is_closed,is_void) VALUES('st1','tcc','ready',1,0,0)").run();
+  S.prepare("INSERT INTO pos_orders(id,org_id,smrt_order_no,status_id,smrt_created_at,row_hash) VALUES('o1','tcc','262875444','st1','2026-10-14T15:12:16-05:00','h')").run();
+  scan("26287-5444-A", "Q12", at("16:20"), { store: "TCC Quitman", name: "MIKE  FOUNTAIN" });
+  await runRacks(rdb, mk(), { orgId: "tcc", integrationId: "smrt", now: NOW + 30 * 60e3 });
+  ok("customer name from the ticket fills the order", S.prepare("SELECT customer_name c FROM pos_orders WHERE id='o1'").get().c === "MIKE FOUNTAIN");
+  const st = JSON.parse(S.prepare("SELECT value_json FROM core_settings WHERE key='smrt_racks'").get().value_json);
+  ok(`history keeps going back (${RACK_HISTORY_DAYS} days)`, st.backTo < "2026-10-17", st.backTo);
 }
 
 console.log(`\nSMRT calls made by the fake: ${fake.calls}`);

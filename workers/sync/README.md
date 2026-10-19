@@ -9,6 +9,13 @@ Background jobs for the netexcleaners.com apps (Cloudflare Worker).
   created day in the last 45 days that has any open order (alterations, repairs).
 - Stores through the same ingest as the history load, in live mode: due dates moved later open follow-ups.
 
+## Rack scans (`src/racks.js`, every 2 minutes in the live hours)
+SMRT's saved report "TCC Racked Last 12 Hours" (`ddef672f-…`) logs every rack scan of tickets (`26287-5444-A` = order
+26287-5444, ticket A) and single items, filtered by scan time. Each run reads from the last read less 10 minutes to tomorrow
+(scans already stored are skipped) into `pos_rack_events`, keeps each ticket's latest scan in `pos_tickets`, and fills
+`pos_orders.customer_name` from the ticket. Until 45 days are loaded it also reads two earlier whole days a run. Check now
+reads the newest scans first. These runs (`racks…` in int_sync_runs) never make a check or the live sync wait.
+
 ## Check now (`runCheck` in `src/live.js`, POST /check)
 The planner's Shuttle status page asks for a store's open orders to be read from SMRT right away (service binding `SYNC`;
 netex-sync has no public address). The body lists created days; they're read in 3-day calls (at most 6 ranges, plus today)

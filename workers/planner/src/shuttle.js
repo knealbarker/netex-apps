@@ -10,6 +10,12 @@
 //             store itself (SMRT's "Last racked store")
 //   on VAN    last rack location matches Settings › SMRT mapping › "Rack location for orders on the van" (VAN)
 //   held over the order's due date moved today from today-or-earlier to later (or the piece was split onto such an order)
+//
+// TICKETS (Neal, Oct 19: "call them Tickets just like SMRT does. Tickets contain Items and are subsets of Orders"): the driver
+// scans an order's tickets (its bags, 26287-5444-A) to VAN, and the stores scan them to their racks or DELIVERED. netex-sync
+// keeps each ticket's latest scan (pos_tickets, from SMRT's rack-scan report every 2 minutes). An order with tickets is listed
+// ticket by ticket: on VAN, or not (with where it is); tickets last scanned at the store, DELIVERED or RETURNED are left out.
+// Its items not ready yet get one row of their own. Orders with no ticket scans yet are listed item by item as before.
 import { loadGroups, loadRuns, } from "./settings.js";
 import { localNow, addDays, runDeadline } from "./pieces.js";
 import { HttpError } from "./util.js";
@@ -80,7 +86,56 @@ async function loadRows(db, orgId, storeIds, today) {
     const k = r.iid || "o" + r.oid; if (seen.has(k)) continue; seen.add(k); held.push(r);
   }
   await fillRackStores(db, [...due, ...held], today);
-  return { due, held };
+  const tickets = await loadTickets(db, orgId, [...new Set([...due, ...held].map(r => String(r.no)))]);
+  return { due, held, tickets };
+}
+
+/** Each order's tickets with their latest scan (Map order number -> list). */
+export async function loadTickets(db, orgId, orderNos) {
+  const out = new Map();
+  for (let i = 0; i < orderNos.length; i += 90) {
+    const part = orderNos.slice(i, i + 90);
+    const res = (await db.prepare(`SELECT t.ticket_id AS id, t.order_no AS no, t.letter, t.location, t.store_id AS storeId, l.name AS store, t.at, t.racked_by AS by, t.customer_name AS customer
+        FROM pos_tickets t LEFT JOIN core_locations l ON l.id=t.store_id WHERE t.org_id=? AND t.order_no IN (${part.map(() => "?").join(",")})
+        ORDER BY t.ticket_id`).bind(orgId, ...part).all()).results;
+    for (const t of res) (out.get(t.no) || out.set(t.no, []).get(t.no)).push(t);
+  }
+  return out;
+}
+
+/**
+ * The rows for one order: ticket by ticket when it has ticket scans (plus one row for its items not ready yet), otherwise
+ * item by item (classify). `rows` are the order's item rows from loadRows; `held` when the order was held over today.
+ */
+export function orderRows(rows, tickets, transit, today, { held = false } = {}) {
+  if (!tickets || !tickets.length) return rows.map(r => classify(r, transit, today, { held })).filter(Boolean);
+  const r0 = rows[0];
+  const base = {
+    orderId: r0.oid, order: fmtNo(r0.no), orderNo: String(r0.no), store: r0.store, link: smrtLink(r0.cid, r0.no),
+    customer: r0.cname || tickets.find(t => t.customer)?.customer || r0.customer || "", customerId: r0.customer || "",
+    due: r0.due || null, created: String(r0.created || "").slice(0, 10) || null, orderNote: r0.onote || null,
+  };
+  const out = [];
+  for (const t of tickets) {
+    if ((t.storeId && t.storeId === r0.store) || GONE_RACK.test(String(t.location || "").trim())) continue; // at the store, or back with the customer
+    const row = {
+      ...base, key: "t" + t.id, kind: "ticket", unit: "ticket", pieces: 1, line: t.letter, tag: t.id, ticket: t.id, item: `Ticket ${t.letter || ""}`.trim(),
+      customer: t.customer || base.customer, prod: "Bagged", ready: true, rack: t.location || null, rackStore: t.store || null, rackedAt: t.at || null, rackedBy: t.by || null, note: r0.onote || null,
+    };
+    if (held) { out.push({ ...row, status: "held", heldFrom: r0.heldFrom || null, noted: !!(r0.onote || rows.some(x => x.inote)), note: r0.onote || rows.find(x => x.inote)?.inote || null }); continue; }
+    if (t.location && transit.test(t.location)) { out.push({ ...row, status: "van", vanSince: String(t.at || "").slice(0, 10) < today ? String(t.at).slice(0, 10) : null }); continue; }
+    out.push({ ...row, status: "blocked", reason: t.location ? `Ticket at ${t.location}` : "Ticket not scanned" });
+  }
+  // items not ready yet (not in a ticket): one row for the order
+  const doneOrder = ASSEMBLED_ORDER.test(String(r0.ostatus || "").replace(/[\s_-]/g, ""));
+  const notReady = doneOrder ? [] : rows.filter(r => r.iid && !r.iret && !r.isAsm && !r.asm && !/^customer$/i.test(String(r.istatus || "").trim()));
+  if (notReady.length) {
+    const what = [...new Set(notReady.map(r => `${r.istatus ? r.istatus[0].toUpperCase() + r.istatus.slice(1) : "Not scanned"}${r.lot && !/^completed?$/i.test(String(r.lot).trim()) ? ` · ${String(r.lot).toLowerCase()}` : ""}`))].join(", ");
+    const row = { ...base, key: "n" + r0.oid, kind: "items", unit: "item", pieces: notReady.length, tag: "", item: `${notReady.length} item${notReady.length === 1 ? "" : "s"} not in a ticket yet`,
+      prod: what, ready: false, rack: null, note: r0.onote || null };
+    out.push(held ? { ...row, status: "held", heldFrom: r0.heldFrom || null, noted: !!(r0.onote || notReady.some(x => x.inote)) } : { ...row, status: "blocked", reason: "Not ready" });
+  }
+  return out;
 }
 
 /**
@@ -162,13 +217,13 @@ export function classify(r, transit, today, { held = false } = {}) {
 
 const ORDER = { blocked: 0, held: 1, wf: 2, van: 3 };
 export const sortRows = rows => rows.sort((a, b) => (ORDER[a.status] - ORDER[b.status]) || (a.status === "held" ? (a.noted - b.noted) : 0)
-  || String(a.orderNo).localeCompare(String(b.orderNo)) || (a.line || 0) - (b.line || 0));
+  || String(a.orderNo).localeCompare(String(b.orderNo)) || String(a.line ?? "").localeCompare(String(b.line ?? ""), undefined, { numeric: true }));
 
 function summarize(rows) {
-  const s = { pieces: 0, van: 0, blocked: 0, notReady: 0, held: 0, heldNoNote: 0, vanEarlier: 0, wf: 0 };
+  const s = { pieces: 0, van: 0, blocked: 0, notReady: 0, held: 0, heldNoNote: 0, vanEarlier: 0, wf: 0, vanTickets: 0, blockedTickets: 0 };
   for (const r of rows) {
-    if (r.status === "van") { s.van++; s.pieces++; if (r.vanSince) s.vanEarlier++; }
-    else if (r.status === "blocked") { s.blocked += r.pieces; s.pieces += r.pieces; if (!r.ready) s.notReady += r.pieces; }
+    if (r.status === "van") { s.van++; s.pieces++; if (r.vanSince) s.vanEarlier++; if (r.kind === "ticket") s.vanTickets++; }
+    else if (r.status === "blocked") { s.blocked += r.pieces; s.pieces += r.pieces; if (!r.ready) s.notReady += r.pieces; if (r.kind === "ticket") s.blockedTickets++; }
     else if (r.status === "wf") { s.wf++; s.pieces++; }
     else if (r.status === "held") { s.held += r.pieces; if (!r.noted) s.heldNoNote += r.pieces; }
   }
@@ -179,10 +234,19 @@ function summarize(rows) {
 
 async function freshness(db) {
   const last = await db.prepare(`SELECT finished_at AS at, message FROM int_sync_runs WHERE integration_id='smrt' AND status='ok'
-      AND (message LIKE 'live%' OR message LIKE 'check now%') ORDER BY finished_at DESC LIMIT 1`).first();
+      AND (message LIKE 'live%' OR message LIKE 'check now%' OR message LIKE 'racks%') ORDER BY finished_at DESC LIMIT 1`).first();
   const running = await db.prepare(`SELECT started_at AS at, message FROM int_sync_runs WHERE integration_id='smrt' AND status='running' AND started_at>=?
       ORDER BY started_at DESC LIMIT 1`).bind(new Date(Date.now() - 4 * 60e3).toISOString()).first();
-  return { asOf: last ? last.at : null, how: last ? (/^check/.test(last.message) ? "check" : "sync") : null, checking: running && /^check/.test(running.message) ? running.at : null };
+  return { asOf: last ? last.at : null, how: last ? (/^(check|racks \(check)/.test(last.message) ? "check" : /^racks/.test(last.message) ? "scans" : "sync") : null, checking: running && /^(check|racks \(check)/.test(running.message) ? running.at : null };
+}
+
+/** All rows: each order's item rows grouped and turned into ticket / item rows. */
+export function buildRows(due, held, tickets, transit, today) {
+  const byOrder = (rows) => { const m = new Map(); for (const r of rows) (m.get(r.oid) || m.set(r.oid, []).get(r.oid)).push(r); return m; };
+  const out = [];
+  for (const [, rows] of byOrder(due)) out.push(...orderRows(rows, tickets.get(String(rows[0].no)), transit, today));
+  for (const [, rows] of byOrder(held)) out.push(...orderRows(rows, tickets.get(String(rows[0].no)), transit, today, { held: true }));
+  return out;
 }
 
 /** Every shuttle store's totals, and the full list for one store (`storeId`). */
@@ -193,11 +257,8 @@ export async function shuttleView(db, env, { storeId = null, at = new Date() } =
   const transit = new RegExp(`^\\s*${transitName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\s*$`, "i");
   const stores = await shuttleStores(db, env.ORG_ID);
   if (storeId && !stores.some(s => s.id === storeId)) throw new HttpError(404, "That store isn't on a shuttle run (Settings › Shuttle runs).");
-  const { due, held } = await loadRows(db, env.ORG_ID, stores.map(s => s.id), today);
-  const rowsOf = id => sortRows([
-    ...due.filter(r => r.store === id).map(r => classify(r, transit, today)).filter(Boolean),
-    ...held.filter(r => r.store === id).map(r => classify(r, transit, today, { held: true })).filter(Boolean),
-  ]);
+  const { due, held, tickets } = await loadRows(db, env.ORG_ID, stores.map(s => s.id), today);
+  const rowsOf = id => sortRows(buildRows(due, held, tickets, transit, today).filter(r => r.store === id));
   const out = stores.map(s => ({ ...s, ...summarize(rowsOf(s.id)) }));
   const fresh = await freshness(db);
   const res = { day: today, now: at.toISOString(), transitRack: transitName, lookbackDays: LOOKBACK_DAYS, stores: out, ...fresh, sync: !!env.SYNC };
@@ -217,10 +278,11 @@ export async function checkNow(db, env, me, storeId, { at = new Date() } = {}) {
   const groups = await loadGroups(db, env.ORG_ID);
   const transitName = String(groups.smrt.transitRack || "Van").trim() || "Van";
   const transit = new RegExp(`^\\s*${transitName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\s*$`, "i");
-  const { due, held } = await loadRows(db, env.ORG_ID, [store.id], today);
-  const open = [...due.map(r => [r, classify(r, transit, today)]), ...held.map(r => [r, classify(r, transit, today, { held: true })])]
-    .filter(([, c]) => c && (c.status === "blocked" || (c.status === "held" && !c.noted)));
-  const days = [...new Set(open.map(([r]) => String(r.created || "").slice(0, 10)).filter(Boolean))].sort();
+  // ticket scans are read first by netex-sync (seconds); only orders still holding up the run without ticket scans need their
+  // created days re-read (items not ready, orders not detailed), plus today
+  const { due, held, tickets } = await loadRows(db, env.ORG_ID, [store.id], today);
+  const open = buildRows(due, held, tickets, transit, today).filter(c => c.kind !== "ticket" && (c.status === "blocked" || (c.status === "held" && !c.noted)));
+  const days = [...new Set(open.map(c => c.created).filter(Boolean))].sort();
   let result;
   try {
     const r = await env.SYNC.fetch("https://netex-sync/check", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ days, label: store.name }) });

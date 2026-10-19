@@ -4,9 +4,10 @@ workers_dev = false   # no public *.workers.dev address; nothing here is reachab
 compatibility_date = "2026-09-01"
 account_id = "61c6ba95bfea0222857214634869b20a"
 
-# */10 = live SMRT sync (work days, LIVE_START_HOUR-LIVE_END_HOUR local); */15 = history (overnight on work days, all day on days off)
+# */10 = live SMRT sync (work days, LIVE_START_HOUR-LIVE_END_HOUR local); */15 = history (overnight on work days, all day on days off);
+# */2 = rack scans (tickets on VAN / at the stores), live sync hours
 [triggers]
-crons = ["*/10 * * * *", "*/15 * * * *"]
+crons = ["*/10 * * * *", "*/15 * * * *", "*/2 * * * *"]
 
 [[d1_databases]]
 binding = "DB"

@@ -89,8 +89,9 @@ export async function runningSync(db, integrationId, { onlyChecks = false, now =
   // runs that died partway (the Worker was stopped) never finish: close them so the log doesn't say "running" forever
   await db.prepare("UPDATE int_sync_runs SET status='error', finished_at=?, message=message || ' — stopped before it finished' WHERE integration_id=? AND status='running' AND started_at<?")
     .bind(new Date(now).toISOString(), integrationId, new Date(now - 15 * 60e3).toISOString()).run();
+  // the 2-minute rack-scan reads write their own tables and take seconds: they never make anyone wait
   return db.prepare(`SELECT id, started_at, message FROM int_sync_runs WHERE integration_id=? AND status='running' AND started_at>=?
-      ${onlyChecks ? "AND message LIKE 'check now%'" : ""} ORDER BY started_at DESC LIMIT 1`).bind(integrationId, since).first();
+      AND message NOT LIKE 'racks%' ${onlyChecks ? "AND message LIKE 'check now%'" : ""} ORDER BY started_at DESC LIMIT 1`).bind(integrationId, since).first();
 }
 
 export async function runLive(db, smrt, { orgId, integrationId, today, reports = {} }) {

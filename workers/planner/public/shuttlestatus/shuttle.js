@@ -78,11 +78,13 @@ function showError(msg) {
 
 // ---------- rendering
 const statusOf = s => (s.nothing ? "idle" : s.ok ? "ok" : "stop");
+// "3 tickets and 2 items" (tickets are counted as tickets; items not in a ticket yet as items)
+const units = (total, tickets = 0) => [tickets ? n(tickets, "ticket") : "", total - tickets ? n(total - tickets, "item") : ""].filter(Boolean).join(" and ") || "0";
 function storeLine(s) {
   if (s.nothing) return "Nothing due";
-  if (s.ok) return `OK to leave · ${s.van} on VAN${s.wf ? ` · ${s.wf} W&F to check` : ""}`;
+  if (s.ok) return `OK to leave · ${units(s.van, s.vanTickets)} on VAN${s.wf ? ` · ${s.wf} W&F to check` : ""}`;
   const parts = [];
-  if (s.blocked) parts.push(`${s.blocked} not on VAN`);
+  if (s.blocked) parts.push(`${units(s.blocked, s.blockedTickets)} not on VAN`);
   if (s.heldNoNote) parts.push(`${s.heldNoNote} need${s.heldNoNote === 1 ? "s" : ""} a note`);
   return parts.join(" · ");
 }
@@ -117,25 +119,25 @@ function render() {
 function banner(s, stale) {
   const st = statusOf(s);
   let head, sub = [];
-  if (st === "idle") { head = `Nothing due at ${s.name} today`; sub.push("No open pieces due today or earlier."); }
+  if (st === "idle") { head = `Nothing due at ${s.name} today`; sub.push("No open tickets or items due today or earlier."); }
   else if (st === "ok") {
     head = `OK to leave for ${s.name}`;
-    if (s.van) sub.push(`All ${n(s.van, "piece")} due are on ${data.transitRack.toUpperCase()}.`);
-    if (s.held) sub.push(`${n(s.held, "piece")} held over, with a note.`);
+    if (s.van) sub.push(`All ${units(s.van, s.vanTickets)} due ${s.van === 1 ? "is" : "are"} on ${data.transitRack.toUpperCase()}.`);
+    if (s.held) sub.push(`${s.held} held over, with a note.`);
     if (s.wf) sub.push(`Grab ${n(s.wf, "Wash & Fold bag")}: SMRT doesn't show where they're racked, so check by hand.`);
   } else {
-    head = s.blocked ? `Not yet — ${n(s.blocked, "piece")} ${s.blocked === 1 ? "isn't" : "aren't"} on ${data.transitRack.toUpperCase()}` : `Not yet — ${n(s.heldNoNote, "held-over piece")} need${s.heldNoNote === 1 ? "s" : ""} a note`;
+    head = s.blocked ? `Not yet — ${units(s.blocked, s.blockedTickets)} ${s.blocked === 1 ? "isn't" : "aren't"} on ${data.transitRack.toUpperCase()}` : `Not yet — ${s.heldNoNote} held over without a note`;
     if (s.blocked) {
       const ready = s.blocked - s.notReady;
-      if (s.notReady) sub.push(`${s.notReady} not ready`);
-      if (ready) sub.push(`${ready} ready but not racked to ${data.transitRack.toUpperCase()}`);
+      if (ready) sub.push(`${units(ready, s.blockedTickets)} ready but not on ${data.transitRack.toUpperCase()}`);
+      if (s.notReady) sub.push(`${n(s.notReady, "item")} not ready`);
     }
-    if (s.blocked && s.heldNoNote) sub.push(`${n(s.heldNoNote, "held-over piece")} without a note`);
+    if (s.blocked && s.heldNoNote) sub.push(`${s.heldNoNote} held over without a note`);
   }
   const checkLabel = checking ? "Checking SMRT…" : "Check now";
-  const hint = checking ? "Reading this store's orders from SMRT. This takes up to a minute."
+  const hint = checking ? "Reading the newest scans from SMRT…"
     : stale ? `This is SMRT as of ${ago(data.asOf)}. Press Check now before you leave.`
-      : data.how === "check" ? `Checked SMRT ${ago(data.asOf)}.` : `SMRT copied ${ago(data.asOf)} (every 10 minutes on work days).`;
+      : data.how === "check" ? `Checked SMRT ${ago(data.asOf)}.` : data.how === "scans" ? `Scans read ${ago(data.asOf)} (every 2 minutes on work days).` : `SMRT copied ${ago(data.asOf)}.`;
   return html`<div class="sh-banner ${st}" role="status">
       <span class="sh-banner-ico">${raw(ICON[st])}</span>
       <div class="sh-banner-text"><h1>${head}</h1>${sub.length ? raw(html`<p>${sub.join(" · ")}</p>`) : ""}
@@ -163,12 +165,12 @@ const RANK = { blocked: 0, held: 1, wf: 2, van: 3 };
 const COLS = [
   { key: "status", label: "Status", val: r => RANK[r.status] * 10 + (r.status === "held" && !r.noted ? 0 : 1) },
   { key: "order", label: "Order", val: r => r.orderNo },
-  { key: "rack", label: "Rack", val: r => r.rack || "" },
-  { key: "item", label: "Item", val: r => r.item },
-  { key: "tag", label: "Tag", val: r => r.tag || "" },
+  { key: "rack", label: "Location", val: r => r.rack || "" },
+  { key: "item", label: "Items", val: r => r.item },
+  { key: "tag", label: "Ticket / tag", val: r => r.tag || "" },
   { key: "prod", label: "Production", val: r => r.prod },
   { key: "customer", label: "Customer", val: r => r.customer },
-  { key: "racked", label: "Racked", val: r => r.rackedAt || "" },
+  { key: "racked", label: "Scanned", val: r => r.rackedAt || "" },
   { key: "due", label: "Due", val: r => r.due || "" },
   { key: "note", label: "Note", val: r => r.note || "" },
 ];
@@ -217,7 +219,7 @@ function table(s) {
     </tr>`;
   }).join("");
   return `<div class="sh-table-wrap card"><table class="sh-table"><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table></div>
-    <p class="sh-foot">${html`Orders due at ${s.name} today or up to ${data.lookbackDays} days before. Left out: pieces already racked at ${s.name}, back with the customer, or on route deliveries. To hold a piece over, move its order's due date in SMRT (split the order first if only some pieces stay) and add a note on the piece saying why.`}</p>`;
+    <p class="sh-foot">${html`Orders due at ${s.name} today or up to ${data.lookbackDays} days before, ticket by ticket (an order's items are listed one by one until its tickets are scanned). Left out: tickets and items already at ${s.name} or DELIVERED, back with the customer, or on route deliveries. To hold something over, move its order's due date in SMRT (split the order first if only part stays) and add a note saying why.`}</p>`;
 }
 
 // ---------- start
