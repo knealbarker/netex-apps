@@ -73,6 +73,8 @@ order(YDAY, { due: ts(TMRW, "12:00"), pieces: [{}] });                          
 order(addDays(TODAY, -50), { due: ts(addDays(TODAY, -49), "12:00"), pieces: [{}] });                                                                 // too old
 // Greenville: all on the van (one taken early, already at the store)
 order(YDAY, { due: ts(TODAY, "14:00"), store: "TCC Greenville", pieces: [VAN(), VAN(), { status: "racked", asm: ts(YDAY, "09:00"), rack: "G LONG", rackStore: "TCC Greenville" }] });
+// Greenville: also one order held over without a note (needs a note, but doesn't hold the van: Neal, Oct 19)
+const gG = order(YDAY, { due: ts(TODAY, "14:00"), store: "TCC Greenville", pieces: [{ lot: "Washing" }] });
 // Winnsboro: Wash & Fold orders (SMRT's items report never lists the bag): one ready, one still washing
 const wfReady = order(YDAY, { due: ts(TODAY, "11:30"), store: "TCC Winnsboro", type: "Wash & Fold", status: "assembled", count: 1 });
 const wfWashing = order(YDAY, { due: ts(TODAY, "11:30"), store: "TCC Winnsboro", type: "Wash & Fold", status: "processing", count: 1 });
@@ -82,7 +84,7 @@ order(YDAY, { due: ts(TODAY, "12:00"), store: "TCC Winnsboro", status: "deleted"
 const load = async (mode = "live") => { for (const [day, d] of [...days].sort()) await ingestDay(db, { orgId: "tcc", runId: null, mode, day }, d.orders, d.items); };
 await load("backfill");
 // later: g and h moved to tomorrow in SMRT
-for (const d of days.values()) for (const o of d.orders) if (o.ID === g || o.ID === h) o["Due date"] = ts(TMRW, "12:00");
+for (const d of days.values()) for (const o of d.orders) if (o.ID === g || o.ID === h || o.ID === gG) o["Due date"] = ts(TMRW, "12:00");
 await load("live");
 const stores = Object.fromEntries((await db.prepare("SELECT name, id FROM core_locations").all()).results.map(r => [r.name, r.id]));
 
@@ -126,7 +128,7 @@ await t("SMRT link opens the order", async () => {
 await t("Greenville is OK to leave; Emory has nothing due; a deleted order doesn't count", async () => {
   const v = await shuttleView(db, env, {});
   const s = Object.fromEntries(v.stores.map(x => [x.name, x]));
-  eq([s.Greenville.ok, s.Greenville.van, s.Greenville.pieces], [true, 2, 2]);
+  eq([s.Greenville.ok, s.Greenville.van, s.Greenville.heldNoNote], [true, 2, 1], "a held-over order without a note doesn't hold the van");
   eq(s.Emory.nothing, true);
 });
 await t("Wash & Fold: a ready bag is listed to check by hand and doesn't hold up the run; one not ready does", async () => {
@@ -185,9 +187,10 @@ await t("API: GET /api/shuttle with a store, any signed-in role", async () => {
   const u = await call("POST", "/api/users", { body: { name: "Larry N", email: "larry@example.com", role: "viewer" } });
   ok(u.status === 201, JSON.stringify(u.body));
   const r = await call("GET", `/api/shuttle?store=${stores.Greenville}`, { as: "larry@example.com" });
-  eq(r.status, 200); eq(r.body.rows.length, 1); eq(r.body.rows[0].item, "2 items, no ticket yet"); ok(r.body.asOf && r.body.sync === true);
+  const vanRow = r.body.rows.find(x => x.status === "van");
+  eq(r.status, 200); eq(r.body.rows.map(x => x.status), ["held", "van"]); eq(vanRow.item, "2 items, no ticket yet"); ok(r.body.asOf && r.body.sync === true);
   eq((await call("GET", `/api/shuttle?store=${stores["Sulphur Springs"]}`)).status, 404, "not a shuttle store");
-  ok(/^Pat Customer\d+$/.test(r.body.rows[0].customer), "name from the report's Customer Name column");
+  ok(/^Pat Customer\d+$/.test(vanRow.customer), "name from the report's Customer Name column");
   // an order with no name gets it from an item scan of one of its tags
   const tag = sqlite.prepare("SELECT i.barcode FROM pos_items i JOIN pos_orders o ON o.id=i.order_id WHERE o.smrt_order_no=? LIMIT 1").get(a).barcode;
   sqlite.prepare("INSERT INTO pos_rack_events(id,org_id,kind,ref,location,location_barcode,at,customer_name) VALUES('ev1','tcc','item',?,'11','11',?,'LANCE BANKS')").run(tag, ts(TODAY, "09:00"));
@@ -267,6 +270,10 @@ else {
     await t("page: Greenville shows OK to leave", async () => {
       await p.click(`.sh-tab[data-id="${stores.Greenville}"]`);
       await p.waitForFunction(() => /OK to leave for Greenville/.test(document.querySelector(".sh-banner h1")?.textContent || ""));
+      ok(await p.$(`.sh-tab.warn[data-id="${stores.Greenville}"]`), "yellow tile: needs a note");
+      ok(await p.$(".sh-banner.warn"), "yellow banner");
+      ok(/1 needs a note/.test(await p.textContent(`.sh-tab[data-id="${stores.Greenville}"] em`)));
+      ok(/1 held over needs a note in SMRT/.test(await p.textContent(".sh-banner p")));
       await p.screenshot({ path: join(SHOTS, "shuttle-ok.png"), fullPage: true });
     });
     await t("page: the planner's tabs link both ways (Shuttles tab in the planner, Plan tab here)", async () => {

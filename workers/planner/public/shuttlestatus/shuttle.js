@@ -26,6 +26,7 @@ const ICON = {
   stop: '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7.5v5.5M12 16.5v.01"/></svg>',
   idle: '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M8 12h8"/></svg>',
   sync: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 11a8 8 0 0 0-14.3-4.6L4 8M4 4v4h4M4 13a8 8 0 0 0 14.3 4.6L20 16m0 4v-4h-4"/></svg>',
+  warn: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3.5 2.8 19.5h18.4z"/><path d="M12 10v4M12 17v.01"/></svg>',
   out: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 4h6v6M20 4l-9 9M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5"/></svg>',
 };
 
@@ -77,12 +78,13 @@ function showError(msg) {
 }
 
 // ---------- rendering
-const statusOf = s => (s.nothing ? "idle" : s.ok ? "ok" : "stop");
+// ok = all on VAN; warn = OK to leave, but something still needs doing (a held-over order without a note); stop = not yet
+const statusOf = s => (s.nothing ? "idle" : !s.ok ? "stop" : s.heldNoNote ? "warn" : "ok");
 // "3 tickets and 2 items" (tickets are counted as tickets; items not in a ticket yet as items)
 const units = (total, tickets = 0) => [tickets ? n(tickets, "ticket") : "", total - tickets ? n(total - tickets, "item") : ""].filter(Boolean).join(" and ") || "0";
 function storeLine(s) {
   if (s.nothing) return "Nothing due";
-  if (s.ok) return `OK to leave · ${units(s.van, s.vanTickets)} on VAN${s.wf ? ` · ${s.wf} W&F to check` : ""}`;
+  if (s.ok) return `OK to leave · ${s.heldNoNote ? `${s.heldNoNote} need${s.heldNoNote === 1 ? "s" : ""} a note` : `${units(s.van, s.vanTickets)} on VAN`}${s.wf ? ` · ${s.wf} W&F to check` : ""}`;
   const parts = [];
   if (s.blocked) parts.push(`${units(s.blocked, s.blockedTickets)} not on VAN`);
   if (s.heldNoNote) parts.push(`${s.heldNoNote} need${s.heldNoNote === 1 ? "s" : ""} a note`);
@@ -120,13 +122,14 @@ function banner(s, stale) {
   const st = statusOf(s);
   let head, sub = [];
   if (st === "idle") { head = `Nothing due at ${s.name} today`; sub.push("No open tickets or items due today or earlier."); }
-  else if (st === "ok") {
+  else if (st === "ok" || st === "warn") {
     head = `OK to leave for ${s.name}`;
+    if (s.heldNoNote) sub.push(`${s.heldNoNote} held over ${s.heldNoNote === 1 ? "needs" : "need"} a note in SMRT`);
     if (s.van) sub.push(`All ${units(s.van, s.vanTickets)} due ${s.van === 1 ? "is" : "are"} on ${data.transitRack.toUpperCase()}.`);
-    if (s.held) sub.push(`${s.held} held over, with a note.`);
+    if (s.held - s.heldNoNote) sub.push(`${s.held - s.heldNoNote} held over, with a note.`);
     if (s.wf) sub.push(`Grab ${n(s.wf, "Wash & Fold bag")}: SMRT doesn't show where they're racked, so check by hand.`);
   } else {
-    head = s.blocked ? `Not yet — ${units(s.blocked, s.blockedTickets)} ${s.blocked === 1 ? "isn't" : "aren't"} on ${data.transitRack.toUpperCase()}` : `Not yet — ${s.heldNoNote} held over without a note`;
+    head = `Not yet — ${units(s.blocked, s.blockedTickets)} ${s.blocked === 1 ? "isn't" : "aren't"} on ${data.transitRack.toUpperCase()}`;
     if (s.blocked) {
       const ready = s.blocked - s.notReady;
       if (ready) sub.push(`${units(ready, s.blockedTickets)} ready but not on ${data.transitRack.toUpperCase()}`);

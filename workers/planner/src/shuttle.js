@@ -271,7 +271,9 @@ function summarize(rows) {
     else if (r.status === "wf") { s.wf++; s.pieces++; }
     else if (r.status === "held") { s.held += r.pieces; if (!r.noted) s.heldNoNote += r.pieces; }
   }
-  s.ok = s.blocked === 0 && s.heldNoNote === 0;
+  // OK to leave = everything due is on VAN. A held-over order without a note still needs one, but it doesn't hold
+  // the van (Neal, Oct 19): the page shows it in yellow, not red.
+  s.ok = s.blocked === 0;
   s.nothing = s.pieces === 0 && s.held === 0;
   return s;
 }
