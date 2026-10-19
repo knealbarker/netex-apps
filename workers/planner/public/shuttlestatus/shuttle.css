@@ -56,7 +56,8 @@ body.sh { min-height: 100vh; }
 .sh-table td small { display: block; color: var(--muted); font-size: 12px; }
 .sh-table tr.r-blocked td { background: color-mix(in srgb, var(--bad) 6%, transparent); }
 .sh-table tr.r-blocked td.st { box-shadow: 3px 0 0 var(--bad) inset; }
-.sh-table tr.r-held td.st { box-shadow: 3px 0 0 var(--warn) inset; }
+.sh-table tr.r-held td.st, .sh-table tr.r-wf td.st { box-shadow: 3px 0 0 var(--warn) inset; }
+.sh-counts:has(> :nth-child(4)) { grid-template-columns: repeat(4, 1fr); }
 .sh-table tr.r-van td { color: var(--muted); }
 .sh-table tr.r-van td b, .sh-table tr.r-van td.mono { color: var(--text); }
 .sh-table .mono { font-family: var(--mono); font-size: 13px; white-space: nowrap; }

@@ -44,7 +44,7 @@ export async function shuttleStores(db, orgId) {
 }
 
 const COLS = `o.id AS oid, o.smrt_order_no AS no, o.return_location_id AS store, o.due_at AS due, o.piece_count AS opieces, o.customer_ref AS customer, o.customer_name AS cname,
-  o.customer_internal_id AS cid, o.notes AS onote, o.smrt_created_at AS created, s.name AS ostatus,
+  o.customer_internal_id AS cid, o.order_type AS otype, o.notes AS onote, o.smrt_created_at AS created, s.name AS ostatus,
   i.id AS iid, i.line_no AS line, i.barcode, t.name AS type, i.colors, i.brand, d.name AS dep, st.name AS istatus, COALESCE(st.is_assembled,0) AS isAsm,
   i.assembled_at AS asm, i.lot_status AS lot, i.last_rack_location AS rack, i.last_rack_store_id AS rackStoreId, rs.name AS rackStore, i.racked_at AS rackedAt,
   ps.smrt_name AS rackedBy, i.notes AS inote, i.returned_at AS iret`;
@@ -119,6 +119,7 @@ export async function fillRackStores(db, rows, today) {
   }
 }
 
+const WASH_FOLD = /wash\s*(&|and)?\s*fold/i;
 const ASSEMBLED_ORDER = /^(assembled|racked|ready|complete|completed)$/i;
 const GONE_RACK = /^(returned|delivered)$/i;
 
@@ -128,6 +129,15 @@ export function classify(r, transit, today, { held = false } = {}) {
     orderId: r.oid, order: fmtNo(r.no), orderNo: String(r.no), store: r.store, link: smrtLink(r.cid, r.no), customer: r.cname || r.customer || "", customerId: r.customer || "",
     due: r.due || null, created: String(r.created || "").slice(0, 10) || null, orderNote: r.onote || null,
   };
+  // Wash & Fold: SMRT's items report never lists the bag (Neal, Oct 19: 26287-5444 was on the van but showed "not detailed";
+  // every bag also shares tag 90000000), so its rack can't be seen. A ready bag is listed for the driver to check by hand
+  // and doesn't hold up the run; one not ready yet does.
+  if (!r.iid && WASH_FOLD.test(String(r.otype || ""))) {
+    const ready = ASSEMBLED_ORDER.test(String(r.ostatus || "").replace(/[\s_-]/g, ""));
+    const wf = { ...base, key: "o" + r.oid, kind: "wf", pieces: 1, item: "Wash & Fold bag", prod: ready ? "Ready" : (r.ostatus ? r.ostatus[0].toUpperCase() + r.ostatus.slice(1) : "Not ready"), ready, rack: null, note: r.onote || null };
+    if (held) return { ...wf, status: "held", heldFrom: r.heldFrom || null, noted: !!r.onote };
+    return ready ? { ...wf, status: "wf", reason: "Check by hand: SMRT doesn't report where W&F bags are racked" } : { ...wf, status: "blocked", reason: "Wash & Fold not ready" };
+  }
   if (!r.iid) { // the order hasn't been detailed: SMRT only knows how many pieces
     if (held) return { ...base, key: "o" + r.oid, kind: "order", status: "held", pieces: r.opieces || 0, item: `${r.opieces || "?"} pieces, not detailed`, prod: "Not detailed", rack: null,
       heldFrom: r.heldFrom || null, noted: !!r.onote, note: r.onote || null };
@@ -150,15 +160,16 @@ export function classify(r, transit, today, { held = false } = {}) {
   return { ...p, status: "blocked", reason: !ready ? "Not ready" : r.rack ? `Ready, on ${r.rack}` : "Ready, not racked" };
 }
 
-const ORDER = { blocked: 0, held: 1, van: 2 };
+const ORDER = { blocked: 0, held: 1, wf: 2, van: 3 };
 export const sortRows = rows => rows.sort((a, b) => (ORDER[a.status] - ORDER[b.status]) || (a.status === "held" ? (a.noted - b.noted) : 0)
   || String(a.orderNo).localeCompare(String(b.orderNo)) || (a.line || 0) - (b.line || 0));
 
 function summarize(rows) {
-  const s = { pieces: 0, van: 0, blocked: 0, notReady: 0, held: 0, heldNoNote: 0, vanEarlier: 0 };
+  const s = { pieces: 0, van: 0, blocked: 0, notReady: 0, held: 0, heldNoNote: 0, vanEarlier: 0, wf: 0 };
   for (const r of rows) {
     if (r.status === "van") { s.van++; s.pieces++; if (r.vanSince) s.vanEarlier++; }
     else if (r.status === "blocked") { s.blocked += r.pieces; s.pieces += r.pieces; if (!r.ready) s.notReady += r.pieces; }
+    else if (r.status === "wf") { s.wf++; s.pieces++; }
     else if (r.status === "held") { s.held += r.pieces; if (!r.noted) s.heldNoNote += r.pieces; }
   }
   s.ok = s.blocked === 0 && s.heldNoNote === 0;

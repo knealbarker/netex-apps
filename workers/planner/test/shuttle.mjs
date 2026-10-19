@@ -48,11 +48,11 @@ await db.batch(await runsStmts(db, "tcc", null, [
 // ---- SMRT rows (the real column names), one created day per group
 const days = new Map();
 let n = 0;
-function order(created, { due, store = "TCC Quitman", status = "processing", pieces = [], count, route = false, picked = null, note = null }) {
+function order(created, { due, store = "TCC Quitman", status = "processing", pieces = [], count, route = false, picked = null, note = null, type = "Dry Cleaning" }) {
   const id = `2629${String(++n).padStart(5, "0")}`;
   const d = days.get(created) || days.set(created, { orders: [], items: [] }).get(created);
   d.orders.push({ "ID": id, "Customer Id": "C" + n, "Customer Name": store === "TCC Greenville" ? `Pat Customer${n}` : null, "Status": status, "Due date": due, "Created": ts(created), "Piece Count": String(count ?? pieces.length), "Return Location": store, "Agent": store,
-    "Is Route Delivery": route ? "true" : "", "Financial department(s)": "Dry Cleaning Tops" });
+    "Is Route Delivery": route ? "true" : "", "Order Type": type, "Financial department(s)": type === "Wash & Fold" ? "Wash & Fold" : "Dry Cleaning Tops" });
   pieces.forEach((p, i) => d.items.push({ "Sale Id": id, "Customer Internal ID": "cust" + n, "Barcode": `${id}${i}`, "Item Status": p.status || "detailed", "Financial department": "Dry Cleaning Tops",
     "Item Type": p.type || "Shirt L", "Colors": p.colors || "blue", "Created": ts(created), "Item assembly date": p.asm || null, "Lot status": p.lot || null, "Picked up date": picked,
     "Item return date": p.ret || null, "Last Rack Location": p.rack || null, "Last racked store": p.rackStore || null, "Last racked on date": p.rackedAt || null,
@@ -73,6 +73,9 @@ order(YDAY, { due: ts(TMRW, "12:00"), pieces: [{}] });                          
 order(addDays(TODAY, -50), { due: ts(addDays(TODAY, -49), "12:00"), pieces: [{}] });                                                                 // too old
 // Greenville: all on the van (one taken early, already at the store)
 order(YDAY, { due: ts(TODAY, "14:00"), store: "TCC Greenville", pieces: [VAN(), VAN(), { status: "racked", asm: ts(YDAY, "09:00"), rack: "G LONG", rackStore: "TCC Greenville" }] });
+// Winnsboro: Wash & Fold orders (SMRT's items report never lists the bag): one ready, one still washing
+const wfReady = order(YDAY, { due: ts(TODAY, "11:30"), store: "TCC Winnsboro", type: "Wash & Fold", status: "assembled", count: 1 });
+const wfWashing = order(YDAY, { due: ts(TODAY, "11:30"), store: "TCC Winnsboro", type: "Wash & Fold", status: "processing", count: 1 });
 // Emory: nothing due; Winnsboro: one deleted order
 order(YDAY, { due: ts(TODAY, "12:00"), store: "TCC Winnsboro", status: "deleted", pieces: [{}] });
 
@@ -124,7 +127,17 @@ await t("Greenville is OK to leave; Emory has nothing due; a deleted order doesn
   const v = await shuttleView(db, env, {});
   const s = Object.fromEntries(v.stores.map(x => [x.name, x]));
   eq([s.Greenville.ok, s.Greenville.van, s.Greenville.pieces], [true, 2, 2]);
-  eq([s.Emory.nothing, s.Winnsboro.nothing], [true, true]);
+  eq(s.Emory.nothing, true);
+});
+await t("Wash & Fold: a ready bag is listed to check by hand and doesn't hold up the run; one not ready does", async () => {
+  const v = await shuttleView(db, env, { storeId: stores.Winnsboro });
+  const by = no => v.rows.find(r => r.orderNo === no);
+  eq([by(wfReady).status, by(wfReady).item, by(wfWashing).status, by(wfWashing).reason], ["wf", "Wash & Fold bag", "blocked", "Wash & Fold not ready"]);
+  const s = v.stores.find(x => x.id === stores.Winnsboro);
+  eq([s.wf, s.blocked, s.ok], [1, 1, false]);
+  sqlite.prepare("UPDATE pos_orders SET status_id=(SELECT status_id FROM pos_orders WHERE smrt_order_no=?) WHERE smrt_order_no=?").run(wfReady, wfWashing);
+  const s2 = (await shuttleView(db, env, {})).stores.find(x => x.id === stores.Winnsboro);
+  eq([s2.wf, s2.blocked, s2.ok], [2, 0, true], "both ready: OK to leave, 2 bags to check");
 });
 await t("a piece read before rack stores were kept counts as at the store when its rack is that store's (G18), not when the rack is shared (LONG)", async () => {
   const gv = stores.Greenville;

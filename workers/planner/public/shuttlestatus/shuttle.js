@@ -80,7 +80,7 @@ function showError(msg) {
 const statusOf = s => (s.nothing ? "idle" : s.ok ? "ok" : "stop");
 function storeLine(s) {
   if (s.nothing) return "Nothing due";
-  if (s.ok) return `OK to leave · ${s.van} on VAN`;
+  if (s.ok) return `OK to leave · ${s.van} on VAN${s.wf ? ` · ${s.wf} W&F to check` : ""}`;
   const parts = [];
   if (s.blocked) parts.push(`${s.blocked} not on VAN`);
   if (s.heldNoNote) parts.push(`${s.heldNoNote} need${s.heldNoNote === 1 ? "s" : ""} a note`);
@@ -120,8 +120,9 @@ function banner(s, stale) {
   if (st === "idle") { head = `Nothing due at ${s.name} today`; sub.push("No open pieces due today or earlier."); }
   else if (st === "ok") {
     head = `OK to leave for ${s.name}`;
-    sub.push(`All ${n(s.van, "piece")} due are on ${data.transitRack.toUpperCase()}.`);
+    if (s.van) sub.push(`All ${n(s.van, "piece")} due are on ${data.transitRack.toUpperCase()}.`);
     if (s.held) sub.push(`${n(s.held, "piece")} held over, with a note.`);
+    if (s.wf) sub.push(`Grab ${n(s.wf, "Wash & Fold bag")}: SMRT doesn't show where they're racked, so check by hand.`);
   } else {
     head = s.blocked ? `Not yet — ${n(s.blocked, "piece")} ${s.blocked === 1 ? "isn't" : "aren't"} on ${data.transitRack.toUpperCase()}` : `Not yet — ${n(s.heldNoNote, "held-over piece")} need${s.heldNoNote === 1 ? "s" : ""} a note`;
     if (s.blocked) {
@@ -153,11 +154,12 @@ function counts(s) {
     c(s.van, `on ${data.transitRack.toUpperCase()}`, "ok"),
     c(s.blocked, `not on ${data.transitRack.toUpperCase()}`, s.blocked ? "stop" : ""),
     c(s.held, "held over", s.heldNoNote ? "warn" : ""),
+    ...(s.wf ? [c(s.wf, "W&F to check by hand", "warn")] : []),
   ].join("")}</div>`;
 }
 
 // ---------- the piece table
-const RANK = { blocked: 0, held: 1, van: 2 };
+const RANK = { blocked: 0, held: 1, wf: 2, van: 3 };
 const COLS = [
   { key: "status", label: "Status", val: r => RANK[r.status] * 10 + (r.status === "held" && !r.noted ? 0 : 1) },
   { key: "order", label: "Order", val: r => r.orderNo },
@@ -182,6 +184,7 @@ function sorted(rows) {
 function statusCell(r) {
   const T = data.transitRack.toUpperCase();
   if (r.status === "van") return html`<span class="sp ok">${raw(ICON.ok)}On ${T}</span>${r.vanSince ? raw(html`<small class="warn">since ${shortDay(r.vanSince)}</small>`) : ""}`;
+  if (r.status === "wf") return html`<span class="sp warn">W&amp;F bag</span><small>check by hand</small>`;
   if (r.status === "held") return html`<span class="sp ${r.noted ? "info" : "warn"}">Held over</span><small>${r.noted ? `due ${shortDay(dayOf(r.due))}` : "needs a note"}</small>`;
   return html`<span class="sp stop">Not on ${T}</span><small>${r.reason}</small>`;
 }

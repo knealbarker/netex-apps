@@ -66,6 +66,8 @@ For the van driver: is everything due at a store on VAN? (Neal, Oct 18.) Signed 
   A piece without a stored rack store (read before Oct 18) gets it from its rack label when every other piece on that rack in
   60 days was at one store (G18 → Greenville), else from its letters when every numbered rack with them is one store's
   (Q100 → Quitman); shared labels (LONG, SHELF) stay unknown (`fillRackStores`).
+- **Wash & Fold**: SMRT's items report never lists W&F bags (and every bag shares tag 90000000), so their rack can't be
+  seen. A ready W&F order is listed as "W&F bag, check by hand" and doesn't hold up the run; one not ready does.
 - **On VAN** = last rack location equals Settings › SMRT mapping › "Rack location for orders on the van" (VAN is a rack at
   Sulphur Springs). Anything else is **not on VAN**, with why: not detailed, not ready, ready on a plant rack, ready not racked.
 - **Held over** = the order's due date moved today from today-or-earlier to later (or the piece was split onto such an order).
