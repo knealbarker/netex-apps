@@ -94,19 +94,19 @@ let q;
 await t("Quitman: what's counted and what's left out", async () => {
   q = await shuttleView(db, env, { storeId: stores.Quitman });
   const byOrder = no => q.rows.filter(r => r.orderNo === no).map(r => r.status);
-  eq(byOrder(a), ["blocked", "blocked", "van"], "order a");
+  eq(byOrder(a), ["blocked"], "order a: one row for its items (no ticket yet)");
   eq(byOrder(b), ["van"], "order b (one piece already at Quitman)");
   eq(byOrder(f), ["blocked"], "undetailed order");
   eq(byOrder(g), ["held"]); eq(byOrder(h), ["held"]);
-  eq(q.rows.length, 7, "returned, picked up, route, due tomorrow and old orders left out");
+  eq(q.rows.length, 5, "one row per order without tickets; returned, picked up, route, due tomorrow and old orders left out");
 });
 await t("rows: not on VAN first, held over without a note next, then noted, then on VAN", async () => {
-  eq(q.rows.map(r => r.status), ["blocked", "blocked", "blocked", "held", "held", "van", "van"]);
-  eq(q.rows[3].orderNo, g, "the one without a note first");
+  eq(q.rows.map(r => r.status), ["blocked", "blocked", "held", "held", "van"]);
+  eq(q.rows[2].orderNo, g, "the one without a note first");
 });
 await t("reasons: not ready, ready on a plant rack, not detailed", async () => {
   const r = Object.fromEntries(q.rows.filter(x => x.status === "blocked").map(x => [x.kind === "order" ? "order" : x.rack || "none", x.reason]));
-  eq(Object.entries(r).sort(), [["PH84", "Ready, on PH84"], ["none", "Not ready"], ["order", "Not detailed yet"]]);
+  eq(Object.entries(r).sort(), [["PH84", "1 ready on PH84, 1 not ready; 1 on VAN"], ["order", "Not detailed yet"]]);
 });
 await t("Quitman totals: 2 on VAN, 5 not (3 pieces of an undetailed order), 2 held, 1 needs a note", async () => {
   const s = q.stores.find(x => x.id === stores.Quitman);
@@ -185,7 +185,7 @@ await t("API: GET /api/shuttle with a store, any signed-in role", async () => {
   const u = await call("POST", "/api/users", { body: { name: "Larry N", email: "larry@example.com", role: "viewer" } });
   ok(u.status === 201, JSON.stringify(u.body));
   const r = await call("GET", `/api/shuttle?store=${stores.Greenville}`, { as: "larry@example.com" });
-  eq(r.status, 200); eq(r.body.rows.length, 2); ok(r.body.asOf && r.body.sync === true);
+  eq(r.status, 200); eq(r.body.rows.length, 1); eq(r.body.rows[0].item, "2 items, no ticket yet"); ok(r.body.asOf && r.body.sync === true);
   eq((await call("GET", `/api/shuttle?store=${stores["Sulphur Springs"]}`)).status, 404, "not a shuttle store");
   ok(/^Pat Customer\d+$/.test(r.body.rows[0].customer), "name from the report's Customer Name column");
   eq(q.rows[0].customer, "C1", "no name column: the SMRT customer id");
@@ -193,7 +193,7 @@ await t("API: GET /api/shuttle with a store, any signed-in role", async () => {
 await t("Check now sends only the created days of orders still holding up the run, then answers with the fresh view", async () => {
   syncCalls = [];
   const r = await call("POST", "/api/shuttle/check", { body: { store: stores.Quitman }, as: "larry@example.com" });
-  eq(r.status, 200); eq(r.body.check.status, "ok"); eq(r.body.rows.length, 7);
+  eq(r.status, 200); eq(r.body.check.status, "ok"); eq(r.body.rows.length, 5);
   eq(syncCalls.length, 1); eq(syncCalls[0].label, "Quitman");
   eq(syncCalls[0].days, [YDAY, TODAY], "order b (all on VAN or at the store) isn't re-read");
 });
@@ -204,7 +204,7 @@ await t("Check now without the SYNC binding says so", async () => {
 await t("Check now when netex-sync fails still shows the last copy", async () => {
   const e = makeEnv(db, { TIMEZONE: "America/Chicago", SYNC: { fetch: async () => new Response(JSON.stringify({ status: "error", error: "SMRT rejected the API key" }), { status: 502 }) } });
   const r = await call("POST", "/api/shuttle/check", { body: { store: stores.Quitman }, e });
-  eq(r.status, 200); eq(r.body.check.status, "error"); eq(r.body.rows.length, 7);
+  eq(r.status, 200); eq(r.body.check.status, "error"); eq(r.body.rows.length, 5);
 });
 await t("/shuttlestatus redirects to the page; the page needs a sign-in", async () => {
   const r = await call("GET", "/shuttlestatus");
@@ -241,7 +241,7 @@ else {
     });
     await t("page: not on VAN rows first; sorting by Rack and back", async () => {
       const first = await p.$$eval(".sh-table tbody tr", rs => rs.map(r => r.className));
-      eq(first.slice(0, 3), ["r-blocked", "r-blocked", "r-blocked"]);
+      eq(first.slice(0, 2), ["r-blocked", "r-blocked"]);
       await p.click('th[data-key="rack"] button');
       eq(await p.getAttribute('th[data-key="rack"]', "aria-sort"), "ascending");
       await p.click('th[data-key="rack"] button');

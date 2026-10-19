@@ -219,7 +219,7 @@ function table(s) {
     </tr>`;
   }).join("");
   return `<div class="sh-table-wrap card"><table class="sh-table"><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table></div>
-    <p class="sh-foot">${html`Orders due at ${s.name} today or up to ${data.lookbackDays} days before, ticket by ticket (an order's items are listed one by one until its tickets are scanned). Left out: tickets and items already at ${s.name} or DELIVERED, back with the customer, or on route deliveries. To hold something over, move its order's due date in SMRT (split the order first if only part stays) and add a note saying why.`}</p>`;
+    <p class="sh-foot">${html`Orders due at ${s.name} today or up to ${data.lookbackDays} days before, one row per ticket; an order with no ticket scanned yet is one row for its items. Left out: tickets and items already at ${s.name} or DELIVERED, back with the customer, or on route deliveries. To hold something over, move its order's due date in SMRT (split the order first if only part stays) and add a note saying why.`}</p>`;
 }
 
 // ---------- start

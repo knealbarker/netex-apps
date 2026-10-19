@@ -531,6 +531,14 @@ ok("custom work days: Saturday as a work day waits", !backfillAllowed({ day: "20
   scan("26287-5444-A", "Q12", at("16:20"), { store: "TCC Quitman", name: "MIKE  FOUNTAIN" });
   await runRacks(rdb, mk(), { orgId: "tcc", integrationId: "smrt", now: NOW + 30 * 60e3 });
   ok("customer name from the ticket fills the order", S.prepare("SELECT customer_name c FROM pos_orders WHERE id='o1'").get().c === "MIKE FOUNTAIN");
+  // an order with no ticket scanned yet gets its name from an item scan (by tag)
+  S.prepare("INSERT INTO pos_item_types(id,org_id,name) VALUES('it1','tcc','Shirt')").run();
+  S.prepare("INSERT INTO pos_departments(id,org_id,name) VALUES('d1','tcc','Laundry Tops')").run();
+  S.prepare("INSERT INTO pos_orders(id,org_id,smrt_order_no,status_id,smrt_created_at,row_hash) VALUES('o2','tcc','262899999','st1','2026-10-18T10:00:00-05:00','h')").run();
+  S.prepare("INSERT INTO pos_items(id,order_id,barcode,line_no,item_type_id,department_id,smrt_created_at,row_hash) VALUES('i2','o2','4405699',1,'it1','d1','2026-10-18T10:00:00-05:00','h')").run();
+  scan("4405699", "11", at("16:25"), { kind: "item", by: "Conveyor", name: "LANCE  BANKS" });
+  await runRacks(rdb, mk(), { orgId: "tcc", integrationId: "smrt", now: NOW + 32 * 60e3 });
+  ok("customer name from an item scan fills its order", S.prepare("SELECT customer_name c FROM pos_orders WHERE id='o2'").get().c === "LANCE BANKS");
   const st = JSON.parse(S.prepare("SELECT value_json FROM core_settings WHERE key='smrt_racks'").get().value_json);
   ok(`history keeps going back (${RACK_HISTORY_DAYS} days)`, st.backTo < "2026-10-17", st.backTo);
 }

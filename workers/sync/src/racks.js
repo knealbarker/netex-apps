@@ -41,7 +41,7 @@ async function putState(db, orgId, s) {
 /** Stores scans (objects keyed by the report's column names). Returns counts. */
 export async function ingestScans(db, ctx, rows) {
   const L = ctx.lookups || (ctx.lookups = await new Lookups(db, ctx.orgId).load());
-  const events = [], latest = new Map(), names = new Map();
+  const events = [], latest = new Map(), names = new Map(), itemNames = new Map();
   for (const r of rows) {
     const kind = (text(r["Inventory type"]) || "item").toLowerCase(), ref = text(r["ID"]), at = stamp(r["Date of entry"]);
     if (!ref || !at) continue;
@@ -58,7 +58,7 @@ export async function ingestScans(db, ctx, rows) {
       if (!cur || Date.parse(v.at) >= Date.parse(cur.at)) latest.set(ref, { ...v, first: cur ? (Date.parse(cur.first) < Date.parse(v.at) ? cur.first : v.at) : v.at });
       else if (Date.parse(v.at) < Date.parse(cur.first)) cur.first = v.at;
       if (v.customer) names.set(t.orderNo, v.customer);
-    }
+    } else if (v.kind === "item" && v.customer) itemNames.set(v.ref, v.customer);
   }
   const stmts = [...L.take()];
   for (const v of events) stmts.push(db.prepare(`INSERT INTO pos_rack_events(id,org_id,kind,ref,order_no,ticket_letter,location,location_barcode,rack,station,store_id,drop_store_id,at,racked_by,is_rerack,is_current,customer_name,price_cents)
@@ -76,6 +76,9 @@ export async function ingestScans(db, ctx, rows) {
         updated_at=excluded.updated_at`)
     .bind(ctx.orgId, id, v.orderNo, v.letter, v.location, v.store, v.at, v.by, v.customer, v.first, nowIso()));
   for (const [no, name] of names) stmts.push(db.prepare("UPDATE pos_orders SET customer_name=? WHERE org_id=? AND smrt_order_no=? AND (customer_name IS NULL OR customer_name='')").bind(name, ctx.orgId, no));
+  // item scans carry the name too: the order the tag is on now (orders with no ticket scanned yet get their name this way)
+  for (const [tag, name] of itemNames) stmts.push(db.prepare(`UPDATE pos_orders SET customer_name=? WHERE (customer_name IS NULL OR customer_name='') AND id=(
+      SELECT i.order_id FROM pos_items i JOIN pos_orders o ON o.id=i.order_id WHERE o.org_id=? AND i.barcode=? AND i.removed_at IS NULL ORDER BY i.smrt_created_at DESC LIMIT 1)`).bind(name, ctx.orgId, tag));
   for (let i = 0; i < stmts.length; i += BATCH) await db.batch(stmts.slice(i, i + BATCH));
   return { scans: events.length, tickets: latest.size };
 }

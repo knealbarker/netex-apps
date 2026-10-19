@@ -59,8 +59,8 @@ For the van driver: is everything due at a store on VAN? (Neal, Oct 18.) Signed 
 - **Tickets** (Oct 19; SMRT's word: an order's bags, `26287-5444-A`; tickets contain items): the driver scans tickets to VAN.
   An order with ticket scans (`pos_tickets`, from SMRT's rack-scan report, read every 2 minutes) is listed ticket by ticket:
   on VAN, or not with where it is (Bagging, a plant rack, Delivery 1 …). Tickets last scanned at the store, DELIVERED or
-  RETURNED are left out; the order's items not ready yet get one row. Orders with no ticket scans are listed item by item
-  (the rules below). Wash & Fold bags are tickets too.
+  RETURNED are left out; the order's items not ready yet get one row. Orders with no ticket scans are one row for their
+  items (the item rules below decide its status). Customer names come from ticket and item scans. Wash & Fold bags are tickets too.
 - **Linked both ways**: a Shuttles tab in the planner's tabs (red dot when a van leaves within the hour and that store isn't
   all on VAN; the tab then opens that store; `shuttleDot` in js/app.js, every 2 minutes), and the page uses the planner's
   own top bar and tabs.

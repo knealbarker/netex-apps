@@ -104,11 +104,37 @@ export async function loadTickets(db, orgId, orderNos) {
 }
 
 /**
+ * An order with no ticket scans yet: one row for all its items (Neal, Oct 19: every row is a ticket; an order without one
+ * is one row), from the item-by-item rules. Not-detailed orders and Wash & Fold rows are already one row.
+ */
+export function noTicketRow(items) {
+  if (items.length <= 1 || items.some(r => r.kind !== "piece")) return items;
+  const r0 = items[0], n = items.length;
+  const count = st => items.filter(r => r.status === st).length;
+  const racks = [...new Set(items.map(r => r.rack).filter(Boolean))];
+  const prods = [...new Set(items.map(r => r.prod).filter(Boolean))];
+  const base = {
+    ...r0, key: "i" + r0.orderId, kind: "items", unit: "item", line: "", tag: "", brand: "", ticket: null,
+    item: `${n} items, no ticket yet`, prod: prods.join(", "), rack: racks.join(", ") || null, rackStore: null,
+    rackedAt: items.map(r => r.rackedAt).filter(Boolean).sort().pop() || null, rackedBy: [...new Set(items.map(r => r.rackedBy).filter(Boolean))].join(", ") || null,
+    note: items.map(r => r.note).find(Boolean) || null, ready: items.every(r => r.ready),
+  };
+  if (count("held") === n) return [{ ...base, status: "held", pieces: n, noted: items.every(r => r.noted), heldFrom: r0.heldFrom }];
+  if (count("van") === n) return [{ ...base, status: "van", pieces: n, vanSince: items.map(r => r.vanSince).filter(Boolean).sort()[0] || null }];
+  const blocked = items.filter(r => r.status === "blocked");
+  const why = {}; for (const r of blocked) { const k = r.ready ? (r.rack ? `ready on ${r.rack}` : "ready, not racked") : "not ready"; why[k] = (why[k] || 0) + 1; }
+  const onVan = count("van");
+  return [{ ...base, status: "blocked", pieces: blocked.length, ready: blocked.every(r => r.ready), notReady: blocked.filter(r => !r.ready).length, vanPart: onVan,
+    rack: [...new Set(blocked.map(r => r.rack).filter(Boolean))].join(", ") || null,
+    reason: Object.entries(why).map(([k, v]) => `${v} ${k}`).join(", ") + (onVan ? `; ${onVan} on VAN` : "") }];
+}
+
+/**
  * The rows for one order: ticket by ticket when it has ticket scans (plus one row for its items not ready yet), otherwise
  * item by item (classify). `rows` are the order's item rows from loadRows; `held` when the order was held over today.
  */
 export function orderRows(rows, tickets, transit, today, { held = false } = {}) {
-  if (!tickets || !tickets.length) return rows.map(r => classify(r, transit, today, { held })).filter(Boolean);
+  if (!tickets || !tickets.length) return noTicketRow(rows.map(r => classify(r, transit, today, { held })).filter(Boolean));
   const r0 = rows[0];
   const base = {
     orderId: r0.oid, order: fmtNo(r0.no), orderNo: String(r0.no), store: r0.store, link: smrtLink(r0.cid, r0.no),
@@ -222,8 +248,8 @@ export const sortRows = rows => rows.sort((a, b) => (ORDER[a.status] - ORDER[b.s
 function summarize(rows) {
   const s = { pieces: 0, van: 0, blocked: 0, notReady: 0, held: 0, heldNoNote: 0, vanEarlier: 0, wf: 0, vanTickets: 0, blockedTickets: 0 };
   for (const r of rows) {
-    if (r.status === "van") { s.van++; s.pieces++; if (r.vanSince) s.vanEarlier++; if (r.kind === "ticket") s.vanTickets++; }
-    else if (r.status === "blocked") { s.blocked += r.pieces; s.pieces += r.pieces; if (!r.ready) s.notReady += r.pieces; if (r.kind === "ticket") s.blockedTickets++; }
+    if (r.status === "van") { s.van += r.pieces || 1; s.pieces += r.pieces || 1; if (r.vanSince) s.vanEarlier++; if (r.kind === "ticket") s.vanTickets++; }
+    else if (r.status === "blocked") { s.blocked += r.pieces; s.pieces += r.pieces + (r.vanPart || 0); s.van += r.vanPart || 0; s.notReady += r.notReady ?? (r.ready ? 0 : r.pieces); if (r.kind === "ticket") s.blockedTickets++; }
     else if (r.status === "wf") { s.wf++; s.pieces++; }
     else if (r.status === "held") { s.held += r.pieces; if (!r.noted) s.heldNoNote += r.pieces; }
   }
