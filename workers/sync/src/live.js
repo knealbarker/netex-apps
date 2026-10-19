@@ -6,7 +6,12 @@
 // so older special orders (alterations, repairs) stay current.
 // The daily full run also re-reads the orders report alone for the last PAYMENT_LOOKBACK_DAYS (in 15-day calls), so payments made
 // after pickup (statements, AutoPay) reach the Retail Snapshot's revenue numbers.
-// SMRT calls per run: 2 column calls + 1 orders call + 3 items calls + 2 per older day range (~8); +4 orders calls once a day.
+// Shuttle stores (Neal, Oct 19: 26261-5050 sat on SHELF in Emory but Shuttle status still listed it): every run also re-reads
+// the created days of shuttle orders due today or earlier, not picked up, with a piece not yet known to be at its store or on
+// the van, whatever the order's status. Ready orders aren't in the days above, so without this a piece racked at the store
+// after it was ready never reached the page. At most SHUTTLE_MAX_RANGES ranges a run, the longest-unread first.
+// SMRT calls per run: 2 column calls + 1 orders call + 3 items calls + 2 per older day range (~8) + up to 8 for shuttle days;
+// +4 orders calls once a day.
 // Unchanged rows aren't rewritten.
 import { REPORT_ORDERS, REPORT_ITEMS } from "./smrt.js";
 import { ingestDay, Lookups, refreshPayments, PAYMENT_LOOKBACK_DAYS } from "./ingest.js";
@@ -18,6 +23,8 @@ const OPEN_LOOKBACK_DAYS = 45;
 const OVERDUE_DAYS = 14;
 const PAYMENT_DAYS_PER_CALL = 15;  // ~231 orders a day -> ~3,500 rows per call
 const SOON_DAYS = 4;               // due by then counts as "soon" (covers a weekend before the next work day)
+export const SHUTTLE_MAX_RANGES = 4;      // shuttle day ranges re-read per run (2 SMRT calls each)
+const SHUTTLE_LOOKBACK_DAYS = 45;  // as the Shuttle status page
 
 async function getState(db, orgId) {
   const r = await db.prepare("SELECT value_json FROM core_settings WHERE org_id=? AND app_id='core' AND key='smrt_live'").bind(orgId).first();
@@ -36,6 +43,31 @@ export async function openCreatedDays(db, orgId, { since, before, dueFrom, dueTo
         AND substr(o.smrt_created_at, 1, 10) >= ? AND substr(o.smrt_created_at, 1, 10) < ?
         ${dueFrom ? "AND substr(o.due_at, 1, 10) BETWEEN ? AND ?" : ""}
       ORDER BY 1`).bind(orgId, since, before, ...(dueFrom ? [dueFrom, dueTo] : [])).all();
+  return r.results.map(x => x.day).filter(Boolean);
+}
+
+/**
+ * Created days of shuttle-store orders the Shuttle status page counts (open, not picked up/returned/delivered, not route
+ * deliveries, due today or up to 45 days back) that still have a piece not known to be at its store, on the van or back with
+ * the customer. Ready orders are included: a piece racked at the store after the order was ready only shows up this way.
+ */
+export async function shuttleCreatedDays(db, orgId, today) {
+  let transit = "VAN";
+  try {
+    const r = await db.prepare("SELECT value_json FROM core_settings WHERE org_id=? AND app_id='planner' AND key='smrt' AND deleted_at IS NULL").bind(orgId).first();
+    const t = r && String(JSON.parse(r.value_json).transitRack || "").trim();
+    if (t) transit = t.toUpperCase();
+  } catch { /* default */ }
+  const r = await db.prepare(`SELECT DISTINCT substr(o.smrt_created_at, 1, 10) AS day FROM pos_orders o JOIN pos_order_statuses s ON s.id=o.status_id
+      WHERE o.org_id=? AND s.is_void=0 AND s.is_closed=0 AND o.smrt_deleted_at IS NULL AND o.returned_at IS NULL AND o.picked_up_at IS NULL
+        AND o.delivered_at IS NULL AND o.is_route_delivery=0
+        AND substr(o.due_at, 1, 10) BETWEEN ? AND ?
+        AND o.return_location_id IN (SELECT st.location_id FROM plan_run_stops st JOIN plan_runs ru ON ru.id=st.run_id
+          WHERE ru.org_id=? AND ru.kind='shuttle' AND ru.is_active=1 AND ru.deleted_at IS NULL AND st.deleted_at IS NULL)
+        AND EXISTS (SELECT 1 FROM pos_items i WHERE i.order_id=o.id AND i.removed_at IS NULL AND i.returned_at IS NULL
+          AND (i.last_rack_store_id IS NULL OR i.last_rack_store_id <> o.return_location_id)
+          AND upper(trim(COALESCE(i.last_rack_location, ''))) NOT IN (?, 'RETURNED', 'DELIVERED'))
+      ORDER BY 1`).bind(orgId, addDays(today, -SHUTTLE_LOOKBACK_DAYS), today, orgId, transit).all();
   return r.results.map(x => x.day).filter(Boolean);
 }
 
@@ -72,6 +104,15 @@ export async function runLive(db, smrt, { orgId, integrationId, today, reports =
     ? await openCreatedDays(db, orgId, { since: addDays(today, -OPEN_LOOKBACK_DAYS), before: recentFrom })
     : await openCreatedDays(db, orgId, { since: addDays(today, -OPEN_LOOKBACK_DAYS), before: recentFrom, dueFrom: addDays(today, -OVERDUE_DAYS), dueTo: addDays(today, SOON_DAYS) });
 
+  // shuttle days not already read above, longest-unread first (state.shuttleRead: day -> when last read)
+  const covered = new Set([...Array.from({ length: LIVE_RECENT_DAYS }, (_, i) => addDays(recentFrom, i)), ...older]);
+  const lastRead = state.shuttleRead || {};
+  const shuttleDays = (await shuttleCreatedDays(db, orgId, today)).filter(d => !covered.has(d));
+  const shuttle = dayRanges(shuttleDays, ITEMS_DAYS_PER_CALL)
+    .map(r => ({ r, at: lastRead[r[0]] || "" }))
+    .sort((a, b) => a.at.localeCompare(b.at) || a.r[0].localeCompare(b.r[0]))
+    .slice(0, SHUTTLE_MAX_RANGES).map(x => x.r).sort((a, b) => a[0].localeCompare(b[0]));
+
   const runId = ulid();
   await db.prepare("INSERT INTO int_sync_runs(id,integration_id,started_at,status,message) VALUES(?,?,?,?,?)").bind(runId, integrationId, nowIso(), "running", "live").run();
   const ctx = { orgId, runId, mode: "live", lookups: await new Lookups(db, orgId).load() };
@@ -82,6 +123,7 @@ export async function runLive(db, smrt, { orgId, integrationId, today, reports =
     // recent days: one orders call for the week, items two days at a time; then the older days with open orders
     const groups = [{ orders: [[recentFrom, end]], items: dayRanges(Array.from({ length: LIVE_RECENT_DAYS }, (_, i) => addDays(recentFrom, i)), ITEMS_DAYS_PER_CALL) }];
     for (const r of dayRanges(older, ITEMS_DAYS_PER_CALL)) groups.push({ orders: [r], items: [r] });
+    for (const r of shuttle) groups.push({ orders: [r], items: [r] });
     for (const g of groups) {
       const orders = [], items = [];
       for (const [a, b] of g.orders) orders.push(...(await smrt.rangeObjects(ordersId, a, b)));
@@ -100,11 +142,16 @@ export async function runLive(db, smrt, { orgId, integrationId, today, reports =
     }
   } catch (e) { error = String(e.message || e); }
 
-  if (!error) await putState(db, orgId, { ...state, fullDay: full ? today : state.fullDay, lastOk: nowIso(), olderDays: older.length });
+  if (!error) {
+    const read = {}, now = nowIso(), keepFrom = addDays(today, -SHUTTLE_LOOKBACK_DAYS - 15);
+    for (const [d, at] of Object.entries(lastRead)) if (d >= keepFrom) read[d] = at;
+    for (const [a, b] of shuttle) for (let d = a; d < b; d = addDays(d, 1)) read[d] = now;
+    await putState(db, orgId, { ...state, fullDay: full ? today : state.fullDay, lastOk: now, olderDays: older.length, shuttleRead: read, shuttleDays: shuttleDays.length });
+  }
   await db.prepare("UPDATE int_sync_runs SET finished_at=?, status=?, rows_read=?, rows_changed=?, message=? WHERE id=?")
     .bind(nowIso(), error ? "error" : "ok", totals.orders + totals.items, totals.ordersWritten + totals.itemsWritten,
-      error ? `live: ${error}` : `live${full ? " (daily full refresh)" : ""}: ${totals.orders} orders, ${totals.items} pieces read; ${totals.changes} changes${full ? `; ${totals.paymentsChanged || 0} payments updated` : ""}; ${smrt.calls} SMRT calls`, runId).run();
-  return { status: error ? "error" : "ok", error, full, olderDays: older.length, calls: smrt.calls, ...totals };
+      error ? `live: ${error}` : `live${full ? " (daily full refresh)" : ""}: ${totals.orders} orders, ${totals.items} pieces read; ${totals.changes} changes${shuttle.length ? `; shuttle days ${shuttle.map(r => r[0]).join(",")} (${shuttleDays.length} waiting)` : ""}${full ? `; ${totals.paymentsChanged || 0} payments updated` : ""}; ${smrt.calls} SMRT calls`, runId).run();
+  return { status: error ? "error" : "ok", error, full, olderDays: older.length, shuttleRanges: shuttle, shuttleDays: shuttleDays.length, calls: smrt.calls, ...totals };
 }
 
 // ---------------- "Check now" (Shuttle status page) ----------------
@@ -112,7 +159,7 @@ export async function runLive(db, smrt, { orgId, integrationId, today, reports =
 // SMRT's reports can only be filtered by the day an order was created, so this re-reads the created days the page sends
 // (the days of that store's open orders due today or earlier), orders and pieces, through the same ingest as the live sync.
 export const CHECK_RANGE_DAYS = 3;   // created days per SMRT call (as the live sync)
-export const CHECK_MAX_RANGES = 6;   // at most 12 report calls; the oldest days are left to the live sync
+export const CHECK_MAX_RANGES = 8;   // at most 16 report calls; the oldest days are left to the live sync
 export const CHECK_REPEAT_S = 45;    // the same days checked again this soon get the answer just read
 const CHECK_LOOKBACK = 60;
 

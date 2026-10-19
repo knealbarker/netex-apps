@@ -10,7 +10,7 @@ import { runBackfill, backfillProgress } from "../src/backfill.js";
 import { ingestDay } from "../src/ingest.js";
 import { addDays, ulid } from "../src/util.js";
 import worker, { backfillAllowed, liveAllowed, fromRippling } from "../src/index.js";
-import { runLive, dayRanges, runCheck, CHECK_REPEAT_S } from "../src/live.js";
+import { runLive, dayRanges, runCheck, CHECK_REPEAT_S, shuttleCreatedDays } from "../src/live.js";
 import { ingestRippling, parseCsv, ripTime } from "../src/rippling.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -229,6 +229,43 @@ ok("custom work days: Saturday as a work day waits", !backfillAllowed({ day: "20
   ok("live: run logged", /live: \d+ orders/.test(one(L, "SELECT message FROM int_sync_runs WHERE message LIKE 'live:%' ORDER BY started_at DESC LIMIT 1").message));
   ok("dayRanges groups consecutive days", JSON.stringify(dayRanges(["2026-10-01", "2026-10-02", "2026-10-03", "2026-10-07"], 2)) === JSON.stringify([["2026-10-01", "2026-10-03"], ["2026-10-03", "2026-10-04"], ["2026-10-07", "2026-10-08"]]));
   ok("live window: Monday 10 am yes, 9 pm no, Saturday no", liveAllowed({ day: T, hour: 10 }) && !liveAllowed({ day: T, hour: 21 }) && !liveAllowed({ day: "2026-10-10", hour: 10 }));
+}
+
+// ================= shuttle days: a ready order racked at the store later (Neal, Oct 19: 26261-5050 on SHELF in Emory)
+{
+  const { sqlite: L, db: ldb } = freshDb();
+  const f = new FakeSmrt();
+  const T = "2026-10-19";
+  const emory = one(L, "SELECT id FROM core_locations WHERE name='Emory'").id;
+  L.prepare("INSERT INTO plan_runs(id,org_id,name,kind) VALUES('run1','tcc','Emory','shuttle')").run();
+  L.prepare("INSERT INTO plan_run_stops(id,run_id,location_id,seq,arrive_at) VALUES('st1','run1',?,1,'13:30')").run(emory);
+  const D = addDays(T, -31), D2 = addDays(T, -25);
+  f.addOrder(D, "262615050", { status: "ready", pieces: 3, store: "TCC Emory", due: `${addDays(D, 4)}T15:00:00-05:00` });
+  for (const it of f.days.get(D).items) Object.assign(it, { "Item Status": "racked", "Last Rack Location": "SHELF", "Item assembly date": `${addDays(D, 4)}T13:44:00-05:00` });
+  f.addOrder(D2, "262660001", { status: "ready", pieces: 1, store: "TCC Emory", due: `${addDays(D2, 3)}T15:00:00-05:00` });
+  Object.assign(f.days.get(D2).items[0], { "Item Status": "racked", "Last Rack Location": "E12", "Last racked store": "TCC Emory" }); // already at the store
+  L.prepare("INSERT INTO int_sync_runs(id,integration_id,started_at,status) VALUES('bf','smrt','x','ok')").run();
+  for (const day of [D, D2]) { const o = f.days.get(day); await ingestDay(ldb, { orgId: "tcc", runId: "bf", mode: "backfill", day }, o.orders, o.items); }
+  let days = await shuttleCreatedDays(ldb, "tcc", T);
+  ok("shuttle days: a ready order with a piece not known at the store is listed", JSON.stringify(days) === JSON.stringify([D]), days);
+  // racked at Emory this morning; SMRT says so, the database doesn't yet
+  for (const it of f.days.get(D).items) Object.assign(it, { "Last racked store": "TCC Emory", "Last racked on date": `${T}T08:52:24-05:00` });
+  L.prepare("INSERT INTO core_settings(org_id,app_id,key,value_json) VALUES('tcc','core','smrt_live',?)").run(JSON.stringify({ fullDay: T }));
+  f.ranges = [];
+  const r = await runLive(ldb, new Smrt({ url: "https://x/graphql", key: "k", fetchImpl: f.fetchImpl }), { orgId: "tcc", integrationId: "smrt", today: T });
+  ok("live: re-reads the ready shuttle order's created day", r.status === "ok" && JSON.stringify(r.shuttleRanges) === JSON.stringify([[D, addDays(D, 1)]]), r);
+  ok("live: its pieces now have Emory as the rack store", one(L, "SELECT COUNT(*) n FROM pos_items i JOIN pos_orders o ON o.id=i.order_id WHERE o.smrt_order_no='262615050' AND i.last_rack_store_id=?", emory).n === 3);
+  days = await shuttleCreatedDays(ldb, "tcc", T);
+  ok("shuttle days: nothing left to re-read once it's at the store", days.length === 0, days);
+  // many days waiting: a run reads at most 4 ranges, the longest-unread first, and the next run the rest
+  for (let k = 0; k < 6; k++) { const d = addDays(T, -40 + k * 4); f.addOrder(d, `2626${k}9999`, { status: "ready", pieces: 1, store: "TCC Emory", due: `${addDays(d, 2)}T15:00:00-05:00` });
+    const o = f.days.get(d); await ingestDay(ldb, { orgId: "tcc", runId: "bf", mode: "backfill", day: d }, o.orders, o.items); }
+  const a = await runLive(ldb, new Smrt({ url: "https://x/graphql", key: "k", fetchImpl: f.fetchImpl }), { orgId: "tcc", integrationId: "smrt", today: T });
+  const b = await runLive(ldb, new Smrt({ url: "https://x/graphql", key: "k", fetchImpl: f.fetchImpl }), { orgId: "tcc", integrationId: "smrt", today: T });
+  const firsts = x => x.shuttleRanges.map(r => r[0]);
+  ok("live: at most 4 shuttle ranges a run", a.shuttleRanges.length === 4 && a.shuttleDays === 6, a);
+  const left = [0, 1, 2, 3, 4, 5].map(k => addDays(T, -40 + k * 4)).filter(d => !firsts(a).includes(d));
+  ok("live: the next run reads the ones left", left.length === 2 && left.every(d => firsts(b).includes(d)), { a: firsts(a), b: firsts(b) });
 }
 
 // ================= Rippling
