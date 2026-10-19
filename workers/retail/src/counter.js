@@ -144,15 +144,51 @@ export async function counter(db, env, me, from, to, { now = Date.now() } = {}) 
     const sn = storeName(h.loc);
     if (!sn) continue;
     R.stores.add(sn);
+    R.rows = R.rows || []; R.rows.push({ store: sn, a: fi, b: lo, hours: h.hours });
     ripByStore.set(sn, (ripByStore.get(sn) || 0) + h.hours);
     const k = `${sn}|${h.day}`;
     (onClock.get(k) || onClock.set(k, []).get(k)).push({ key: h.pid, a: fi, b: lo });
   }
   const staffed = new Set(ripByStore.keys());
 
-  // ---- visits
+  // ---- where work physically happened (Neal, Oct 18): SMRT's Agent is the store an order is credited to, and staff
+  // sometimes set it to another store (a Sulphur Springs drop-off for a customer who picks up in Emory). For the
+  // counter, a person's tickets and pieces count at the store where most of their SMRT work was that day; someone
+  // punched in at two stores that day goes by which punch the time falls in. Rippling alone isn't trusted for this,
+  // since a wrong work location (Ashton, Audri) would move a whole day's work. The clock check compares this with Rippling.
+  const workStore = id => { const l = loc.get(id); if (!l) return null; if (s.rollup[l.name]) return s.rollup[l.name]; return storeName(id); };
+  const homeCount = new Map();
+  for (const e of [...g.created, ...g.pieces]) {
+    const x = who(e.sid), sn = workStore(e.loc); if (!x || !sn) continue;
+    const m = homeCount.get(x.key) || homeCount.set(x.key, new Map()).get(x.key); m.set(sn, (m.get(sn) || 0) + 1);
+  }
+  const home = new Map([...homeCount].map(([k, m]) => [k, [...m].sort((a, b) => b[1] - a[1])[0][0]]));
+  const dayCount = new Map();
+  for (const e of [...g.created, ...g.pieces]) {
+    const x = who(e.sid), sn = workStore(e.loc); if (!x || !sn) continue;
+    const k = `${x.key}|${String(e.at).slice(0, 10)}`;
+    const m = dayCount.get(k) || dayCount.set(k, new Map()).get(k); m.set(sn, (m.get(sn) || 0) + 1);
+  }
+  const dayHome = new Map([...dayCount].map(([k, m]) => [k, [...m].sort((a, b) => b[1] - a[1])[0][0]]));
+  const whereWorked = (x, at, agentStore) => {
+    if (!x) return agentStore;
+    const day = String(at).slice(0, 10);
+    const R = x.pid ? ripDay.get(`${x.pid}|${day}`) : null;
+    if (R && R.rows && new Set(R.rows.map(r => r.store)).size > 1) {   // worked two stores that day: the punch decides
+      const t = mins(hhmm(at));
+      const hit = R.rows.find(r => r.a != null && t >= r.a - c.graceMin && (r.b == null || t <= r.b + c.graceMin));
+      if (hit) return hit.store;
+    }
+    return dayHome.get(`${x.key}|${day}`) || home.get(x.key) || agentStore;
+  };
+
+  // ---- visits (a drop-off counts where the ticket was written; Winnsboro and route tickets aren't walk-ins)
   const events = [];
-  for (const o of g.created) { const sn = storeName(o.loc); if (sn && staffed.has(sn) && !o.route) events.push({ store: sn, cust: o.cust, at: o.at, kind: "D" }); }
+  for (const o of g.created) {
+    const agent = storeName(o.loc); if (!agent || o.route) continue;
+    const sn = whereWorked(who(o.sid), o.at, agent);
+    if (sn && staffed.has(sn)) events.push({ store: sn, cust: o.cust, at: o.at, kind: "D" });
+  }
   for (const o of g.pickups) { const sn = storeName(o.loc); if (sn && staffed.has(sn)) events.push({ store: sn, cust: o.cust, at: o.at, kind: "P" }); }
   const visits = countVisits(events, c.visitWindowMin);
 
@@ -166,35 +202,37 @@ export async function counter(db, env, me, from, to, { now = Date.now() } = {}) 
     B.n++; A.n++; B[kind]++; B.times.push(mins(hhmm(at)));
     if (ms(at) < ms(B.first)) B.first = at; if (ms(at) > ms(B.last)) B.last = at;
   };
-  // a route ticket or a rolled-up location (Winnsboro) is still work done at the store it belongs to
-  const workStore = id => { const l = loc.get(id); if (!l) return null; if (s.rollup[l.name]) return s.rollup[l.name]; return storeName(id); };
   for (const o of g.created) note(who(o.sid), o.at, workStore(o.loc), "created");
   for (const p of g.pieces) note(who(p.sid), p.at, workStore(p.loc), "pieces");
 
-  // ---- detailing speed (store = the order's store; route tickets and Winnsboro count where they're worked)
+  // ---- detailing speed (each person's pieces count at the store where they were working)
   const byOrder = new Map();
-  for (const p of g.pieces) { const x = who(p.sid); if (!x) continue; (byOrder.get(p.oid) || byOrder.set(p.oid, { loc: p.loc, list: [] }).get(p.oid)).list.push({ at: p.at, who: x.key }); }
+  for (const p of g.pieces) { const x = who(p.sid); if (!x) continue; (byOrder.get(p.oid) || byOrder.set(p.oid, { loc: p.loc, list: [], x: new Map() }).get(p.oid)); const o = byOrder.get(p.oid); o.list.push({ at: p.at, who: x.key }); if (!o.x.has(x.key)) o.x.set(x.key, { x, at: p.at }); }
   const per = new Map(), stDet = new Map();
   const P = (key, sn) => { const k = `${sn}|${key}`; return per.get(k) || per.set(k, { store: sn, key, orders: 0, pieces: 0, workSec: 0, workGaps: 0, gaps: 0, gapSec: 0, salariedSec: 0, pickupSec: 0 }).get(k); };
   const S = sn => stDet.get(sn) || stDet.set(sn, { pieces: 0, workSec: 0, workGaps: 0, gaps: 0, salariedSec: 0, pickupSec: 0 }).get(sn);
   const salariedOrders = [];
   for (const [, o] of byOrder) {
-    const sn = workStore(o.loc); if (!sn) continue;
+    const agent = workStore(o.loc);
+    const at = new Map([...o.x].map(([k, v]) => [k, whereWorked(v.x, v.at, agent)]));
+    if (![...at.values()].some(Boolean)) continue;
+    o.at = at;
     const byWho = new Map(); for (const p of o.list) byWho.set(p.who, (byWho.get(p.who) || 0) + 1);
-    for (const [k, n] of byWho) { const row = P(k, sn); row.orders++; row.pieces += n; S(sn).pieces += n; }
+    for (const [k, n] of byWho) { const sn = at.get(k); if (!sn) continue; const row = P(k, sn); row.orders++; row.pieces += n; S(sn).pieces += n; }
     for (const gp of detailGaps(o.list, c.gapSec)) {
+      const sn = at.get(gp.who); if (!sn) continue;
       const row = P(gp.who, sn), st = S(sn);
       if (gp.distraction) { row.gaps++; row.gapSec += gp.sec; st.gaps++; }
       else { row.workSec += gp.sec; row.workGaps++; st.workSec += gp.sec; st.workGaps++; }
     }
-    salariedOrders.push({ sn, o });
+    salariedOrders.push({ o });
   }
   // salaried detailing time: each order's work gaps + one typical piece (their own average, else the store's, else 30 s)
   const keyInfo = new Map([...staffOf.values()].map(x => [x.key, x]));
-  for (const { sn, o } of salariedOrders) {
+  for (const { o } of salariedOrders) {
     const keys = new Set(o.list.map(p => p.who));
     for (const k of keys) {
-      const x = keyInfo.get(k); if (!x || !x.salaried) continue;
+      const x = keyInfo.get(k), sn = o.at.get(k); if (!x || !x.salaried || !sn) continue;
       const row = P(k, sn), st = S(sn);
       const typical = row.workGaps ? row.workSec / row.workGaps : st.workGaps ? st.workSec / st.workGaps : 30;
       const work = detailGaps(o.list.filter(p => p.who === k), c.gapSec).filter(x2 => !x2.distraction).reduce((t, x2) => t + x2.sec, 0);
@@ -206,10 +244,11 @@ export async function counter(db, env, me, from, to, { now = Date.now() } = {}) 
   const salariedSpans = new Map();   // store|day -> [{key, a, b}]
   for (const A of act.values()) {
     if (!A.x.salaried) continue;
-    for (const [sn, B] of A.byStore) {
-      const k = `${sn}|${A.day}`;
-      (salariedSpans.get(k) || salariedSpans.set(k, []).get(k)).push({ key: A.x.key, a: mins(hhmm(B.first)) - c.graceMin, b: mins(hhmm(B.last)) + c.graceMin });
-    }
+    const sn = home.get(A.x.key); if (!sn) continue;   // salaried people count at their usual store, whatever the Agent says
+    const all = [...A.byStore.values()];
+    const first = all.reduce((m, B) => (ms(B.first) < ms(m) ? B.first : m), all[0].first), last = all.reduce((m, B) => (ms(B.last) > ms(m) ? B.last : m), all[0].last);
+    const k = `${sn}|${A.day}`;
+    (salariedSpans.get(k) || salariedSpans.set(k, []).get(k)).push({ key: A.x.key, a: mins(hhmm(first)) - c.graceMin, b: mins(hhmm(last)) + c.graceMin });
   }
   for (const o of g.pickups) {
     const sn = storeName(o.loc); if (!sn) continue;

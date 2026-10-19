@@ -48,6 +48,9 @@ Town & Country Cleaners: dry cleaning and starched laundry, about 900–1,100 pi
 - **Clock check**: SMRT work at a store Rippling doesn't have the person at, SMRT work with no punch (not salaried), or
   SMRT work more than 15 min outside punches. **Rippling is the source of truth**: fix it there and the flag clears;
   a Manager can mark a flag OK with a note.
+- **Where counter work happened**: SMRT's Agent is the store credited (sales), and staff sometimes switch it (a Sulphur
+  Springs drop-off picked up in Emory). The Counter counts each person's tickets and pieces at the store where most of
+  their SMRT work was that day (two Rippling stores that day: the punch time decides). Sales credit stays with the Agent.
 - **Wrong-store text**: every 10 min, anyone on the clock with 5+ SMRT tickets/pieces in the last hour, most at a store other
   than their punch, gets one text per day to the retail manager (Karla; Settings › Counter › Text to).
 

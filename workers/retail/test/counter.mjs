@@ -135,6 +135,19 @@ await t("visits per labor hour = visits / (Rippling + salaried hours)", async ()
   near(ss.visitsPerHour, ss.visits / ss.hours, "", 0.01);
 });
 
+await t("a ticket dropped at Sulphur Springs but credited to Emory counts at Sulphur Springs for the Counter", async () => {
+  // Karla's order switched to Emory (Agent) on a day she otherwise worked Sulphur Springs: her pieces and the visit stay at SS
+  const o = ticket({ store: "TCC Emory", created: T("14:00"), by: "Karla V", det: "Karla Velasquez", times: [T("14:01"), T("14:01").replace(":00-05:00", ":30-05:00")] });
+  await ingestDay(db, { orgId: "tcc", runId: "seed", mode: "backfill", day: DAY }, [o], its.filter(i => i["Sale Id"] === o.ID));
+  const r2 = (await call("GET", `/api/counter?from=${DAY}&to=${DAY}`)).body;
+  ok(!r2.people.some(p => p.store === "Emory"), JSON.stringify(r2.people.map(p => [p.name, p.store])));
+  eq(r2.people.find(p => p.name === "Karla Velasquez").store, "Sulphur Springs");
+  eq(r2.stores.find(s => s.name === "Sulphur Springs").dropOnly, 4);
+  ok(!r2.stores.some(s => s.name === "Emory"));
+  // and Ash's Greenville day stays at Greenville even though Rippling has him at Sulphur Springs
+  eq(r2.stores.find(s => s.name === "Greenville").visits, 5);
+});
+
 console.log("resolving flags");
 await t("a Viewer can't mark a flag OK; a Manager-level user can, with a note; reopen works", async () => {
   const key = d.checks.find(x => x.kind === "no_punch").key;
