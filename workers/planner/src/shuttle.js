@@ -87,7 +87,25 @@ async function loadRows(db, orgId, storeIds, today) {
   }
   await fillRackStores(db, [...due, ...held], today);
   const tickets = await loadTickets(db, orgId, [...new Set([...due, ...held].map(r => String(r.no)))]);
+  await fillNamesFromScans(db, orgId, [...due, ...held]);
   return { due, held, tickets };
+}
+
+/** Orders without a customer name get it from an item scan of one of their tags (SMRT's rack-scan report carries the name). */
+export async function fillNamesFromScans(db, orgId, rows) {
+  const need = rows.filter(r => !r.cname && r.barcode);
+  const tags = [...new Set(need.map(r => r.barcode))];
+  if (!tags.length) return;
+  const byTag = new Map();
+  for (let i = 0; i < tags.length; i += 90) {
+    const part = tags.slice(i, i + 90);
+    const res = (await db.prepare(`SELECT ref, customer_name AS name, MAX(at) AS at FROM pos_rack_events WHERE org_id=? AND kind='item' AND customer_name IS NOT NULL
+        AND ref IN (${part.map(() => "?").join(",")}) GROUP BY ref, customer_name`).bind(orgId, ...part).all()).results;
+    for (const x of res) { const cur = byTag.get(x.ref); if (!cur || x.at > cur.at) byTag.set(x.ref, x); }
+  }
+  const byOrder = new Map();
+  for (const r of need) { const hit = byTag.get(r.barcode); if (hit && !byOrder.has(r.oid)) byOrder.set(r.oid, hit.name); }
+  for (const r of rows) if (!r.cname && byOrder.has(r.oid)) r.cname = byOrder.get(r.oid);
 }
 
 /** Each order's tickets with their latest scan (Map order number -> list). */

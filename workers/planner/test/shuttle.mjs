@@ -188,6 +188,12 @@ await t("API: GET /api/shuttle with a store, any signed-in role", async () => {
   eq(r.status, 200); eq(r.body.rows.length, 1); eq(r.body.rows[0].item, "2 items, no ticket yet"); ok(r.body.asOf && r.body.sync === true);
   eq((await call("GET", `/api/shuttle?store=${stores["Sulphur Springs"]}`)).status, 404, "not a shuttle store");
   ok(/^Pat Customer\d+$/.test(r.body.rows[0].customer), "name from the report's Customer Name column");
+  // an order with no name gets it from an item scan of one of its tags
+  const tag = sqlite.prepare("SELECT i.barcode FROM pos_items i JOIN pos_orders o ON o.id=i.order_id WHERE o.smrt_order_no=? LIMIT 1").get(a).barcode;
+  sqlite.prepare("INSERT INTO pos_rack_events(id,org_id,kind,ref,location,location_barcode,at,customer_name) VALUES('ev1','tcc','item',?,'11','11',?,'LANCE BANKS')").run(tag, ts(TODAY, "09:00"));
+  const qv = await shuttleView(db, env, { storeId: stores.Quitman });
+  eq(qv.rows.find(x => x.orderNo === a).customer, "LANCE BANKS", "name from an item scan");
+  sqlite.prepare("DELETE FROM pos_rack_events WHERE id='ev1'").run();
   eq(q.rows[0].customer, "C1", "no name column: the SMRT customer id");
 });
 await t("Check now sends only the created days of orders still holding up the run, then answers with the fresh view", async () => {
