@@ -174,7 +174,14 @@ await t("tickets: an order with ticket scans is listed ticket by ticket (+ its i
   try {
     const v = await shuttleView(db, env, { storeId: stores.Quitman });
     const ra = v.rows.filter(r => r.orderNo === a).map(r => [r.kind, r.status, r.tag || r.item, r.reason || ""]);
-    eq(ra, [["items", "blocked", "1 item not in a ticket yet", "Not ready"], ["ticket", "blocked", `${a.slice(0, 5)}-${a.slice(5)}-B`, "Ticket at Bagging"], ["ticket", "van", `${a.slice(0, 5)}-${a.slice(5)}-A`, ""]]);
+    eq(ra, [["items", "blocked", "1 item", "Not ready"], ["ticket", "blocked", `${a.slice(0, 5)}-${a.slice(5)}-B`, "Ticket at Bagging"], ["ticket", "van", `${a.slice(0, 5)}-${a.slice(5)}-A`, ""]]);
+    // Neal, Oct 20: tickets of an order still being assembled are "In Assembly"; Location = the rack, or PLANT before assembly
+    const rowsA = v.rows.filter(r => r.orderNo === a);
+    eq(rowsA.map(r => [r.location, r.prod.split(" · ")[0]]), [["PLANT", rowsA[0].prod.split(" · ")[0]], ["BAGGING", "In Assembly"], ["VAN", "Ready for Shuttle"]]);
+    const ta = rowsA.find(r => r.tag.endsWith("-A"));
+    eq([ta.scan.location, ta.scan.by], ["VAN", "Larry N"], "ticket dialog: where and who scanned it");
+    ok(ta.details.length >= 1 && ta.details.every(d => d.ready && "tag" in d), "ticket dialog lists the order's finished items");
+    ok(rowsA[0].details.length === 1 && !rowsA[0].details[0].ready && rowsA[0].details[0].location === "PLANT", "items row lists the item not in a ticket");
     eq(v.rows.filter(r => r.orderNo === b).length, 0, "order b's ticket is at Quitman");
     eq(v.rows.find(r => r.kind === "ticket").customer, "MIKE FOUNTAIN");
     const s = v.stores.find(x => x.id === stores.Quitman);
@@ -188,7 +195,7 @@ await t("API: GET /api/shuttle with a store, any signed-in role", async () => {
   ok(u.status === 201, JSON.stringify(u.body));
   const r = await call("GET", `/api/shuttle?store=${stores.Greenville}`, { as: "larry@example.com" });
   const vanRow = r.body.rows.find(x => x.status === "van");
-  eq(r.status, 200); eq(r.body.rows.map(x => x.status), ["held", "van"]); eq(vanRow.item, "2 items, no ticket yet"); ok(r.body.asOf && r.body.sync === true);
+  eq(r.status, 200); eq(r.body.rows.map(x => x.status), ["held", "van"]); eq(vanRow.item, "2 items"); eq(vanRow.details.length, 2); eq(vanRow.location, "VAN"); ok(r.body.asOf && r.body.sync === true);
   eq((await call("GET", `/api/shuttle?store=${stores["Sulphur Springs"]}`)).status, 404, "not a shuttle store");
   ok(/^Pat Customer\d+$/.test(vanRow.customer), "name from the report's Customer Name column");
   // an order with no name gets it from an item scan of one of its tags
@@ -248,15 +255,29 @@ else {
       ok(p.url().endsWith("#quitman"));
       await p.screenshot({ path: join(SHOTS, "shuttle-desktop.png"), fullPage: true });
     });
-    await t("page: not on VAN rows first; sorting by Rack and back", async () => {
+    await t("page: not on VAN rows first; sorting by Location and back", async () => {
       const first = await p.$$eval(".sh-table tbody tr", rs => rs.map(r => r.className));
       eq(first.slice(0, 2), ["r-blocked", "r-blocked"]);
-      await p.click('th[data-key="rack"] button');
-      eq(await p.getAttribute('th[data-key="rack"]', "aria-sort"), "ascending");
-      await p.click('th[data-key="rack"] button');
-      eq(await p.getAttribute('th[data-key="rack"]', "aria-sort"), "descending");
-      const racks = await p.$$eval(".sh-table tbody tr td:nth-child(3)", ts => ts.map(t => t.textContent.trim()));
-      ok(racks[0].startsWith("VAN"), racks.join());
+      const heads = await p.$$eval(".sh-table th", ts => ts.map(t => t.textContent.trim()));
+      eq(heads, ["Location", "Order", "Items", "Production", "Customer", "Due", "Note"], "no Status, Ticket / tag or Scanned columns");
+      await p.click('th[data-key="location"] button');
+      eq(await p.getAttribute('th[data-key="location"]', "aria-sort"), "ascending");
+      await p.click('th[data-key="location"] button');
+      eq(await p.getAttribute('th[data-key="location"]', "aria-sort"), "descending");
+      const locs = await p.$$eval(".sh-table tbody tr td:nth-child(1)", ts => ts.map(t => t.textContent.trim()));
+      ok(locs[0].startsWith("VAN"), locs.join());
+      ok(locs.some(l => l.startsWith("PLANT")), "items not through assembly show PLANT: " + locs.join());
+      await p.click('th[data-key="location"] button'); // back to ascending
+    });
+    await t("page: an item count opens the items; a click outside closes it", async () => {
+      const link = p.locator(".sh-table button.sh-link").first();
+      ok(/^\d+ items?$|^Ticket /.test((await link.textContent()).trim()));
+      await link.click();
+      await p.waitForSelector("dialog.sh-dlg[open] .sh-dlg-table");
+      const heads = await p.$$eval("dialog.sh-dlg .sh-dlg-table th", ts => ts.map(t => t.textContent.trim()));
+      eq(heads, ["Item ID", "Item", "Production", "Location", "Note"]);
+      await p.mouse.click(5, 5); // the backdrop
+      await p.waitForSelector("dialog.sh-dlg", { state: "detached" });
     });
     await t("page: held over without a note says to add one in SMRT", async () => {
       ok(await p.isVisible("text=Add a note in SMRT"));

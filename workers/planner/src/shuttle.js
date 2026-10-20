@@ -126,14 +126,15 @@ export async function loadTickets(db, orgId, orderNos) {
  * is one row), from the item-by-item rules. Not-detailed orders and Wash & Fold rows are already one row.
  */
 export function noTicketRow(items) {
-  if (items.length <= 1 || items.some(r => r.kind !== "piece")) return items;
+  if (!items.length || items.some(r => r.kind !== "piece")) return items;
   const r0 = items[0], n = items.length;
   const count = st => items.filter(r => r.status === st).length;
   const racks = [...new Set(items.map(r => r.rack).filter(Boolean))];
   const prods = [...new Set(items.map(r => r.prod).filter(Boolean))];
   const base = {
     ...r0, key: "i" + r0.orderId, kind: "items", unit: "item", line: "", tag: "", brand: "", ticket: null,
-    item: `${n} items, no ticket yet`, prod: prods.join(", "), rack: racks.join(", ") || null, rackStore: null,
+    item: itemsLabel(n), prod: prods.join(", "), rack: racks.join(", ") || null, rackStore: null,
+    location: [...new Set(items.map(r => r.location))].join(", "), details: items.flatMap(r => r.details || []),
     rackedAt: items.map(r => r.rackedAt).filter(Boolean).sort().pop() || null, rackedBy: [...new Set(items.map(r => r.rackedBy).filter(Boolean))].join(", ") || null,
     note: items.map(r => r.note).find(Boolean) || null, ready: items.every(r => r.ready),
   };
@@ -144,6 +145,7 @@ export function noTicketRow(items) {
   const onVan = count("van");
   return [{ ...base, status: "blocked", pieces: blocked.length, ready: blocked.every(r => r.ready), notReady: blocked.filter(r => !r.ready).length, vanPart: onVan,
     rack: [...new Set(blocked.map(r => r.rack).filter(Boolean))].join(", ") || null,
+    location: [...new Set(blocked.map(r => r.location))].join(", "),
     reason: Object.entries(why).map(([k, v]) => `${v} ${k}`).join(", ") + (onVan ? `; ${onVan} on VAN` : "") }];
 }
 
@@ -159,24 +161,29 @@ export function orderRows(rows, tickets, transit, today, { held = false } = {}) 
     customer: r0.cname || tickets.find(t => t.customer)?.customer || r0.customer || "", customerId: r0.customer || "",
     due: r0.due || null, created: String(r0.created || "").slice(0, 10) || null, orderNote: r0.onote || null,
   };
+  // items not ready yet (not in a ticket): one row for the order. While there are any, the order is still being assembled, so
+  // its tickets are "In Assembly" (unless already on VAN); once every item is done they're "Ready for Shuttle" (Neal, Oct 20).
+  const doneOrder = ASSEMBLED_ORDER.test(String(r0.ostatus || "").replace(/[\s_-]/g, ""));
+  const live = rows.filter(r => r.iid && !r.iret && !/^customer$/i.test(String(r.istatus || "").trim()));
+  const notReady = doneOrder ? [] : live.filter(r => !r.isAsm && !r.asm);
+  const inTickets = live.filter(r => !notReady.includes(r)).map(itemDetail);
+  const ticketProd = notReady.length ? "In Assembly" : "Ready for Shuttle";
   const out = [];
   for (const t of tickets) {
     if ((t.storeId && t.storeId === r0.store) || GONE_RACK.test(String(t.location || "").trim())) continue; // at the store, or back with the customer
     const row = {
       ...base, key: "t" + t.id, kind: "ticket", unit: "ticket", pieces: 1, line: t.letter, tag: t.id, ticket: t.id, item: `Ticket ${t.letter || ""}`.trim(),
-      customer: t.customer || base.customer, prod: "Bagged", ready: true, rack: t.location || null, rackStore: t.store || null, rackedAt: t.at || null, rackedBy: t.by || null, note: r0.onote || null,
+      customer: t.customer || base.customer, prod: t.location && transit.test(t.location) ? "Ready for Shuttle" : ticketProd, ready: true, rack: t.location || null, location: locOf(t.location, true), details: inTickets,
+      scan: { location: t.location || null, store: t.store || null, at: t.at || null, by: t.by || null }, rackStore: t.store || null, rackedAt: t.at || null, rackedBy: t.by || null, note: r0.onote || null,
     };
     if (held) { out.push({ ...row, status: "held", heldFrom: r0.heldFrom || null, noted: !!(r0.onote || rows.some(x => x.inote)), note: r0.onote || rows.find(x => x.inote)?.inote || null }); continue; }
     if (t.location && transit.test(t.location)) { out.push({ ...row, status: "van", vanSince: String(t.at || "").slice(0, 10) < today ? String(t.at).slice(0, 10) : null }); continue; }
     out.push({ ...row, status: "blocked", reason: t.location ? `Ticket at ${t.location}` : "Ticket not scanned" });
   }
-  // items not ready yet (not in a ticket): one row for the order
-  const doneOrder = ASSEMBLED_ORDER.test(String(r0.ostatus || "").replace(/[\s_-]/g, ""));
-  const notReady = doneOrder ? [] : rows.filter(r => r.iid && !r.iret && !r.isAsm && !r.asm && !/^customer$/i.test(String(r.istatus || "").trim()));
   if (notReady.length) {
     const what = [...new Set(notReady.map(r => `${r.istatus ? r.istatus[0].toUpperCase() + r.istatus.slice(1) : "Not scanned"}${r.lot && !/^completed?$/i.test(String(r.lot).trim()) ? ` · ${String(r.lot).toLowerCase()}` : ""}`))].join(", ");
-    const row = { ...base, key: "n" + r0.oid, kind: "items", unit: "item", pieces: notReady.length, tag: "", item: `${notReady.length} item${notReady.length === 1 ? "" : "s"} not in a ticket yet`,
-      prod: what, ready: false, rack: null, note: r0.onote || null };
+    const row = { ...base, key: "n" + r0.oid, kind: "items", unit: "item", pieces: notReady.length, tag: "", item: itemsLabel(notReady.length),
+      prod: what, ready: false, rack: null, location: PLANT, details: notReady.map(itemDetail), note: r0.onote || null };
     out.push(held ? { ...row, status: "held", heldFrom: r0.heldFrom || null, noted: !!(r0.onote || notReady.some(x => x.inote)) } : { ...row, status: "blocked", reason: "Not ready" });
   }
   return out;
@@ -221,6 +228,29 @@ export async function fillRackStores(db, rows, today) {
 const WASH_FOLD = /wash\s*(&|and)?\s*fold/i;
 const ASSEMBLED_ORDER = /^(assembled|racked|ready|complete|completed)$/i;
 const GONE_RACK = /^(returned|delivered)$/i;
+export const PLANT = "PLANT";
+const cap = x => (x ? x[0].toUpperCase() + x.slice(1) : x);
+const isReady = r => !!r.isAsm || !!r.asm || ASSEMBLED_ORDER.test(String(r.ostatus || "").replace(/[\s_-]/g, ""));
+const prodOf = r => {
+  if (isReady(r)) return "Ready";
+  const lot = String(r.lot || "").trim();
+  return `${r.istatus ? cap(r.istatus) : "Not scanned"}${lot && !/^completed?$/i.test(lot) ? ` · ${lot.toLowerCase()}` : ""}`;
+};
+/**
+ * Where something is, for the Location column (Neal, Oct 20): the rack it was last scanned to (VAN, PH12…), or PLANT for items
+ * that haven't reached assembly yet (not ready, or ready but not racked).
+ */
+export const locOf = (rack, ready) => (ready && rack ? String(rack).trim().toUpperCase() : PLANT);
+/** One item for the details dialog (Items column). */
+export function itemDetail(r) {
+  const ready = isReady(r);
+  return {
+    tag: r.barcode || "", line: r.line ?? null, item: [r.type, r.colors].filter(Boolean).join(" · ") || "Item", brand: r.brand || "", dep: r.dep || "",
+    prod: prodOf(r), ready, location: locOf(r.rack, ready), rack: r.rack || null, rackStore: r.rackStore || null, rackedAt: r.rackedAt || null, rackedBy: r.rackedBy || null,
+    note: r.inote || null,
+  };
+}
+const itemsLabel = k => `${k} item${k === 1 ? "" : "s"}`;
 
 /** One table row for a piece (or an order with no pieces detailed yet), or null when it isn't part of the run any more. */
 export function classify(r, transit, today, { held = false } = {}) {
@@ -233,26 +263,26 @@ export function classify(r, transit, today, { held = false } = {}) {
   // and doesn't hold up the run; one not ready yet does.
   if (!r.iid && WASH_FOLD.test(String(r.otype || ""))) {
     const ready = ASSEMBLED_ORDER.test(String(r.ostatus || "").replace(/[\s_-]/g, ""));
-    const wf = { ...base, key: "o" + r.oid, kind: "wf", pieces: 1, item: "Wash & Fold bag", prod: ready ? "Ready" : (r.ostatus ? r.ostatus[0].toUpperCase() + r.ostatus.slice(1) : "Not ready"), ready, rack: null, note: r.onote || null };
+    const wf = { ...base, key: "o" + r.oid, kind: "wf", pieces: 1, item: "Wash & Fold bag", prod: ready ? "Ready" : (r.ostatus ? r.ostatus[0].toUpperCase() + r.ostatus.slice(1) : "Not ready"), ready, rack: null, location: ready ? null : PLANT, note: r.onote || null };
     if (held) return { ...wf, status: "held", heldFrom: r.heldFrom || null, noted: !!r.onote };
     return ready ? { ...wf, status: "wf", reason: "Check by hand: SMRT doesn't report where W&F bags are racked" } : { ...wf, status: "blocked", reason: "Wash & Fold not ready" };
   }
   if (!r.iid) { // the order hasn't been detailed: SMRT only knows how many pieces
-    if (held) return { ...base, key: "o" + r.oid, kind: "order", status: "held", pieces: r.opieces || 0, item: `${r.opieces || "?"} pieces, not detailed`, prod: "Not detailed", rack: null,
+    if (held) return { ...base, key: "o" + r.oid, kind: "order", status: "held", pieces: r.opieces || 0, item: `${r.opieces || "?"} pieces, not detailed`, prod: "Not detailed", rack: null, location: PLANT,
       heldFrom: r.heldFrom || null, noted: !!r.onote, note: r.onote || null };
     return { ...base, key: "o" + r.oid, kind: "order", status: "blocked", pieces: r.opieces || 0, item: `${r.opieces || "?"} pieces, not detailed`, prod: "Not detailed",
-      rack: null, reason: "Not detailed yet", note: r.onote || null };
+      rack: null, location: PLANT, reason: "Not detailed yet", note: r.onote || null };
   }
   if (r.iret || GONE_RACK.test(String(r.rack || "").trim()) || /^customer$/i.test(String(r.istatus || "").trim())) return null; // with the customer
   if (r.rackStoreId && r.rackStoreId === r.store) return null; // already racked at the store (an earlier run)
-  const ready = !!r.isAsm || !!r.asm || ASSEMBLED_ORDER.test(String(r.ostatus || "").replace(/[\s_-]/g, ""));
-  const lot = String(r.lot || "").trim();
-  const prod = ready ? "Ready" : `${r.istatus ? r.istatus[0].toUpperCase() + r.istatus.slice(1) : "Not scanned"}${lot && !/^completed?$/i.test(lot) ? ` · ${lot.toLowerCase()}` : ""}`;
+  const ready = isReady(r);
+  const prod = prodOf(r);
   const item = [r.type, r.colors].filter(Boolean).join(" · ") || "Piece";
   const onVan = !!r.rack && transit.test(r.rack);
   const p = {
     ...base, key: r.iid, kind: "piece", pieces: 1, line: r.line, tag: r.barcode || "", item, brand: r.brand || "", dep: r.dep || "", prod, ready,
     rack: r.rack || null, rackStore: r.rackStore || null, rackedAt: r.rackedAt || null, rackedBy: r.rackedBy || null, note: r.inote || null,
+    location: locOf(r.rack, ready), details: [itemDetail(r)],
   };
   if (held) return { ...p, status: "held", heldFrom: r.heldFrom || null, noted: !!(r.inote || r.onote), note: r.inote || r.onote || null };
   if (onVan) return { ...p, status: "van", vanSince: r.rackedAt && String(r.rackedAt).slice(0, 10) < today ? String(r.rackedAt).slice(0, 10) : null };

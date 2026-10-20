@@ -50,7 +50,7 @@ body.sh { min-height: 100vh; }
 
 /* pieces */
 .sh-table-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
-.sh-table { width: 100%; border-collapse: collapse; font-size: 14px; min-width: 1060px; }
+.sh-table { width: 100%; border-collapse: collapse; font-size: 14px; min-width: 820px; }
 .sh-table th { position: sticky; top: 0; background: var(--card2); text-align: left; font-size: 12.5px; color: var(--muted); font-weight: 600; border-bottom: 1px solid var(--line2); padding: 0; white-space: nowrap; }
 .sh-table th button { all: unset; display: flex; align-items: center; gap: 5px; padding: 10px 12px; cursor: pointer; width: 100%; box-sizing: border-box; }
 .sh-table th button:hover { color: var(--text); }
@@ -93,3 +93,18 @@ body.sh { min-height: 100vh; }
   .sh-banner-act { flex: 1 1 100%; align-items: stretch; text-align: left; }
   .sh-count { flex-direction: column; gap: 0; padding: 8px 10px; } .sh-count b { font-size: 21px; }
 }
+
+/* Items column: the ticket letter / item count opens the details */
+.sh-link { all: unset; color: var(--info); cursor: pointer; font-weight: 600; border-bottom: 1px dotted currentColor; }
+.sh-link:hover { border-bottom-style: solid; }
+.sh-link:focus-visible { outline: 2px solid var(--info); outline-offset: 2px; border-radius: 3px; }
+dialog.sh-dlg { width: min(760px, calc(100vw - 32px)); }
+.sh-dlg .dlg-head h2 a { color: var(--info); text-decoration: none; display: inline-flex; align-items: center; gap: 4px; }
+.sh-dlg .dlg-head h2 a svg { width: 15px; height: 15px; }
+.sh-dlg-x { min-width: 36px; }
+.sh-dlg-sub { margin: 0 0 8px; color: var(--muted); }
+.sh-dlg-scan { margin: 0 0 10px; font-size: 14.5px; }
+.sh-dlg-hint { margin: 0 0 10px; color: var(--faint); font-size: 12.5px; }
+.sh-dlg-wrap { overflow-x: auto; margin: 0 -6px 16px; max-height: 60vh; }
+.sh-dlg-table { min-width: 560px; }
+.sh-dlg-table th { padding: 8px 12px; position: static; }

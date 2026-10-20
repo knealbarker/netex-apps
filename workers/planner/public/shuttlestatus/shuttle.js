@@ -111,6 +111,7 @@ function render() {
   sec.hidden = false;
   sec.innerHTML = banner(s, stale) + counts(s) + table(s);
   sec.querySelector("#sh-check").onclick = checkNow;
+  for (const b of sec.querySelectorAll("button.sh-link")) b.onclick = () => { const r = data.rows.find(x => x.key === b.dataset.key); if (r) showDetails(r); };
   for (const th of sec.querySelectorAll("th[data-key] button")) th.onclick = () => {
     const k = th.closest("th").dataset.key;
     sort = sort.key === k ? { key: k, dir: -sort.dir } : { key: k, dir: 1 };
@@ -165,15 +166,13 @@ function counts(s) {
 
 // ---------- the piece table
 const RANK = { blocked: 0, held: 1, wf: 2, van: 3 };
+// Neal, Oct 20: Location first (the rack, or PLANT before assembly); the ticket letter or item count opens the details
 const COLS = [
-  { key: "status", label: "Status", val: r => RANK[r.status] * 10 + (r.status === "held" && !r.noted ? 0 : 1) },
+  { key: "location", label: "Location", val: r => r.location || "" },
   { key: "order", label: "Order", val: r => r.orderNo },
-  { key: "rack", label: "Location", val: r => r.rack || "" },
   { key: "item", label: "Items", val: r => r.item },
-  { key: "tag", label: "Ticket / tag", val: r => r.tag || "" },
   { key: "prod", label: "Production", val: r => r.prod },
   { key: "customer", label: "Customer", val: r => r.customer },
-  { key: "racked", label: "Scanned", val: r => r.rackedAt || "" },
   { key: "due", label: "Due", val: r => r.due || "" },
   { key: "note", label: "Note", val: r => r.note || "" },
 ];
@@ -186,13 +185,14 @@ function sorted(rows) {
     return d * sort.dir || a[1] - b[1];
   }).map(x => x[0]);
 }
-function statusCell(r) {
-  const T = data.transitRack.toUpperCase();
-  if (r.status === "van") return html`<span class="sp ok">${raw(ICON.ok)}On ${T}</span>${r.vanSince ? raw(html`<small class="warn">since ${shortDay(r.vanSince)}</small>`) : ""}`;
-  if (r.status === "wf") return html`<span class="sp warn">W&amp;F bag</span><small>check by hand</small>`;
-  if (r.status === "held") return html`<span class="sp ${r.noted ? "info" : "warn"}">Held over</span><small>${r.noted ? `due ${shortDay(dayOf(r.due))}` : "needs a note"}</small>`;
-  return html`<span class="sp stop">Not on ${T}</span><small>${r.reason}</small>`;
+// the row's colour says whether it holds up the van; the cell itself is just where it is
+function locCell(r) {
+  const cls = r.status === "van" ? "ok" : r.status === "blocked" ? "stop" : r.status === "held" ? (r.noted ? "info" : "warn") : "warn";
+  if (r.status === "wf") return html`<span class="sp warn">Check by hand</span>`;
+  const sub = r.status === "van" && r.vanSince ? html`<small class="warn">since ${shortDay(r.vanSince)}</small>` : r.status === "held" ? html`<small>held over</small>` : "";
+  return html`<span class="sp ${cls}">${r.location || "—"}</span>${raw(sub)}`;
 }
+const opens = r => Array.isArray(r.details) && (r.kind === "ticket" || r.details.length > 0);
 function table(s) {
   const rows = sorted(data.rows);
   if (!rows.length) return `<p class="sh-empty">Nothing due for ${html`${s.name}`} today or earlier.</p>`;
@@ -203,26 +203,63 @@ function table(s) {
   const body = rows.map(r => {
     const late = r.status !== "held" && dayOf(r.due) && dayOf(r.due) < data.day;
     const order = r.link ? html`<a href="${r.link}" target="_blank" rel="noopener" title="Open in SMRT">${r.order}${raw(ICON.out)}</a>` : html`${r.order}`;
-    const rack = r.rack ? html`<b>${r.rack}</b>${r.rackStore && r.status === "blocked" ? raw(html`<small>${r.rackStore}</small>`) : ""}` : html`<span class="faint">—</span>`;
     const due = r.status === "held"
       ? html`<span>${shortDay(dayOf(r.due))}</span><small>was ${shortDay(dayOf(r.heldFrom))}</small>`
       : html`<span>${shortDay(dayOf(r.due))}</span>${late ? raw('<small class="warn">late</small>') : raw(html`<small>${time(r.due)}</small>`)}`;
     const note = r.status === "held" && !r.noted ? html`<span class="warn">Add a note in SMRT</span>` : r.note ? html`<span class="sh-note">${r.note}</span>` : html`<span class="faint">—</span>`;
+    const item = opens(r) ? html`<button type="button" class="sh-link" data-key="${r.key}">${r.item}</button>` : html`${r.item}`;
     return html`<tr class="r-${r.status}">
-      <td class="st">${raw(statusCell(r))}</td>
+      <td class="st">${raw(locCell(r))}</td>
       <td class="mono">${raw(order)}</td>
-      <td>${raw(rack)}</td>
-      <td>${r.item}${r.brand ? raw(html`<small>${r.brand}</small>`) : ""}</td>
-      <td class="mono">${r.tag || "—"}</td>
+      <td>${raw(item)}</td>
       <td>${r.prod}</td>
       <td>${r.customer}</td>
-      <td>${r.rackedAt ? raw(html`<span>${when(r.rackedAt)}</span><small>${r.rackedBy || ""}</small>`) : raw('<span class="faint">—</span>')}</td>
       <td>${raw(due)}</td>
       <td>${raw(note)}</td>
     </tr>`;
   }).join("");
   return `<div class="sh-table-wrap card"><table class="sh-table"><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table></div>
-    <p class="sh-foot">${html`Orders due at ${s.name} today or up to ${data.lookbackDays} days before, one row per ticket; an order with no ticket scanned yet is one row for its items. Left out: tickets and items already at ${s.name} or DELIVERED, back with the customer, or on route deliveries. To hold something over, move its order's due date in SMRT (split the order first if only part stays) and add a note saying why.`}</p>`;
+    <p class="sh-foot">${html`Orders due at ${s.name} today or up to ${data.lookbackDays} days before, one row per ticket; an order's items not in a ticket yet are one row. Click a ticket or an item count for what's in it. PLANT = not through assembly yet. Left out: tickets and items already at ${s.name} or DELIVERED, back with the customer, or on route deliveries. To hold something over, move its order's due date in SMRT (split the order first if only part stays) and add a note saying why.`}</p>`;
+}
+
+// ---------- details dialog (Items column): what's in a ticket or an order's items; click outside or Esc closes it
+function showDetails(r) {
+  const dlg = document.createElement("dialog");
+  dlg.className = "sh-dlg";
+  const order = r.link ? html`<a href="${r.link}" target="_blank" rel="noopener">${r.order}${raw(ICON.out)}</a>` : html`${r.order}`;
+  const scan = r.kind === "ticket" && r.scan
+    ? html`<p class="sh-dlg-scan">${r.scan.location
+      ? raw(html`Scanned to <b>${String(r.scan.location).toUpperCase()}</b>${r.scan.store ? ` (${r.scan.store})` : ""} ${when(r.scan.at)}${r.scan.by ? ` by ${r.scan.by}` : ""}`)
+      : "Not scanned yet"} · ${r.prod}</p>` : "";
+  const items = r.details || [];
+  const rows = items.map(d => html`<tr>
+      <td class="mono">${d.tag ? raw(r.link ? html`<a href="${r.link}" target="_blank" rel="noopener" title="Open in SMRT">${d.tag}${raw(ICON.out)}</a>` : html`${d.tag}`) : "—"}</td>
+      <td>${d.item}${d.brand ? raw(html`<small>${d.brand}</small>`) : ""}</td>
+      <td>${d.prod}</td>
+      <td><b>${d.location}</b>${d.rackedAt ? raw(html`<small>${when(d.rackedAt)}${d.rackedBy ? ` · ${d.rackedBy}` : ""}</small>`) : ""}</td>
+      <td>${d.note || ""}</td>
+    </tr>`).join("");
+  const what = r.kind === "ticket"
+    ? (items.length ? html`<p class="sh-dlg-hint">The order's finished items. SMRT doesn't say which ticket each one is in.</p>` : html`<p class="sh-dlg-hint">No finished items listed for this order yet.</p>`)
+    : "";
+  dlg.innerHTML = html`<div class="dlg-head"><h2>${r.kind === "ticket" ? `${r.item} · ` : ""}${raw(order)}</h2>
+      <button type="button" class="btn ghost sh-dlg-x" aria-label="Close">✕</button></div>
+    <div class="dlg-body">
+      <p class="sh-dlg-sub">${r.customer || ""}${r.due ? ` · due ${shortDay(dayOf(r.due))}` : ""}</p>
+      ${raw(scan)}${raw(what)}
+      ${raw(items.length ? `<div class="sh-dlg-wrap"><table class="sh-table sh-dlg-table"><thead><tr><th>Item ID</th><th>Item</th><th>Production</th><th>Location</th><th>Note</th></tr></thead><tbody>${rows}</tbody></table></div>` : "")}
+    </div>`;
+  document.body.appendChild(dlg);
+  const close = () => { dlg.close(); };
+  dlg.addEventListener("close", () => dlg.remove());
+  dlg.querySelector(".sh-dlg-x").onclick = close;
+  // a click on the backdrop lands on the <dialog> itself, outside its box
+  dlg.addEventListener("click", e => {
+    if (e.target !== dlg) return;
+    const b = dlg.getBoundingClientRect();
+    if (e.clientX < b.left || e.clientX > b.right || e.clientY < b.top || e.clientY > b.bottom) close();
+  });
+  dlg.showModal();
 }
 
 // ---------- start
