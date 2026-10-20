@@ -108,3 +108,14 @@ dialog.sh-dlg { width: min(760px, calc(100vw - 32px)); }
 .sh-dlg-wrap { overflow-x: auto; margin: 0 -6px 16px; max-height: 60vh; }
 .sh-dlg-table { min-width: 560px; }
 .sh-dlg-table th { padding: 8px 12px; position: static; }
+
+/* stage tiles (Detailed / In Assembly / Ready for Shuttle / on VAN); a stage tile filters the table */
+.sh-counts.sh-stages { grid-template-columns: repeat(4, 1fr); }
+.sh-stage { font: inherit; color: inherit; text-align: left; cursor: pointer; }
+.sh-stage:hover { background: var(--hover); }
+.sh-stage[aria-pressed="true"] { box-shadow: 0 0 0 2px var(--info) inset; background: var(--card2); }
+.sh-stage:focus-visible { outline: 2px solid var(--info); outline-offset: 2px; }
+.sh-count.stage b { color: var(--info); }
+.sh-count span small { display: block; color: var(--faint); font-size: 12px; }
+.sh-filter { margin: 0 2px 10px; color: var(--muted); font-size: 13.5px; }
+@media (max-width: 700px) { .sh-counts.sh-stages { grid-template-columns: 1fr 1fr; } }

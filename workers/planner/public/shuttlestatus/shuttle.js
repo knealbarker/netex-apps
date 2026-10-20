@@ -10,7 +10,7 @@ const $ = id => document.getElementById(id);
 const slug = s => String(s || "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
 const store = { get(k) { try { return localStorage.getItem(k); } catch { return null; } }, set(k, v) { try { localStorage.setItem(k, v); } catch { /* private window */ } } };
 
-let data = null, sel = null, sort = { key: null, dir: 1 }, checking = false, timer = null;
+let data = null, sel = null, sort = { key: null, dir: 1 }, checking = false, timer = null, filter = null;
 
 // ---------- formatting (Central time)
 const fmt = (iso, o) => (iso ? new Intl.DateTimeFormat("en-US", { timeZone: TZ, ...o }).format(new Date(iso)) : "");
@@ -53,7 +53,7 @@ function chooseStore(stores) {
 }
 function pick(id, { fetch = true } = {}) {
   sel = id; store.set("sh-store", id);
-  sort = { key: null, dir: 1 };
+  sort = { key: null, dir: 1 }; filter = null;
   const s = (data?.stores || []).find(x => x.id === id);
   if (s && location.hash.slice(1) !== slug(s.name)) history.replaceState(null, "", "#" + slug(s.name));
   if (fetch) load();
@@ -111,7 +111,9 @@ function render() {
   sec.hidden = false;
   sec.innerHTML = banner(s, stale) + counts(s) + table(s);
   sec.querySelector("#sh-check").onclick = checkNow;
-  for (const b of sec.querySelectorAll("button.sh-link")) b.onclick = () => { const r = data.rows.find(x => x.key === b.dataset.key); if (r) showDetails(r); };
+  const clr = sec.querySelector("#sh-clear"); if (clr) clr.onclick = () => { filter = null; render(); };
+  for (const b of sec.querySelectorAll("button.sh-stage")) b.onclick = () => { filter = filter === b.dataset.stage ? null : b.dataset.stage; render(); };
+  for (const b of sec.querySelectorAll("button.sh-link[data-key]")) b.onclick = () => { const r = data.rows.find(x => x.key === b.dataset.key); if (r) showDetails(r); };
   for (const th of sec.querySelectorAll("th[data-key] button")) th.onclick = () => {
     const k = th.closest("th").dataset.key;
     sort = sort.key === k ? { key: k, dir: -sort.dir } : { key: k, dir: 1 };
@@ -154,11 +156,23 @@ function banner(s, stale) {
     </div>`;
 }
 
+// tiles: where things are (Neal, Oct 20). Detailed → In Assembly → Ready for Shuttle → on VAN; clicking a stage tile shows
+// only those rows in the table (click again for all)
+const STAGES = [
+  { key: "detailed", label: "Detailed", hint: "not through assembly yet" },
+  { key: "assembly", label: "In Assembly", hint: "tickets, order not finished" },
+  { key: "ready", label: "Ready for Shuttle", hint: "not on VAN yet" },
+];
 function counts(s) {
-  const c = (k, label, cls) => html`<div class="sh-count ${cls}"><b>${k}</b><span>${label}</span></div>`;
-  return `<div class="sh-counts">${[
-    c(s.van, `on ${data.transitRack.toUpperCase()}`, "ok"),
-    c(s.blocked, `not on ${data.transitRack.toUpperCase()}`, s.blocked ? "stop" : ""),
+  const T = data.transitRack.toUpperCase();
+  const c = (k, label, cls, { key = "", sub = "" } = {}) => html`<${key ? "button" : "div"} ${key ? raw(html`type="button" data-stage="${key}" aria-pressed="${filter === key}"`) : ""} class="sh-count ${cls} ${key ? "sh-stage" : ""}">
+      <b>${k}</b><span>${label}${sub ? raw(html`<small>${sub}</small>`) : ""}</span></${key ? "button" : "div"}>`;
+  const st = s.stages || {};
+  const stageTile = g => { const x = st[g.key] || { items: 0, tickets: 0 }; const k = x.items + x.tickets;
+    return c(k, g.label, k ? "stage" : "", { key: g.key, sub: k ? units(k, x.tickets) : g.hint }); };
+  return `<div class="sh-counts sh-stages">${STAGES.map(stageTile).join("")}${c(s.van, `on ${T}`, "ok")}</div>
+    <div class="sh-counts">${[
+    c(s.blocked, `not on ${T}`, s.blocked ? "stop" : ""),
     c(s.held, "held over", s.heldNoNote ? "warn" : ""),
     ...(s.wf ? [c(s.wf, "W&F to check by hand", "warn")] : []),
   ].join("")}</div>`;
@@ -194,7 +208,10 @@ function locCell(r) {
 }
 const opens = r => Array.isArray(r.details) && (r.kind === "ticket" || r.details.length > 0);
 function table(s) {
-  const rows = sorted(data.rows);
+  const rows = sorted(filter ? data.rows.filter(r => r.stages && r.stages[filter]) : data.rows);
+  const g = filter && STAGES.find(x => x.key === filter);
+  const shown = g ? html`<p class="sh-filter">Showing <b>${g.label}</b> only · <button type="button" class="sh-link" id="sh-clear">Show all</button></p>` : "";
+  if (g && !rows.length) return shown + `<p class="sh-empty">Nothing ${html`${g.label.toLowerCase()}`} for ${html`${s.name}`}.</p>`;
   if (!rows.length) return `<p class="sh-empty">Nothing due for ${html`${s.name}`} today or earlier.</p>`;
   const head = COLS.map(c => {
     const on = sort.key === c.key, aria = on ? (sort.dir > 0 ? "ascending" : "descending") : "none";
@@ -218,7 +235,7 @@ function table(s) {
       <td>${raw(note)}</td>
     </tr>`;
   }).join("");
-  return `<div class="sh-table-wrap card"><table class="sh-table"><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table></div>
+  return `${shown}<div class="sh-table-wrap card"><table class="sh-table"><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table></div>
     <p class="sh-foot">${html`Orders due at ${s.name} today or up to ${data.lookbackDays} days before, one row per ticket; an order's items not in a ticket yet are one row. Click a ticket or an item count for what's in it. PLANT = not through assembly yet. Left out: tickets and items already at ${s.name} or DELIVERED, back with the customer, or on route deliveries. To hold something over, move its order's due date in SMRT (split the order first if only part stays) and add a note saying why.`}</p>`;
 }
 

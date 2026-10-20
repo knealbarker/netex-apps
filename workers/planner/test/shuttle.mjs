@@ -183,6 +183,10 @@ await t("tickets: an order with ticket scans is listed ticket by ticket (+ its i
     ok(ta.details.length >= 1 && ta.details.every(d => d.ready && "tag" in d), "ticket dialog lists the order's finished items");
     ok(rowsA[0].details.length === 1 && !rowsA[0].details[0].ready && rowsA[0].details[0].location === "PLANT", "items row lists the item not in a ticket");
     eq(v.rows.filter(r => r.orderNo === b).length, 0, "order b's ticket is at Quitman");
+    // tiles: the not-ready item is Detailed, ticket B (at Bagging, order still being assembled) In Assembly; ticket A is on VAN
+    eq(rowsA.map(r => JSON.stringify(r.stages)), [JSON.stringify({ detailed: { items: 1, tickets: 0 } }), JSON.stringify({ assembly: { items: 0, tickets: 1 } }), "{}"]);
+    const qs = v.stores.find(x => x.id === stores.Quitman).stages;
+    ok(qs.detailed.items >= 1 && qs.assembly.tickets === 1, JSON.stringify(qs));
     eq(v.rows.find(r => r.kind === "ticket").customer, "MIKE FOUNTAIN");
     const s = v.stores.find(x => x.id === stores.Quitman);
     ok(s.vanTickets === 1 && s.blockedTickets === 1, JSON.stringify(s));
@@ -268,6 +272,17 @@ else {
       ok(locs[0].startsWith("VAN"), locs.join());
       ok(locs.some(l => l.startsWith("PLANT")), "items not through assembly show PLANT: " + locs.join());
       await p.click('th[data-key="location"] button'); // back to ascending
+    });
+    await t("page: stage tiles (Detailed, In Assembly, Ready for Shuttle, on VAN); a stage tile filters the table", async () => {
+      const tiles = await p.$$eval(".sh-stages .sh-count span", ts => ts.map(t => t.firstChild.textContent.trim()));
+      eq(tiles, ["Detailed", "In Assembly", "Ready for Shuttle", "on VAN"]);
+      const all = await p.$$eval(".sh-table tbody tr", rs => rs.length);
+      await p.click('button[data-stage="detailed"]');
+      await p.waitForSelector("text=Showing");
+      const some = await p.$$eval(".sh-table tbody tr", rs => rs.length);
+      ok(some >= 1 && some < all, `${some} of ${all}`);
+      await p.click("#sh-clear");
+      eq(await p.$$eval(".sh-table tbody tr", rs => rs.length), all);
     });
     await t("page: an item count opens the items; a click outside closes it", async () => {
       const link = p.locator(".sh-table button.sh-link").first();

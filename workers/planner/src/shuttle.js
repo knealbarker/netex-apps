@@ -293,8 +293,27 @@ const ORDER = { blocked: 0, held: 1, wf: 2, van: 3 };
 export const sortRows = rows => rows.sort((a, b) => (ORDER[a.status] - ORDER[b.status]) || (a.status === "held" ? (a.noted - b.noted) : 0)
   || String(a.orderNo).localeCompare(String(b.orderNo)) || String(a.line ?? "").localeCompare(String(b.line ?? ""), undefined, { numeric: true }));
 
+/**
+ * Where a row not on VAN is in production (Neal, Oct 20: tiles for Detailed, In Assembly, Ready for Shuttle):
+ *   detailed   items not through assembly yet (and orders not detailed yet)
+ *   assembly   tickets of an order still being assembled
+ *   ready      tickets ready for the shuttle, and finished items not in a ticket, not on VAN yet
+ * Returns counts per stage: { detailed: {items, tickets}, ... }. Held-over, W&F and VAN rows aren't counted here.
+ */
+export function stagesOf(r, transit) {
+  const out = {};
+  const add = (st, k, n = 1) => { const x = out[st] || (out[st] = { items: 0, tickets: 0 }); x[k] += n; };
+  if (r.status !== "blocked") return out;
+  if (r.kind === "ticket") add(r.prod === "In Assembly" ? "assembly" : "ready", "tickets");
+  else if (r.kind === "order") add("detailed", "items", r.pieces || 0);
+  else for (const d of r.details || []) { if (d.location && transit && transit.test(d.location)) continue; add(d.ready ? "ready" : "detailed", "items"); }
+  return out;
+}
+
 function summarize(rows) {
-  const s = { pieces: 0, van: 0, blocked: 0, notReady: 0, held: 0, heldNoNote: 0, vanEarlier: 0, wf: 0, vanTickets: 0, blockedTickets: 0 };
+  const s = { pieces: 0, van: 0, blocked: 0, notReady: 0, held: 0, heldNoNote: 0, vanEarlier: 0, wf: 0, vanTickets: 0, blockedTickets: 0,
+    stages: { detailed: { items: 0, tickets: 0 }, assembly: { items: 0, tickets: 0 }, ready: { items: 0, tickets: 0 } } };
+  for (const r of rows) for (const [st, c] of Object.entries(r.stages || {})) { s.stages[st].items += c.items; s.stages[st].tickets += c.tickets; }
   for (const r of rows) {
     if (r.status === "van") { s.van += r.pieces || 1; s.pieces += r.pieces || 1; if (r.vanSince) s.vanEarlier++; if (r.kind === "ticket") s.vanTickets++; }
     else if (r.status === "blocked") { s.blocked += r.pieces; s.pieces += r.pieces + (r.vanPart || 0); s.van += r.vanPart || 0; s.notReady += r.notReady ?? (r.ready ? 0 : r.pieces); if (r.kind === "ticket") s.blockedTickets++; }
@@ -334,7 +353,8 @@ export async function shuttleView(db, env, { storeId = null, at = new Date() } =
   const stores = await shuttleStores(db, env.ORG_ID);
   if (storeId && !stores.some(s => s.id === storeId)) throw new HttpError(404, "That store isn't on a shuttle run (Settings › Shuttle runs).");
   const { due, held, tickets } = await loadRows(db, env.ORG_ID, stores.map(s => s.id), today);
-  const rowsOf = id => sortRows(buildRows(due, held, tickets, transit, today).filter(r => r.store === id));
+  const all = buildRows(due, held, tickets, transit, today).map(r => ({ ...r, stages: stagesOf(r, transit) }));
+  const rowsOf = id => sortRows(all.filter(r => r.store === id));
   const out = stores.map(s => ({ ...s, ...summarize(rowsOf(s.id)) }));
   const fresh = await freshness(db);
   const res = { day: today, now: at.toISOString(), transitRack: transitName, lookbackDays: LOOKBACK_DAYS, stores: out, ...fresh, sync: !!env.SYNC };
