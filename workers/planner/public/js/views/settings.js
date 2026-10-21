@@ -67,8 +67,9 @@ const GROUPS = [
     ["to", "Send to", "listText", "Comma-separated. Each address must be verified in Cloudflare (Email Routing › Destination addresses) before it can receive mail."],
     ["at", "Send after", "time", "Central time. Pick a time after the plant has gone home."],
   ] },
-  { id: "tally", title: "Station tablets", lead: "A tablet at each starch bottoms press. The manager enters the pairs in each batch taken to IAB; counts go to whoever the plan has on that station. Review checks the day's total against SMRT's assembly.", fields: [
-    ["goal", "Station goal", "num", "Pairs per hour for each SLB press. People without their own SLB goal on Team get this one too. Green within 10% of it, yellow 10–20% under, red more than 20% under; it pulses more than 10% over. (Planning speeds are under Stations & speeds.)", { step: 0.5, min: 1, max: 200, unit: "pairs/h" }],
+  { id: "tally", title: "Station tablets", lead: "A tablet at each starch bottoms press. The manager enters the pairs in each batch taken to IAB. Pace is the press's: all pairs today ÷ hours from the press's start to the last count. Review checks the day's total against SMRT's assembly.", fields: [
+    ["goal", "Station goal", "num", "Pairs per hour for each SLB press. Green within 10% of it, yellow 10–20% under, red more than 20% under; it pulses more than 10% over. (Planning speeds are under Stations & speeds.)", { step: 0.5, min: 1, max: 200, unit: "pairs/h" }],
+    ["startDelay", "Press starts after clock-in", "int", "The press counts as started this long after the first person planned on it clocks in (planned time). It can be set by hand on the tablet; a photo of who changed it is kept.", { min: 0, max: 60, unit: "min" }],
     ["photos", "Take a photo with each count", "bool", "The tablet's front camera, one small picture per count. Admins see them in Review. Tell the pressers before turning it on."],
     ["keepDays", "Keep photos for", "int", "", { min: 1, max: 365, unit: "days" }],
   ] },

@@ -155,3 +155,12 @@ button { font: inherit; color: inherit; cursor: pointer; }
   .bar .recent { flex: 1 1 100%; }
   .enter { flex: 1 1 100%; min-height: 96px; }
 }
+
+/* the press's start time (Oct 21): a line under the station name, changed with a time pad */
+.who b { font-size: 30px; }
+.linkish { background: none; border: 0; padding: 4px 0; color: var(--text); text-decoration: underline; font: inherit; font-size: 20px; cursor: pointer; }
+.display small { font-size: .45em; margin-left: 12px; color: var(--muted); }
+.ampm { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+.ampm .key { height: 64px; font-size: 26px; color: var(--text); }
+.ampm .key.on { background: var(--accent); color: #062114; }
+.pad-note { margin: 0; color: var(--muted); font-size: 17px; text-align: center; }

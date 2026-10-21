@@ -67,35 +67,50 @@ await t("pairing: the code from Settings pairs the tablet as SLB 1", async () =>
   await p1.click('[data-p="go"]');
   await p1.waitForSelector(".st-chip");
   ok((await p1.textContent(".st-chip")) === "SLB 1");
-  ok((await p1.textContent(".who b")) === "Maria Lopez", "the plan moved Maria onto SLB 1 an hour ago");
+  const line = await p1.textContent(".who b");
+  ok(/^Started .* · Carnell in at .* \+ 10 min$/.test(line), line);
 });
 await t("installable as a full-screen app (manifest + service worker)", async () => {
   const m = await p1.evaluate(async () => { const r = await fetch("/station/manifest.webmanifest"); return r.ok ? r.json() : null; });
   ok(m && m.display === "fullscreen" && m.start_url === "/station/" && m.icons.length === 2, JSON.stringify(m));
   ok(await p1.evaluate(async () => !!(await navigator.serviceWorker.getRegistration("/station/"))), "service worker registered");
 });
-await t("not on the time clock yet: Enter pairs still works; the camera turns on", async () => {
+await t("no clock-in needed: Enter pairs works; the camera turns on", async () => {
   await p1.waitForSelector("[data-open]");
-  ok(!(await p1.$(".lockbar")), "no clock-in lock");
-  ok(/Not on the time clock yet/.test(await p1.textContent(".who small")));
   await p1.waitForSelector("#cam.on", { timeout: 5000 });
-  await p1.screenshot({ path: join(SHOTS, "station-2-not-clocked-in.png") });
-  clockIn(carnell, NOW - 182); clockIn(maria, NOW - 178);
-  await p1.reload(); await p1.waitForSelector(".st-chip");
-  ok(/Clocked in/.test(await p1.textContent(".who small")));
+  await p1.screenshot({ path: join(SHOTS, "station-2-start.png") });
 });
-await t("a count saves with a photo; the person's own line shows next to the station's", async () => {
+await t("a count saves with a photo; pace is the whole station's", async () => {
   await add("slb1", 41, NOW - 61); // Carnell's batch before the move
   await tap(p1, "21");
   await p1.screenshot({ path: join(SHOTS, "station-3a-pad.png") });
   await p1.click('[data-k="save"]');
   await p1.waitForFunction(() => document.querySelector(".big")?.textContent === "62");
   ok(!(await p1.$(".pad")), "the pad closes after saving");
-  ok(await p1.$(".mine"), "Maria's own line");
+  ok(!(await p1.$(".mine")), "no per-person line");
   await p1.waitForTimeout(800);
   const d = await api("GET", `/tally/${L.day}`);
-  ok(d.entries.some(e => e.count === 21 && e.hasPhoto && e.name === "Maria Lopez"), "photo stored, credited to Maria");
+  ok(d.entries.some(e => e.count === 21 && e.hasPhoto), "photo stored");
+  const st = d.stations.find(x => x.code === "slb1").station;
+  ok(Math.abs(st.perHour - 62 / (170 / 60)) < 0.05, `62 pairs over 2h50m, got ${st.perHour}`);
   await p1.screenshot({ path: join(SHOTS, "station-3-counted.png") });
+});
+await t("the start time can be changed on the tablet (with a photo) and set back to the plan", async () => {
+  await p1.click("[data-start]");
+  await p1.waitForSelector(".pad .ampm");
+  const t0 = NOW - 120, h12 = Math.floor(t0 / 60) % 12 || 12, ap = t0 >= 720 ? "PM" : "AM";
+  for (const k of `${h12}${String(t0 % 60).padStart(2, "0")}`) await p1.click(`.pad [data-k="${k}"]`);
+  await p1.click(`.pad [data-k="${ap}"]`);
+  await p1.screenshot({ path: join(SHOTS, "station-3b-start-pad.png") });
+  await p1.click('.pad [data-k="save"]');
+  await p1.waitForFunction(() => /set on this tablet/.test(document.querySelector(".who b")?.textContent || ""));
+  const d = await api("GET", `/tally/${L.day}`);
+  const sc = d.startChanges[d.startChanges.length - 1];
+  ok(sc.minute === t0 && sc.hasPhoto, JSON.stringify(sc));
+  ok(Math.abs(d.stations.find(x => x.code === "slb1").station.perHour - 31) < 0.05, "62 pairs over 2 h");
+  await p1.screenshot({ path: join(SHOTS, "station-3c-started.png") });
+  await p1.click("[data-start]"); await p1.click('.pad [data-k="plan"]');
+  await p1.waitForFunction(() => /Carnell in at/.test(document.querySelector(".who b")?.textContent || ""));
 });
 await t("a big batch asks once more; undo takes it back", async () => {
   await tap(p1, "48"); await p1.click('[data-k="save"]');
@@ -124,29 +139,24 @@ const pc = await tablet({ width: 1360, height: 900 });
 await t("Plan shows SLB 1 and SLB 2 with their pace", async () => {
   await pc.goto(url + "/#/plan"); await pc.waitForSelector("#pl-presses .pr-card", { timeout: 15000 });
   const txt = await pc.textContent("#pl-presses");
-  ok(/SLB 1/.test(txt) && /SLB 2/.test(txt) && /Maria/.test(txt), txt);
+  ok(/SLB 1/.test(txt) && /SLB 2/.test(txt) && /Started/.test(txt) && /Carnell in at/.test(txt), txt);
   ok(await pc.$("#pl-presses .pr-card.red"), "SLB 2 is red");
   await (await pc.$("#pl-presses")).screenshot({ path: join(SHOTS, "station-6-plan-tiles.png") });
 });
 await t("Review: pressed vs assembled, every count with its photo, add a count", async () => {
   await pc.goto(url + "/#/review"); await pc.waitForSelector("#rv-tally");
   ok(/62/.test(await pc.textContent("#rv-tally")) || /87/.test(await pc.textContent("#rv-tally")));
-  await pc.waitForSelector("#rv-tally .tc-ph img");
+  await pc.waitForSelector("#rv-tally details[open] .tc-ph img"); // the count list (start changes are folded above it)
   await pc.fill("#tc-add [name=count]", "7"); await pc.fill("#tc-add [name=at]", hm(NOW - 30));
   await pc.click("#tc-add button");
   await pc.waitForFunction(() => /94/.test(document.querySelector("#rv-tally .rv-next")?.textContent || ""));
   await (await pc.$("#rv-tally")).screenshot({ path: join(SHOTS, "station-7-review.png") });
 });
-await t("Settings lists the tablets; Team takes a person's SLB goal", async () => {
+await t("Settings lists the tablets and the press start delay", async () => {
   await pc.goto(url + "/#/settings"); await pc.waitForSelector("#tabList .tab-row");
   ok((await pc.$$("#tabList .tab-row")).length === 2);
+  ok(/Press starts after clock-in/.test(await pc.textContent("#sec-tally")));
   await (await pc.$("#sec-tally")).screenshot({ path: join(SHOTS, "station-8-settings.png") });
-  sqlite.prepare("INSERT INTO plan_person_trainings(person_id, training_id, priority, depth) VALUES(?, 'slb', 1, 1)").run(carnell);
-  await pc.goto(url + "/#/team"); await pc.waitForSelector(`[data-sched="${carnell}"]`);
-  await pc.click(`[data-sched="${carnell}"]`); await pc.fill("dialog [name=slbRate]", "22");
-  await pc.screenshot({ path: join(SHOTS, "station-9-team.png") });
-  await pc.click("dialog [type=submit]"); await pc.waitForTimeout(500);
-  ok((await api("GET", "/team")).people.find(p => p.id === carnell).slbRate === 22);
 });
 await t("no page errors", async () => { ok(!errors.length, errors.join("\n")); });
 

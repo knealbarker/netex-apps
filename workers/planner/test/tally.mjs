@@ -1,7 +1,7 @@
 // Tests for the station tablets (SLB 1 / SLB 2 counts). Run: node workers/planner/test/tally.mjs
 import { freshDb, fakeAccess, makeEnv } from "./harness.mjs";
 import { handle } from "../src/index.js";
-import { segmentsOf, occupantAt, pace, judge, workedMin, cleanupPhotos } from "../src/tally.js";
+import { segmentsOf, occupantAt, pace, pressStart, judge, cleanupPhotos } from "../src/tally.js";
 import { localNow } from "../src/pieces.js";
 
 let pass = 0, fail = 0;
@@ -22,25 +22,27 @@ await t("segments follow moves; who's on a station now, next, or last", async ()
   eq(occupantAt(S, "slb2", 6 * 60), { personId: "C", status: "upcoming", from: 480 });
   eq(occupantAt(S, "slb3", 600), null);
 });
-await t("hours on the station come from the plan and the time clock (breaks don't count)", async () => {
-  const S = segmentsOf({ slb1: { personId: "A", start: "07:00" } });
-  const punches = { A: [[7 * 60, 11 * 60], [11 * 60 + 30, null]] };
-  eq(workedMin(S, punches, "A", "slb1", 0, 12 * 60, 12 * 60), 4 * 60 + 30);
-  eq(workedMin(S, {}, "A", "slb1", 0, 9 * 60, 9 * 60), 120, "no punches: trust the plan");
+await t("press start: first person planned on it + the delay; a hand-set start wins; else the first count", async () => {
+  // Maria covers SLB 2 from 5:40 (a move at her clock-in), Diana takes it at 7:30
+  const S = segmentsOf({ slt2: { personId: "M", start: "05:40", moves: [{ at: "05:40", to: "slb2" }, { at: "07:30", to: "slt2" }] }, slb2: { personId: "D", start: "07:30" } });
+  eq(pressStart(S, "slb2", null, 10), { min: 350, source: "plan", personId: "M", clockIn: 340, delay: 10 });
+  eq(pressStart(S, "slb2", { minute: 365, at: "x" }, 10).min, 365);
+  eq(pressStart(S, "slb2", { minute: null, at: "x" }, 10).source, "plan", "set back to the plan");
+  eq(pressStart(S, "slb1", null, 10, [{ minute: 500, count: 3 }]), { min: 500, source: "first" });
+  eq(pressStart(S, "slb1", null, 10), { min: null, source: "none" });
 });
-await t("pace is as of the last count; last hour uses the time since the count before it", async () => {
-  const S = segmentsOf({ slb1: { personId: "A", start: "07:00" } }), P = { A: [[420, null]] };
+await t("pace = all pairs ÷ hours from the start to the last count (no breaks, no people)", async () => {
   const E = [{ minute: 480, count: 20 }, { minute: 540, count: 18 }, { minute: 570, count: 12 }]; // 50 pairs by 9:30
-  const r = pace(E, S, P, ["A"], "slb1", 20, 600);
-  eq(r.count, 50); near(r.perHour, 20); eq(r.color, "green"); // 50 pairs in 2.5 hours
-  near(r.lastHour.perHour, 30 / (90 / 60), "the last hour's 30 pairs were pressed since 8:00");
+  const r = pace(E, 420, 20);                // started 7:00 → 2.5 h
+  eq([r.count, r.minutes, r.lastMin], [50, 150, 570]); near(r.perHour, 20); eq(r.color, "green");
+  eq(pace(E, null, 20).perHour, null, "no start: no pace");
+  eq(pace([{ minute: 425, count: 4 }], 420, 20).perHour, null, "under 10 minutes: too soon to say");
+  eq(pace([], 420, 20).count, 0);
 });
-await t("person and station goals", async () => {
-  const S = segmentsOf({ slb1: { personId: "A", start: "07:00" } }), P = { A: [[420, null]] };
-  const r = pace([{ minute: 479, count: 25 }], S, P, ["A"], "slb1", 20, 500); // 25 in an hour
-  eq(r.color, "green"); ok(r.boost > 0, "25/hr is 25% over 20 → pulses");
-  eq(pace([{ minute: 479, count: 25 }], S, P, ["A"], "slb1", 30, 500).color, "yellow");
-  eq(pace([{ minute: 479, count: 25 }], S, P, ["A"], "slb1", 32, 500).color, "red");
+await t("goals color the station", async () => {
+  const E = [{ minute: 480, count: 25 }]; // 25 in an hour
+  eq(pace(E, 420, 20).color, "green"); ok(pace(E, 420, 20).boost > 0, "25/hr is 25% over 20 → pulses");
+  eq(pace(E, 420, 30).color, "yellow"); eq(pace(E, 420, 32).color, "red");
 });
 
 // ---------------------------------------------------------------- the API
@@ -115,52 +117,62 @@ else {
     const n = await a.call("POST", `/api/station-devices/${c.body.id}/code`);
     eq((await a.tab("POST", "/pair", { body: { code: n.body.code } })).status, 200, "a new code works");
   });
-  await t("counts go in before clock-in (time clock down), credited to the planned person; hours true up when punches arrive", async () => {
+  await t("the station's pace starts 10 minutes after the first planned clock-in; punches don't matter", async () => {
     const a = await setup();
-    await a.call("PUT", `/api/plan/${L.day}`, { body: { rev: 0, crew: { slb1: { personId: a.carnell, start: hm(NOW - 150), hours: 8 }, slb2: { personId: a.diana, start: hm(NOW - 150), hours: 8 } } } });
+    await a.call("PUT", `/api/plan/${L.day}`, { body: { rev: 0, crew: { slb1: { personId: a.carnell, start: hm(NOW - 130), hours: 8 }, slb2: { personId: a.diana, start: hm(NOW - 150), hours: 8 } } } });
     await pairNew(a);
     let s = (await a.tab("GET", "/state")).body;
-    eq([s.person.name, s.locked, s.person.clockedIn, s.planSource], ["Carnell Jones", false, false, "saved"]);
-    // no punch yet: the count is taken, credited to Carnell, hours from the plan (2h30m since his planned start)
+    eq([s.start.min, s.start.source, s.start.name, s.planSource], [NOW - 120, "plan", "Carnell Jones", "saved"]);
     const r = await a.tab("POST", "/count", { body: { count: 40 } });
     eq(r.status, 201);
-    eq([r.body.state.totals.count, r.body.state.entries[0].name, r.body.state.entries[0].undo, r.body.state.totals.estimated], [40, "Carnell Jones", true, true]);
-    near(r.body.state.totals.perHour, 40 / 2.5, "40 pairs over the planned 2h30m");
-    // the punch arrives later (clock-in machine fixed): same count, hours now from the time clock (in 10 min after his planned start)
-    clockIn(a.sqlite, a.carnell, NOW - 140);
-    s = (await a.tab("GET", "/state")).body;
-    eq([s.person.clockedIn, s.totals.count, s.totals.estimated], [true, 40, false]);
-    near(s.totals.perHour, 40 / (140 / 60), "40 pairs over 2h20m on the clock");
-    eq(s.totals.color, "yellow", "17.1/hr is 14% under 20"); eq(s.mine, null, "only one person: no separate line");
-    const d = (await a.call("GET", `/api/tally/${L.day}`)).body.stations.find(x => x.code === "slb1");
-    eq([d.people[0].name, d.people[0].count, d.people[0].estimated], ["Carnell Jones", 40, false]);
-    // undo
+    eq([r.body.state.totals.count, r.body.state.totals.minutes, r.body.state.entries[0].undo], [40, 120, true]);
+    near(r.body.state.totals.perHour, 20, "40 pairs over the 2 hours since the press started");
+    clockIn(a.sqlite, a.carnell, NOW - 60, NOW - 30); // a break on the time clock changes nothing
+    s = (await a.tab("GET", "/state")).body; near(s.totals.perHour, 20);
     const u = await a.tab("DELETE", `/count/${r.body.id}`);
     eq([u.status, u.body.totals.count], [200, 0]);
   });
-  await t("no one planned on the station: the count is still taken", async () => {
+  await t("no one planned on the press: counts are taken; the first count is the start", async () => {
     const a = await setup();
     await pairNew(a, "slb2");
     const r = await a.tab("POST", "/count", { body: { count: 9 } });
-    eq([r.status, r.body.state.totals.count, r.body.state.entries[0].name], [201, 9, null]);
+    eq([r.status, r.body.state.totals.count, r.body.state.start.source], [201, 9, "first"]);
   });
-  await t("a plan change moves the credit; the person's own line shows when the station had someone else", async () => {
+  await t("a plan change of who's on the press doesn't split the pace; all counts are the station's", async () => {
     const a = await setup();
-    await a.call("PUT", `/api/plan/${L.day}`, { body: { rev: 0, crew: { slb1: { personId: a.carnell, start: hm(NOW - 180), hours: 8, moves: [{ at: hm(NOW - 60), to: "slt1" }] },
+    await a.call("PUT", `/api/plan/${L.day}`, { body: { rev: 0, crew: { slb1: { personId: a.carnell, start: hm(NOW - 190), hours: 8, moves: [{ at: hm(NOW - 60), to: "slt1" }] },
       slt1: { personId: a.maria, start: hm(NOW - 180), hours: 8, moves: [{ at: hm(NOW - 60), to: "slb1" }] } } } });
-    clockIn(a.sqlite, a.carnell, NOW - 180); clockIn(a.sqlite, a.maria, NOW - 180);
-    await a.call("PATCH", `/api/team/${a.maria}`, { body: { slbRate: 24 } });
     await pairNew(a);
-    // an earlier count for Carnell, put in by a manager in Review
     eq((await a.call("POST", "/api/tally", { as: "mo@example.com", body: { day: L.day, station: "slb1", count: 38, at: hm(NOW - 61) } })).status, 201);
     const s = (await a.tab("POST", "/count", { body: { count: 22 } })).body.state;
-    eq([s.person.name, s.person.goal, s.totals.count], ["Maria Lopez", 24, 60]);
-    eq([s.mine.count, s.mine.goal], [22, 24]);
+    eq([s.totals.count, s.totals.minutes, s.start.name], [60, 180, "Carnell Jones"]); near(s.totals.perHour, 20);
+    eq(s.person, undefined, "no person on the tablet any more");
     const d = (await a.call("GET", `/api/tally/${L.day}`, { as: "vi@example.com" })).body;
-    const st = d.stations.find(x => x.code === "slb1");
-    eq(st.people.map(p => [p.name, p.count]).sort(), [["Carnell Jones", 38], ["Maria Lopez", 22]]);
-    eq(st.current.name, "Maria Lopez"); eq(d.total, 60);
+    eq([d.total, d.stations.find(x => x.code === "slb1").people], [60, undefined]);
     eq((await a.call("POST", "/api/tally", { as: "vi@example.com", body: { day: L.day, station: "slb1", count: 3, at: "08:00" } })).status, 403, "viewers can't add");
+  });
+  await t("the start can be set on the tablet with a photo of who did it; back to the plan; logged in Changes today", async () => {
+    const a = await setup();
+    await a.call("PUT", `/api/plan/${L.day}`, { body: { rev: 0, crew: { slb1: { personId: a.carnell, start: hm(NOW - 130), hours: 8 } } } });
+    await pairNew(a);
+    await a.tab("POST", "/count", { body: { count: 30 } });
+    eq((await a.tab("POST", "/start", { body: { at: "25:00" } })).status, 400);
+    if (NOW < 1439) eq((await a.tab("POST", "/start", { body: { at: hm(NOW + 1) } })).status, 400, "not later than now");
+    const r = await a.tab("POST", "/start", { body: { at: hm(NOW - 90) } });
+    eq([r.status, r.body.state.start.source, r.body.state.start.min, r.body.state.totals.minutes], [201, "manual", NOW - 90, 90]);
+    near(r.body.state.totals.perHour, 20);
+    const jpeg = new Uint8Array(400); jpeg[0] = 0xff; jpeg[1] = 0xd8;
+    eq((await a.tab("POST", `/start/${r.body.id}/photo`, { raw: jpeg })).status, 200);
+    const d = (await a.call("GET", `/api/tally/${L.day}`)).body;
+    eq([d.startChanges.length, d.startChanges[0].hasPhoto, d.startChanges[0].minute], [1, true, NOW - 90]);
+    eq((await a.call("GET", `/api/tally/start-photo/${r.body.id}`, { as: "mo@example.com" })).status, 403, "Admins only");
+    eq((await a.call("GET", `/api/tally/start-photo/${r.body.id}`)).status, 200);
+    const back = await a.tab("POST", "/start", { body: { at: null } });
+    eq([back.body.state.start.source, back.body.state.start.min], ["plan", NOW - 120]);
+    const ev = a.sqlite.prepare("SELECT text FROM plan_events WHERE key LIKE 'tally-start:%' ORDER BY at").all().map(x => x.text);
+    eq(ev.length, 2); ok(/set to/.test(ev[0]) && /back to the plan/.test(ev[1]));
+    a.sqlite.prepare("UPDATE plan_station_starts SET day='2020-01-01'").run();
+    eq((await cleanupPhotos(a.env)).deleted, 1);
   });
   await t("photos: stored with the count, only Admins see them, removed with the count and after Settings' days", async () => {
     const a = await setup();
@@ -199,7 +211,7 @@ else {
     eq((await a.call("DELETE", `/api/station-devices/${id}`)).status, 200);
     eq((await a.tab("GET", "/state")).body.paired, false);
   });
-  await t("Review carries the counts; Team saves each person's SLB goal; settings have the station goal", async () => {
+  await t("Review carries the counts; settings have the station goal and the start delay", async () => {
     const a = await setup();
     await a.call("PUT", `/api/plan/${L.day}`, { body: { rev: 0, crew: { slb1: { personId: a.carnell, start: hm(NOW - 120), hours: 8 } } } });
     await a.call("POST", "/api/tally", { body: { day: L.day, station: "slb1", count: 30, at: hm(NOW - 10) } });
@@ -208,7 +220,8 @@ else {
     eq((await a.call("PATCH", `/api/team/${a.carnell}`, { as: "mo@example.com", body: { slbRate: 300 } })).status, 400);
     eq((await a.call("PATCH", `/api/team/${a.carnell}`, { as: "mo@example.com", body: { slbRate: 22 } })).status, 200);
     eq((await a.call("GET", "/api/team")).body.people.find(p => p.id === a.carnell).slbRate, 22);
-    eq((await a.call("PUT", "/api/settings/tally", { body: { goal: 21, photos: false } })).body.tally, { goal: 21, photos: false, keepDays: 30 });
+    eq((await a.call("PUT", "/api/settings/tally", { body: { goal: 21, startDelay: 5, photos: false } })).body.tally, { goal: 21, startDelay: 5, photos: false, keepDays: 30 });
+    eq((await a.call("GET", `/api/review/${L.day}`)).body.tally.stations[0].start.min, NOW - 115, "Carnell in 2 h ago + 5 min");
   });
   await t("the tablet page is served without a sign-in, with the camera allowed only there", async () => {
     const a = app();

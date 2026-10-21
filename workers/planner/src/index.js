@@ -85,6 +85,7 @@ const routes = [
   ["POST", /^\/api\/tally$/, async (req, env, me) => json(await T.addCount(env.DB, env, me, await readJson(req)), 201)],
   ["DELETE", /^\/api\/tally\/([0-9A-Z]{26})$/, async (req, env, me, m) => json(await T.removeCount(env.DB, env, me, m[1]))],
   ["GET", /^\/api\/tally\/photo\/([0-9A-Z]{26})$/, async (req, env, me, m) => T.photoOf(env.DB, env, me, m[1])],
+  ["GET", /^\/api\/tally\/start-photo\/([0-9A-Z]{26})$/, async (req, env, me, m) => T.startPhotoOf(env.DB, env, me, m[1])],
   ["GET", /^\/api\/station-devices$/, async (req, env, me) => json(await T.listDevices(env.DB, env, me))],
   ["POST", /^\/api\/station-devices$/, async (req, env, me) => json(await T.createDevice(env.DB, env, me, await readJson(req)), 201)],
   ["POST", /^\/api\/station-devices\/([0-9A-Z]{26})\/code$/, async (req, env, me, m) => json(await T.deviceCode(env.DB, env, me, m[1]))],
@@ -134,7 +135,11 @@ async function station(req, env, url) {
   if (!dev) throw new HttpError(401, "This tablet isn't paired. Pair it again from Settings › Station tablets.", { reason: "unpaired" });
   let m;
   if (route === "/count" && req.method === "POST") return json(await T.tabletCount(db, env, dev, await readJson(req)), 201);
-  if (route === "/open" && req.method === "POST") return json(await T.openTablet(db, env, dev));
+  if (route === "/start" && req.method === "POST") return json(await T.tabletStart(db, env, dev, await readJson(req)), 201);
+  if ((m = route.match(/^\/start\/([0-9A-Z]{26})\/photo$/)) && req.method === "POST") {
+    if (!(req.headers.get("content-type") || "").startsWith("image/jpeg")) throw new HttpError(415, "Send the photo as a JPEG.");
+    return json(await T.tabletStartPhoto(db, env, dev, m[1], await req.arrayBuffer()));
+  }
   if ((m = route.match(/^\/count\/([0-9A-Z]{26})$/)) && req.method === "DELETE") return json(await T.tabletUndo(db, env, dev, m[1]));
   if ((m = route.match(/^\/count\/([0-9A-Z]{26})\/photo$/)) && req.method === "POST") {
     if (!(req.headers.get("content-type") || "").startsWith("image/jpeg")) throw new HttpError(415, "Send the photo as a JPEG.");

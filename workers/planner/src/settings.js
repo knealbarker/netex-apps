@@ -38,8 +38,9 @@ export const SCHEMA = {
   rippling: { departments: f.list(["Production"]), useTimes: f.bool(true) },
   // the end-of-day email: today against the plan, and the next work day
   summary: { on: f.bool(true), to: f.emails(["neal@towncountryclean.com"]), at: f.time("18:10") },
-  // station tablets at the starch bottoms presses (Neal, Oct 14): the station goal, and a photo with each count
-  tally: { goal: f.num(20, 1, 200), photos: f.bool(true), keepDays: f.int(30, 1, 365) },
+  // station tablets at the starch bottoms presses (Neal, Oct 14): the station goal, and a photo with each count;
+  // startDelay (Oct 21): the press counts as started this many minutes after the first person planned on it clocks in
+  tally: { goal: f.num(20, 1, 200), startDelay: f.int(10, 0, 60), photos: f.bool(true), keepDays: f.int(30, 1, 365) },
 };
 
 const defaults = group => Object.fromEntries(Object.entries(SCHEMA[group]).map(([k, s]) => [k, structuredClone(s.d)]));

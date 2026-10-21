@@ -324,12 +324,14 @@ export async function render(main, ctx) {
     const r1 = v => (v == null ? "—" : v.toFixed(1)), g1 = v => (Number.isInteger(+v) ? String(v) : (+v).toFixed(1));
     const ago = m => (m == null ? "" : T.now - m < 2 ? "just now" : `${T.now - m} min ago`);
     el.innerHTML = html`<div class="pr-head"><h2>Starch bottoms presses</h2><span class="muted small">From the station tablets · goal ${g1(T.goal)}/hr${T.total ? ` · ${fmtN(T.total)} pairs pressed today` : ""}</span></div>
-      <div class="pr-grid">${T.stations.map(s => { const S = s.station, others = s.people.filter(p => p.count > 0);
+      <div class="pr-grid">${T.stations.map(s => { const S = s.station, st = s.start || {};
+        const started = st.min == null ? "No one planned on it" : st.min > T.now ? `Starts ${hm(st.min / 60)}` : `Started ${hm(st.min / 60)}`;
+        const why = st.source === "manual" ? "set on the tablet" : st.source === "plan" ? `${first(st.name || "")} in at ${hm(st.clockIn / 60)} + ${st.delay} min` : st.source === "first" ? "first count" : "";
         return raw(html`<div class="pr-card ${S.color}">
-          <div class="pr-top"><b>${s.label}</b><span>${s.current ? `${s.current.name}${s.current.status === "upcoming" ? ` · from ${hm(s.current.from / 60)}` : ""}` : "No one planned"}</span></div>
+          <div class="pr-top"><b>${s.label}</b><span title="Pace = all pairs today ÷ hours from this start to the last count">${started}${why ? ` · ${why}` : ""}</span></div>
           <div class="pr-nums"><div><b>${fmtN(S.count)}</b><span>pairs</span></div><div><b class="pr-rate">${r1(S.perHour)}</b><span>per hour${S.pct != null ? ` · ${Math.round(S.pct * 100)}%` : ""}</span></div>
-            <div><b class="pr-hr ${S.lastHour ? S.lastHour.color : ""}">${S.lastHour ? r1(S.lastHour.perHour) : "—"}</b><span>last hour</span></div></div>
-          <p class="pr-foot">${S.lastMin == null ? "No counts yet today." : `Last count ${hm(S.lastMin / 60)} · ${ago(S.lastMin)}`}${S.estimated ? " · hours from the plan (not on the time clock yet)" : ""}${others.length > 1 ? raw(html`<br>${others.map(p => raw(html`<span class="pr-who c-${p.color}">${first(p.name)} ${p.count} · ${r1(p.perHour)}/hr${p.ownGoal ? ` (goal ${g1(p.goal)})` : ""}</span>`))}`) : ""}</p>
+            <div><b>${S.minutes ? fmtH(S.minutes / 60) : "—"}</b><span>running</span></div></div>
+          <p class="pr-foot">${S.lastMin == null ? "No counts yet today." : `Last count ${hm(S.lastMin / 60)} · ${ago(S.lastMin)}`}</p>
         </div>`); })}</div>`;
   }
 

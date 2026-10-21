@@ -1,6 +1,7 @@
 // Station tablet: the starch bottoms press's count of pairs, entered each time a batch goes to IAB (Neal, Oct 14).
-// The server works everything out (who's on the station from the plan, clock-ins, pace and colors); this page shows it
-// and sends the counts. It talks only to /station/api, with the tablet's own paired cookie (no user sign-in).
+// The server works everything out (the press's start, pace and colors); this page shows it and sends the counts.
+// Pace (Oct 21) = all pairs today ÷ hours from the press's start to the last count. The start comes from the plan
+// (first person on the press, planned clock-in + 10 min) or is set here; a photo is taken of whoever changes it. It talks only to /station/api, with the tablet's own paired cookie (no user sign-in).
 const $ = s => document.querySelector(s);
 const app = $("#app"), cam = $("#cam"), toastEl = $("#toast");
 const ESC = { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" };
@@ -14,7 +15,9 @@ const goal = v => (v == null ? "—" : Number.isInteger(+v) ? String(v) : (+v).t
 let S = null;            // the server's view of this station
 let typed = "";          // digits on the display
 let confirmBig = false;  // a count over 40 needs a second tap
-let padOpen = false, padT = null;   // the number pad shows only while entering a count (Neal: more room for the numbers)
+let padOpen = false, padT = null;
+let padMode = "count";   // "count": pairs · "start": the press's start time
+let ampm = "AM";   // the number pad shows only while entering a count (Neal: more room for the numbers)
 let busy = false, holding = false, offline = false, lastOk = Date.now();
 let pairCode = "", pairErr = "";
 
@@ -38,60 +41,75 @@ async function refresh() {
   }
   catch (e) { if (e.status !== 401) offline = true; }
   if (!holding) draw();
-  if (S && S.paired && S.photos) startCamera(); else stopCamera();
+  if (S && S.paired && (S.photos || (padOpen && padMode === "start"))) startCamera(); else stopCamera();
 }
 
 // ------------------------------------------------------------ drawing
+const parseStart = d => {
+  if (!d) return null;
+  const h = +(d.length <= 2 ? d : d.slice(0, -2)), m = d.length <= 2 ? 0 : +d.slice(-2);
+  if (!(h >= 1 && h <= 12) || !(m >= 0 && m < 60)) return null;
+  return (h % 12 + (ampm === "PM" ? 12 : 0)) * 60 + m;
+};
+const fmtH = m => (m == null ? "—" : `${Math.floor(m / 60)}h ${String(m % 60).padStart(2, "0")}m`);
+function startLine(st) {
+  if (!st || st.min == null) return "No one planned on this press · set the start";
+  const word = st.min > nowMin() ? "Starts" : "Started";
+  const why = st.source === "manual" ? "set on this tablet" : st.source === "plan" ? `${first(st.name)} in at ${clock(st.clockIn)} + ${st.delay} min` : "at the first count";
+  return `${word} ${clock(st.min)} · ${why}`;
+}
 function draw() {
   if (!S) return;
   if (!S.paired) return drawPair();
-  const T = S.totals, P = S.person, M = S.mine;
-  const status = !P ? "No one is on this station in the plan" :
-    P.status === "upcoming" && !P.clockedIn ? `Planned from ${clock(P.from)}` :
-    !P.clockedIn ? "Not on the time clock yet" :
-    !P.onNow ? `Clocked out — break or done` : `Clocked in ${clock(P.firstIn)}`;
-  const goalTxt = P ? `${P.ownGoal ? "Own goal" : "Goal"} ${goal(P.goal)}/hr` : "";
+  const T = S.totals;
   const sinceLast = T.lastMin != null ? nowMin() - T.lastMin : null;
   const boostVars = b => b > 0 ? `--dur:${(1.4 - 0.85 * b).toFixed(2)}s;--s0:${(1 + 0.04 * b).toFixed(3)};--s1:${(1.04 + 0.08 * b).toFixed(3)}` : "";
   app.innerHTML = `
     <header class="head">
       <span class="st-chip">${esc(S.station.label)}</span>
-      <div class="who"><b>${esc(P ? P.name : "No one planned")}</b><small>${esc(status)}${P ? ` · ${esc(goalTxt)}` : ""}${S.planSource === "suggested" ? " · from the suggested plan" : ""}</small></div>
+      <div class="who"><b>${esc(startLine(S.start))}</b><small><button class="linkish" data-start="1">Change start time</button></small></div>
       <div class="clock">${esc(clock(nowMin()))}<small>${S.photos ? `<span class="dot ${cam.classList.contains("on") ? "on" : ""}"></span>${cam.classList.contains("on") ? "Camera on" : "Camera off"} · ` : ""}<span class="dot ${offline ? "bad" : "ok"}"></span>${offline ? "Offline" : "Online"}</small></div>
     </header>
     <main class="main">
       ${offline ? `<div class="banner bad">No connection — counts can't be saved right now. They'll work again as soon as the internet is back.</div>` : ""}
-      <div class="tile ${T.color} ${T.boost > 0 ? "boost" : ""}" style="${boostVars(T.boost)}" aria-label="Station today">
+      <div class="tile ${T.color} ${T.boost > 0 ? "boost" : ""}" style="${boostVars(T.boost)}" aria-label="Press today">
         <div class="nums">
           <div class="cell"><div class="big">${T.count}</div><div class="big-sub">pairs today</div></div>
           <div class="cell"><div class="big">${esc(rate(T.perHour))}</div><div class="big-sub">per hour${T.pct != null ? ` · ${Math.round(T.pct * 100)}% of goal` : ""}</div></div>
         </div>
         <div class="foot">
-          ${T.lastHour ? `<span class="hour"><i class="${T.lastHour.color}"></i>Last hour ${esc(rate(T.lastHour.perHour))}/hr</span>` : ""}
-          <span class="stale">${T.lastMin == null ? "Starts with the first batch to IAB" : `Last count ${clock(T.lastMin)}${sinceLast > 1 ? ` · ${sinceLast} min ago` : ""}`}${T.estimated ? " · hours from the plan until the time clock catches up" : ""}</span>
+          <span class="stale">${T.lastMin == null ? "Starts with the first batch to IAB" : `${fmtH(T.minutes)} from start to last count ${clock(T.lastMin)}${sinceLast > 1 ? ` · ${sinceLast} min ago` : ""}`}</span>
           <span class="goal">Goal ${esc(goal(T.goal))}/hr</span>
         </div>
       </div>
       <div class="bar">
-        ${M ? `<div class="mine ${M.color} ${M.boost > 0 ? "boost" : ""}" style="${boostVars(M.boost)}">
-            <div class="m-name">${esc(first(P.name))}'s own<small>since moving here · ${M.ownGoal ? "own goal" : "goal"} ${esc(goal(M.goal))}/hr</small></div>
-            <div class="m-num">${M.count}<em>pairs</em></div>
-            <div class="m-rate ${M.color}">${esc(rate(M.perHour))}<small>/hr</small></div>
-          </div>` : ""}
-        <div class="recent">${S.entries.slice(0, M ? 1 : 2).map(e => `<div><span>${esc(clock(e.minute))}</span><b>${e.count}</b><span>${esc(e.name ? first(e.name) : "")}</span>${e.undo ? `<button class="undo" data-undo="${esc(e.id)}">Undo</button>` : "<span></span>"}</div>`).join("")}</div>
-        ${S.locked ? `<div class="lockbar"><div><b>${P ? `Waiting for ${esc(first(P.name))} to clock in` : "No one on this station in the plan"}</b>
-            <small>${P ? `Counts open when the time clock shows them in${S.clockAsOf ? ` (as of ${esc(clock(new Date(S.clockAsOf).getHours() * 60 + new Date(S.clockAsOf).getMinutes()))})` : ""}` : "Put someone on it in the Plan, or count anyway"}</small></div>
-            <button class="hold" id="hold"><i></i><span>${P ? "Hold: they're clocked in" : "Hold: count anyway"}</span></button></div>`
-          : `<button class="enter" data-open="1"><span class="plus">+</span>Enter pairs${P ? `<small>for ${esc(first(P.name))}</small>` : ""}</button>`}
+        <div class="recent">${S.entries.slice(0, 3).map(e => `<div><span>${esc(clock(e.minute))}</span><b>${e.count}</b><span></span>${e.undo ? `<button class="undo" data-undo="${esc(e.id)}">Undo</button>` : "<span></span>"}</div>`).join("")}</div>
+        <button class="enter" data-open="1"><span class="plus">+</span>Enter pairs</button>
       </div>
     </main>
-    ${padOpen && !S.locked ? `<div class="pad-wrap" data-close="1"><section class="pad" aria-label="Enter a count">
-        <div class="entry-lbl"><span>Pairs going to IAB${P ? ` · ${esc(first(P.name))}` : ""}</span><button class="pad-x" data-close="1" aria-label="Close">✕</button></div>
+    ${padOpen ? padHtml() : ""}`;
+}
+function padHtml() {
+  if (padMode === "start") {
+    const m = parseStart(typed), okT = m != null && m <= nowMin();
+    return `<div class="pad-wrap" data-close="1"><section class="pad" aria-label="Press start time">
+        <div class="entry-lbl"><span>When did ${esc(S.station.label)} start pressing?</span><button class="pad-x" data-close="1" aria-label="Close">✕</button></div>
+        <div class="display ${typed ? "" : "empty"}" id="disp">${typed ? esc(typed.length <= 2 ? `${typed}:00` : `${typed.slice(0, -2)}:${typed.slice(-2)}`) : "0:00"} <small>${ampm}</small></div>
+        <div class="ampm"><button class="key ${ampm === "AM" ? "on" : ""}" data-k="AM">AM</button><button class="key ${ampm === "PM" ? "on" : ""}" data-k="PM">PM</button>
+          ${S.start && S.start.source === "manual" ? `<button class="key" data-k="plan">Use the plan</button>` : ""}</div>
+        <div class="keys">${[1, 2, 3, 4, 5, 6, 7, 8, 9].map(n => `<button class="key" data-k="${n}">${n}</button>`).join("")}
+          <button class="key back" data-k="back" aria-label="Backspace">⌫</button><button class="key" data-k="0">0</button>
+          <button class="key save" data-k="save" ${okT && !busy ? "" : "disabled"}>Save</button></div>
+        <p class="pad-note">${m != null && m > nowMin() ? "That's later than now." : "A photo is taken of whoever changes the start."}</p>
+      </section></div>`;
+  }
+  return `<div class="pad-wrap" data-close="1"><section class="pad" aria-label="Enter a count">
+        <div class="entry-lbl"><span>Pairs going to IAB</span><button class="pad-x" data-close="1" aria-label="Close">✕</button></div>
         <div class="display ${typed ? "" : "empty"} ${confirmBig ? "warn" : ""}" id="disp">${typed || "0"}</div>
         <div class="keys">${[1, 2, 3, 4, 5, 6, 7, 8, 9].map(n => `<button class="key" data-k="${n}">${n}</button>`).join("")}
           <button class="key back" data-k="back" aria-label="Backspace">⌫</button><button class="key" data-k="0">0</button>
           <button class="key save ${confirmBig ? "confirm" : ""}" data-k="save" ${typed && +typed > 0 && !busy ? "" : "disabled"}>${confirmBig ? `Yes, ${esc(typed)}` : "Save"}</button></div>
-      </section></div>` : ""}`;
+      </section></div>`;
 }
 function drawPair() {
   app.innerHTML = `<div class="pair">
@@ -111,13 +129,16 @@ app.addEventListener("click", async e => {
   const k = e.target.closest("[data-k]")?.dataset.k, p = e.target.closest("[data-p]")?.dataset.p, u = e.target.closest("[data-undo]")?.dataset.undo;
   if (p) return pairKey(p);
   if (u) return undo(u);
-  if (e.target.closest("[data-open]") && S && !S.locked) return openPad();
+  if (e.target.closest("[data-open]") && S) return openPad("count");
+  if (e.target.closest("[data-start]") && S) return openPad("start");
   if (e.target.closest(".pad-x") || e.target.matches(".pad-wrap")) return closePad();
-  if (!k || !S || S.locked) return;
-  if (k === "save") return save();
+  if (!k || !S) return;
+  if (k === "save") return padMode === "start" ? saveStart(parseStart(typed)) : save();
   confirmBig = false; idlePad();
-  if (k === "back") typed = typed.slice(0, -1);
-  else if (typed.length < 3) typed = (typed + k).replace(/^0+(?=\d)/, "");
+  if (k === "plan") return saveStart(null);
+  if (k === "AM" || k === "PM") ampm = k;
+  else if (k === "back") typed = typed.slice(0, -1);
+  else if (typed.length < (padMode === "start" ? 4 : 3)) typed = (typed + k).replace(/^0+(?=\d)/, "");
   draw();
 });
 async function pairKey(p) {
@@ -132,8 +153,26 @@ async function pairKey(p) {
   } else if (pairCode.length < 6) pairCode += p;
   drawPair();
 }
-function openPad() { padOpen = true; typed = ""; confirmBig = false; idlePad(); draw(); }
-function closePad() { padOpen = false; typed = ""; confirmBig = false; clearTimeout(padT); draw(); }
+function openPad(mode = "count") {
+  padMode = mode; padOpen = true; typed = ""; confirmBig = false; ampm = nowMin() >= 720 ? "PM" : "AM"; idlePad();
+  if (mode === "start") { camTried = 0; startCamera(); } // the photo of whoever changes the start, even with count photos off
+  draw();
+}
+function closePad() { padOpen = false; typed = ""; confirmBig = false; clearTimeout(padT); padMode = "count"; draw(); if (!(S && S.photos)) stopCamera(); }
+const clockTxt = m => clock(m);
+async function saveStart(minute) {
+  if (busy) return;
+  busy = true; draw();
+  try {
+    const at = minute == null ? null : `${String(Math.floor(minute / 60)).padStart(2, "0")}:${String(minute % 60).padStart(2, "0")}`;
+    const r = await call("/start", { method: "POST", body: { at } });
+    await photo(r.id, `/start/${r.id}/photo`);
+    S = r.state; padOpen = false; typed = ""; padMode = "count"; clearTimeout(padT);
+    toast(minute == null ? "Start back to the plan" : `Start set to ${clockTxt(minute)}`);
+    if (!S.photos) stopCamera();
+  } catch (x) { toast(x.status ? x.message : "Not saved — no connection. Try again.", true, 4000); if (!x.status) offline = true; }
+  busy = false; draw();
+}
 // an open pad nobody is using closes itself after 45 seconds
 function idlePad() { clearTimeout(padT); padT = setTimeout(() => { if (padOpen && !busy) closePad(); }, 45000); }
 async function save() {
@@ -143,7 +182,7 @@ async function save() {
   try {
     const r = await call("/count", { method: "POST", body: { count: n } });
     S = r.state; typed = ""; confirmBig = false; offline = false; padOpen = false; clearTimeout(padT);
-    toast(`Saved ${n} ${n === 1 ? "pair" : "pairs"}${S.person ? ` · ${first(S.person.name)}` : ""}`);
+    toast(`Saved ${n} ${n === 1 ? "pair" : "pairs"}`);
     if (S.photos) photo(r.id);
   } catch (x) { toast(x.status ? x.message : "Not saved — no connection. Try again.", true, 4000); if (!x.status) offline = true; }
   busy = false; draw();
@@ -152,28 +191,15 @@ async function undo(id) {
   try { S = await call(`/count/${id}`, { method: "DELETE" }); toast("Taken back"); } catch (x) { toast(x.message, true); }
   draw();
 }
-// "Hold: they're clocked in" — a long press, so it isn't tapped by accident
-app.addEventListener("pointerdown", e => {
-  const b = e.target.closest("#hold"); if (!b) return;
-  holding = true; b.classList.add("go");
-  const t = setTimeout(async () => {
-    holding = false;
-    try { S = await call("/open", { method: "POST" }); toast("Counting is open"); } catch (x) { toast(x.message, true); }
-    draw();
-  }, 1600);
-  const end = () => { clearTimeout(t); holding = false; b.classList.remove("go"); window.removeEventListener("pointerup", end); window.removeEventListener("pointercancel", end); };
-  window.addEventListener("pointerup", end); window.addEventListener("pointercancel", end);
-});
 // a USB keypad or keyboard works too
 window.addEventListener("keydown", e => {
   if (!S) return;
   if (!S.paired) { if (/^\d$/.test(e.key)) pairKey(e.key); else if (e.key === "Backspace") pairKey("back"); else if (e.key === "Enter" && pairCode.length === 6) pairKey("go"); return; }
-  if (S.locked) return;
-  if (/^\d$/.test(e.key) && !padOpen) { padOpen = true; typed = ""; }
+  if (/^\d$/.test(e.key) && !padOpen) { padOpen = true; padMode = "count"; typed = ""; }
   if (e.key === "Escape" && padOpen) return closePad();
-  if (/^\d$/.test(e.key) && typed.length < 3) { idlePad(); confirmBig = false; typed = (typed + e.key).replace(/^0+(?=\d)/, ""); draw(); }
+  if (/^\d$/.test(e.key) && typed.length < (padMode === "start" ? 4 : 3)) { idlePad(); confirmBig = false; typed = (typed + e.key).replace(/^0+(?=\d)/, ""); draw(); }
   else if (e.key === "Backspace") { confirmBig = false; typed = typed.slice(0, -1); draw(); }
-  else if (e.key === "Enter") save();
+  else if (e.key === "Enter") { if (padMode === "start") saveStart(parseStart(typed)); else save(); }
 });
 
 // ------------------------------------------------------------ the front camera: one small photo per count
@@ -189,13 +215,13 @@ async function startCamera() {
   draw();
 }
 function stopCamera() { if (stream) { stream.getTracks().forEach(t => t.stop()); stream = null; cam.classList.remove("on"); } }
-async function photo(id) {
+async function photo(id, path = `/count/${id}/photo`) {
   if (!stream || !cam.videoWidth) return;
   try {
     const w = 480, h = Math.round(w * cam.videoHeight / cam.videoWidth), c = document.createElement("canvas");
     c.width = w; c.height = h; c.getContext("2d").drawImage(cam, 0, 0, w, h);
     const blob = await new Promise(ok => c.toBlob(ok, "image/jpeg", 0.7));
-    if (blob) await call(`/count/${id}/photo`, { method: "POST", raw: blob });
+    if (blob) await call(path, { method: "POST", raw: blob });
   } catch { /* the count is saved either way */ }
 }
 

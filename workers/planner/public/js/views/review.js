@@ -81,7 +81,7 @@ export async function render(main, ctx) {
       <section class="card pl-card rv-people"><header class="pl-cardhead"><div><h2>People</h2><p>From the time clock. The first gap is the paid break, up to 30 min; back after more than 35 and none of it is paid. Week = paid hours this week, amber from 36, red past 40.</p></div></header>${raw(peopleCard())}</section>
       <div class="rv-grid">
         <section class="card pl-card rv-hours"><header class="pl-cardhead"><div><h2>By the hour</h2><p>Pieces assembled in SMRT each hour${D.isToday ? ", so far" : ""}. Assembly runs behind pressing, so spurts follow batches.</p></div></header>${raw(byHour())}</section>
-        ${D.tally && (D.tally.total || D.tally.entries.length || D.isToday) ? raw(html`<section class="card pl-card rv-tally" id="rv-tally"><header class="pl-cardhead"><div><h2>Starch bottoms pressed</h2><p>Counts from the station tablets, checked against SMRT's starch bottoms assembled. Pace is per person on the station, against their SLB goal.</p></div></header>${raw(tallyCard())}</section>`) : ""}
+        ${D.tally && (D.tally.total || D.tally.entries.length || D.isToday) ? raw(html`<section class="card pl-card rv-tally" id="rv-tally"><header class="pl-cardhead"><div><h2>Starch bottoms pressed</h2><p>Counts from the station tablets, checked against SMRT's starch bottoms assembled. Pace is each press's: all pairs ÷ hours from the press's start to the last count.</p></div></header>${raw(tallyCard())}</section>`) : ""}
         <section class="card pl-card"><header class="pl-cardhead"><div><h2>Last ${D.trend.length} work days</h2><p>Pieces assembled per paid hour${D.money ? ", and labor % of revenue" : ""}.</p></div></header>${raw(trend())}</section>
       </div>
       ${D.isToday ? raw('<div id="rv-orders"></div>') : ""}
@@ -187,29 +187,31 @@ export async function render(main, ctx) {
     const check = !T.total ? { c: "", t: D.isToday ? "No counts yet today." : "No counts were entered this day." }
       : D.isToday ? { c: "", t: diff > 0 ? `${fmtN(diff)} pressed and not assembled yet (at IAB, or done ahead)` : diff < 0 ? `${fmtN(-diff)} more assembled than counted — counts may be missing` : "Every pressed pair is assembled" }
       : pct <= 0.05 ? { c: "good", t: `Counts match SMRT within ${Math.max(1, Math.round(pct * 100))}%` } : { c: "warn", t: `Counts are ${diff > 0 ? "over" : "under"} SMRT by ${fmtN(Math.abs(diff))} (${Math.round(pct * 100)}%) — a missed or doubled count, or pairs pressed one day and assembled the next` };
-    const rows = T.stations.flatMap(s => s.people.filter(p => p.count > 0).map(p => ({ s, p })));
-    const E = T.entries.slice().reverse();
+    const E = T.entries.slice().reverse(), SC = (T.startChanges || []).slice().reverse();
+    const startTxt = st => !st || st.min == null ? "—" : `${hm(st.min / 60)} · ${st.source === "manual" ? "set on the tablet" : st.source === "plan" ? `${st.name || "planned"} in ${hm(st.clockIn / 60)} + ${st.delay} min` : "first count"}`;
     return html`<div class="rv-next">
         <div><b>${fmtN(T.total)}</b><span>pairs pressed · tablets</span></div>
         <div><b>${fmtN(asm)}</b><span>starch bottoms assembled · SMRT</span></div>
         <div><b class="${check.c ? "c-" + check.c : ""}">${T.total ? (diff > 0 ? "+" : "") + fmtN(diff) : "—"}</b><span>difference</span></div>
       </div>
       <p class="small ${check.c ? "c-" + check.c : "muted"}">${check.t}</p>
-      ${rows.length ? raw(html`<div class="t-scroll"><table class="rt"><thead><tr><th>Station</th><th>Person</th><th class="num">Pairs</th><th class="num">Hours</th><th class="num">Per hour</th><th class="num">Goal</th></tr></thead><tbody>
-        ${T.stations.map(s => raw(html`<tr class="rt-sub"><td><b>${s.label}</b></td><td class="muted">whole station</td><td class="num"><b>${fmtN(s.station.count)}</b></td><td class="num">${s.station.minutes ? fmtH(s.station.minutes / 60) : "—"}${s.station.estimated ? raw(' <small class="c-warn" title="Not on the time clock yet: hours come from the plan until the punches arrive">plan</small>') : ""}</td>
-          <td class="num c-${tc(s.station.color)}">${r1(s.station.perHour)}</td><td class="num">${g1(s.station.goal)}</td></tr>
-          ${s.people.filter(p => p.count > 0).map(p => raw(html`<tr><td></td><td>${p.name}</td><td class="num">${fmtN(p.count)}</td><td class="num">${p.minutes ? fmtH(p.minutes / 60) : "—"}${p.estimated ? raw(' <small class="c-warn" title="Not on the time clock yet: hours come from the plan until the punches arrive">plan</small>') : ""}</td>
-            <td class="num c-${tc(p.color)}">${r1(p.perHour)}${p.pct != null ? raw(html` <small>${Math.round(p.pct * 100)}%</small>`) : ""}</td><td class="num">${g1(p.goal)}${p.ownGoal ? "" : raw(' <small class="muted">station</small>')}</td></tr>`))}`))}
-        </tbody></table></div>`) : ""}
+      <div class="t-scroll"><table class="rt"><thead><tr><th>Press</th><th>Started</th><th class="num">Pairs</th><th class="num">Hours</th><th class="num">Per hour</th><th class="num">Goal</th></tr></thead><tbody>
+        ${T.stations.map(s => raw(html`<tr><td><b>${s.label}</b></td><td>${startTxt(s.start)}</td><td class="num"><b>${fmtN(s.station.count)}</b></td><td class="num">${s.station.minutes ? fmtH(s.station.minutes / 60) : "—"}</td>
+          <td class="num c-${tc(s.station.color)}">${r1(s.station.perHour)}${s.station.pct != null ? raw(html` <small>${Math.round(s.station.pct * 100)}%</small>`) : ""}</td><td class="num">${g1(s.station.goal)}</td></tr>`))}
+      </tbody></table></div>
+      ${SC.length ? raw(html`<details class="rv-counts"><summary>Start times changed on the tablet (${SC.length})</summary>
+        <div class="tc-list">${SC.map(c => raw(html`<div class="tc-row">
+          ${admin && c.hasPhoto ? raw(html`<a href="/api/tally/start-photo/${c.id}" target="_blank" rel="noopener" class="tc-ph" title="Photo of who changed it"><img src="/api/tally/start-photo/${c.id}" alt="Photo of the change" loading="lazy"></a>`) : raw('<span class="tc-ph none"></span>')}
+          <span class="tc-t">${new Date(c.at).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}</span><span class="chip">${c.label}</span><span class="tc-who">${c.minute == null ? "back to the plan" : `start set to ${hm(c.minute / 60)}`}</span></div>`))}</div></details>`) : ""}
       ${E.length || can ? raw(html`<details class="rv-counts"${E.length && E.length <= 8 ? " open" : ""}><summary>Every count (${E.length})${can ? " · add or remove" : ""}</summary>
         <div class="tc-list">${E.map(e => raw(html`<div class="tc-row">
           ${admin && e.hasPhoto ? raw(html`<a href="/api/tally/photo/${e.id}" target="_blank" rel="noopener" class="tc-ph" title="Photo taken with this count"><img src="/api/tally/photo/${e.id}" alt="Photo at ${hm(e.minute / 60)}" loading="lazy"></a>`) : raw('<span class="tc-ph none"></span>')}
-          <span class="tc-t">${hm(e.minute / 60)}</span><span class="chip">${e.label}</span><b>${e.count}</b><span class="tc-who">${e.name || "No one planned"}${e.source === "manager" ? raw(html` <small class="muted">· added in Review${e.note ? `: ${e.note}` : ""}</small>`) : ""}</span>
+          <span class="tc-t">${hm(e.minute / 60)}</span><span class="chip">${e.label}</span><b>${e.count}</b><span class="tc-who">${e.source === "manager" ? raw(html`<small class="muted">added in Review${e.note ? `: ${e.note}` : ""}</small>`) : ""}</span>
           ${can ? raw(html`<button type="button" class="btn ghost small danger" data-tdel="${e.id}" aria-label="Remove this count">Remove</button>`) : ""}</div>`))}</div>
         ${can && D.day <= D.today ? raw(html`<form class="tc-add" id="tc-add"><select class="input" name="station" aria-label="Station">${T.stations.map(s => raw(html`<option value="${s.code}">${s.label}</option>`))}</select>
           <input class="input" type="time" name="at" required aria-label="Pressed by" value="${D.isToday ? new Date().toTimeString().slice(0, 5) : "16:00"}"><input class="input" type="number" name="count" min="1" max="999" required placeholder="Pairs" aria-label="Pairs">
           <input class="input" name="note" maxlength="200" placeholder="Why (optional)" aria-label="Why"><button class="btn small">Add a count</button></form>
-          <p class="muted small">A count added here goes to whoever the plan had on that station at that time.</p>`) : ""}</details>`) : ""}`;
+          <p class="muted small">A count added here counts toward that press's day at the time given.</p>`) : ""}</details>`) : ""}`;
   }
   function tc(c) { return c === "green" ? "good" : c === "yellow" ? "warn" : c === "red" ? "bad" : "none"; }
   function wireTally() {

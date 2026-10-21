@@ -1,7 +1,10 @@
-// Station tablets (Neal, Oct 14): counts of pairs pressed at the starch bottoms presses, entered on a tablet at each press.
-//  - Who gets the credit: whoever today's plan has on that station at the moment of the entry (moves included).
-//  - Hours on the station come from the plan (when they were there) and the time clock (when they were clocked in), so a
-//    break or a move doesn't count against anyone.
+// Station tablets (Neal, Oct 14; pace simplified Oct 21): counts of pairs pressed at the starch bottoms presses, entered on a
+// tablet at each press.
+//  - Pace is the STATION's (Neal, Oct 21): all pairs entered today ÷ hours from the press's start to the last entry.
+//    No credit per person and no breaks: the manager keeps someone on the press all day, and counts weren't being entered
+//    exactly when people changed over, so per-person numbers weren't reliable.
+//  - The press's start = the first person planned on it, at their planned clock-in + Settings' start delay (10 min).
+//    Someone at the tablet can set the start by hand; a photo of whoever made the change is kept with it.
 //  - Rates are worked out as of the last entry: counts come in batches, so measuring to "now" would turn the tile red
 //    every time the manager is a few minutes from walking over.
 //  - Colors (Neal): green within 10% of the goal, yellow 10-20% under, red more than 20% under; more than 10% over and
@@ -117,46 +120,29 @@ async function crewFor(db, env, day) {
   return v;
 }
 
-/** Today's punches: {personId: [[inMin, outMin|null], ...]} (Production, or no department). */
-async function punchesFor(db, env, day) {
-  const rows = (await db.prepare(`SELECT c.person_id AS p, c.clock_in AS i, c.clock_out AS o FROM labor_clock_today c JOIN core_people p ON p.id=c.person_id
-      WHERE p.org_id=? AND substr(c.clock_in,1,10)=? AND (c.department_id IS NULL OR c.department_id=(SELECT d.id FROM core_departments d WHERE d.org_id=p.org_id AND d.name='Production'))`)
-    .bind(env.ORG_ID, day).all()).results;
-  const out = {};
-  for (const r of rows) (out[r.p] = out[r.p] || []).push([toMin(String(r.i).slice(11, 16)), r.o ? toMin(String(r.o).slice(11, 16)) : null]);
-  return out;
-}
-
-/** Minutes a person worked on a station between a and b: their time there (plan) that they were clocked in. */
-export function workedMin(segs, punches, personId, code, a, b, now) {
-  const mine = segs.filter(s => s.personId === personId && s.code === code);
-  const P = punches[personId];
-  const clock = P && P.length ? P.map(([i, o]) => [i, o == null ? now : o]) : [[0, 1440]]; // no punches (time clock down): trust the plan
-  let t = 0;
-  for (const s of mine) for (const [i, o] of clock) {
-    const lo = Math.max(s.from, i, a), hi = Math.min(s.to, o, b);
-    if (hi > lo) t += hi - lo;
-  }
-  return t;
-}
-
 /**
- * Pace for a list of entries (sorted by minute), as of the last one. `who` = the people whose hours count.
- * lastHour: the entries in the hour up to the last one, over the time since the entry before them.
+ * When the press started: a start set on the tablet; else the first person planned on it (moves included) at their planned
+ * clock-in + `delay` minutes; else the first count (nothing planned there).
  */
-export function pace(entries, segs, punches, who, code, goal, now) {
+export function pressStart(segs, code, manual, delay, entries = []) {
+  if (manual && manual.minute != null) return { min: manual.minute, source: "manual", setAt: manual.at };
+  const here = segs.filter(s => s.code === code);
+  if (here.length) {
+    const s0 = here.reduce((x, y) => (y.from < x.from ? y : x));
+    return { min: Math.min(1439, s0.from + delay), source: "plan", personId: s0.personId, clockIn: s0.from, delay };
+  }
+  if (entries.length) return { min: entries[0].minute, source: "first" };
+  return { min: null, source: "none" };
+}
+
+/** The station's running pace: every pair entered today ÷ the hours from the press's start to the last entry. */
+export function pace(entries, start, goal) {
   const count = entries.reduce((t, e) => t + e.count, 0);
-  if (!entries.length) return { count: 0, minutes: 0, perHour: null, lastMin: null, goal, ...judge(null, goal), lastHour: null };
+  if (!entries.length) return { count: 0, minutes: 0, perHour: null, lastMin: null, goal, ...judge(null, goal) };
   const T = entries[entries.length - 1].minute;
-  const hrs = (a, b) => who.reduce((t, p) => t + workedMin(segs, punches, p, code, a, b, now), 0);
-  const minutes = hrs(0, T);
-  // hours still from the plan: someone counted here has no punches yet today (the time clock is behind or down)
-  const estimated = who.some(p => !(punches[p] && punches[p].length) && workedMin(segs, punches, p, code, 0, T, now) > 0);
+  const minutes = start == null ? 0 : Math.max(0, T - start);
   const perHour = minutes >= 10 ? count / (minutes / 60) : null;
-  const k = entries.findIndex(e => e.minute > T - 60);
-  const from = k > 0 ? entries[k - 1].minute : 0, lhCount = entries.slice(k).reduce((t, e) => t + e.count, 0), lhMin = hrs(from, T);
-  const lastHour = k > 0 && lhMin >= 15 ? { count: lhCount, minutes: lhMin, perHour: lhCount / (lhMin / 60), ...judge(lhCount / (lhMin / 60), goal) } : null;
-  return { count, minutes, perHour, lastMin: T, goal, ...judge(perHour, goal), lastHour, estimated };
+  return { count, minutes, perHour, lastMin: T, goal, ...judge(perHour, goal) };
 }
 
 async function peopleNames(db, orgId) {
@@ -172,25 +158,24 @@ async function entriesFor(db, orgId, day, code = null) {
       FROM plan_station_tally WHERE org_id=? AND day=? AND deleted_at IS NULL ${code ? "AND station_code=?" : ""} ORDER BY minute, at`).bind(...[orgId, day, ...(code ? [code] : [])]).all()).results;
 }
 
-/**
- * One station's day: totals and pace for the station and for each person who pressed there, and who's on it now.
- * ctx = { segs, punches, names, goal, now, labels }
- */
+/** One station's day: its start, the pairs and pace, and who the plan has on it now (shown for reference only). */
 function stationDay(code, entries, ctx) {
-  const { segs, punches, names, goal, now } = ctx;
+  const { segs, names, goal, now, starts, delay } = ctx;
   const mine = entries.filter(e => e.code === code);
-  const occupants = [...new Set(segs.filter(s => s.code === code).map(s => s.personId))];
-  const credited = [...new Set(mine.map(e => e.personId).filter(Boolean))];
-  const station = pace(mine, segs, punches, occupants, code, goal, now);
-  const people = [...new Set([...credited, ...occupants])].map(pid => {
-    const n = names.get(pid) || { name: "Someone", rate: null }, g = n.rate || goal;
-    const e = mine.filter(x => x.personId === pid);
-    return { personId: pid, name: n.name, ownGoal: !!n.rate, ...pace(e, segs, punches, [pid], code, g, now) };
-  }).filter(p => p.count > 0 || occupants.includes(p.personId));
+  const st = pressStart(segs, code, starts.get(code), delay, mine);
+  if (st.personId) st.name = (names.get(st.personId) || {}).name || "Someone";
   const occ = occupantAt(segs, code, now);
-  return { code, label: ctx.labels.get(code)?.label || code.toUpperCase(), station, people,
-    current: occ ? { ...occ, name: (names.get(occ.personId) || {}).name || "Someone", goal: (names.get(occ.personId) || {}).rate || goal } : null };
+  return { code, label: ctx.labels.get(code)?.label || code.toUpperCase(), start: st, station: pace(mine, st.min, goal),
+    current: occ ? { ...occ, name: (names.get(occ.personId) || {}).name || "Someone" } : null };
 }
+
+/** Start-time changes for a day, oldest first: [{id, code, minute, at, deviceId, userId, hasPhoto}]. */
+async function startsFor(db, orgId, day, code = null) {
+  return (await db.prepare(`SELECT id, station_code AS code, minute, at, device_id AS deviceId, user_id AS userId, jpeg IS NOT NULL AS hasPhoto
+      FROM plan_station_starts WHERE org_id=? AND day=? AND deleted_at IS NULL ${code ? "AND station_code=?" : ""} ORDER BY at`).bind(...[orgId, day, ...(code ? [code] : [])]).all()).results
+    .map(r => ({ ...r, hasPhoto: !!r.hasPhoto }));
+}
+const latestByCode = rows => { const m = new Map(); for (const r of rows) m.set(r.code, r); return m; };
 
 /** The SLB stations in use (codes with the slb type), in order. */
 async function slbCodes(db, orgId) {
@@ -203,24 +188,15 @@ export async function dayTally(db, env, day, { withEntries = true } = {}) {
   if (!DAY.test(day)) throw new HttpError(400, "Use a date like 2026-10-14.");
   const tz = env.TIMEZONE || "America/Chicago", L = localMin(tz), isToday = day === L.day;
   const now = isToday ? L.min : 1440;
-  const [set, codes, names, labels, entries] = await Promise.all([tallySettings(db, env.ORG_ID), slbCodes(db, env.ORG_ID), peopleNames(db, env.ORG_ID), stationLabels(db, env.ORG_ID), entriesFor(db, env.ORG_ID, day)]);
+  const [set, codes, names, labels, entries, startRows] = await Promise.all([tallySettings(db, env.ORG_ID), slbCodes(db, env.ORG_ID), peopleNames(db, env.ORG_ID), stationLabels(db, env.ORG_ID), entriesFor(db, env.ORG_ID, day), startsFor(db, env.ORG_ID, day)]);
   const { crew, source } = await crewFor(db, env, day);
-  const segs = segmentsOf(crew);
-  const punches = isToday ? await punchesFor(db, env, day) : await pastPunches(db, env, day);
-  const ctx = { segs, punches, names, goal: set.goal, now, labels };
+  const ctx = { segs: segmentsOf(crew), names, goal: set.goal, now, labels, starts: latestByCode(startRows), delay: set.startDelay };
   const stations = codes.map(c => stationDay(c, entries, ctx));
   const byHour = {};
   for (const e of entries) { const h = Math.floor(e.minute / 60); (byHour[e.code] = byHour[e.code] || {})[h] = (byHour[e.code][h] || 0) + e.count; }
-  return { day, isToday, now, goal: set.goal, photos: set.photos, planSource: source, total: entries.reduce((t, e) => t + e.count, 0), stations, byHour,
-    ...(withEntries ? { entries: entries.map(e => ({ ...e, hasPhoto: !!e.hasPhoto, name: e.personId ? (names.get(e.personId) || {}).name || "Someone" : null, label: labels.get(e.code)?.label || e.code })) } : {}) };
-}
-/** A past day has no punch list, only first in / last out: good enough for hours on the station. */
-async function pastPunches(db, env, day) {
-  const rows = (await db.prepare(`SELECT h.person_id AS p, h.first_in AS i, h.last_out AS o FROM labor_daily_hours h JOIN core_people p ON p.id=h.person_id
-      WHERE p.org_id=? AND h.work_date=? AND h.deleted_at IS NULL`).bind(env.ORG_ID, day).all()).results;
-  const out = {};
-  for (const r of rows) { const i = toMin(r.i), o = toMin(r.o); if (i != null) (out[r.p] = out[r.p] || []).push([i, o ?? 1440]); }
-  return out;
+  return { day, isToday, now, goal: set.goal, startDelay: set.startDelay, photos: set.photos, planSource: source, total: entries.reduce((t, e) => t + e.count, 0), stations, byHour,
+    startChanges: startRows.map(r => ({ ...r, label: labels.get(r.code)?.label || r.code })),
+    ...(withEntries ? { entries: entries.map(e => ({ ...e, hasPhoto: !!e.hasPhoto, label: labels.get(e.code)?.label || e.code })) } : {}) };
 }
 
 // ------------------------------------------------------------ the tablet
@@ -262,60 +238,55 @@ export async function pairTablet(db, env, code) {
 /** What the tablet shows. */
 export async function tabletState(db, env, dev) {
   const tz = env.TIMEZONE || "America/Chicago", L = localMin(tz), day = L.day, now = L.min;
-  const [set, names, labels, entries, { crew, source }, punches] = await Promise.all([tallySettings(db, env.ORG_ID), peopleNames(db, env.ORG_ID), stationLabels(db, env.ORG_ID),
-    entriesFor(db, env.ORG_ID, day, dev.code), crewFor(db, env, day), punchesFor(db, env, day)]);
-  const segs = segmentsOf(crew);
-  const S = stationDay(dev.code, entries, { segs, punches, names, goal: set.goal, now, labels });
-  const cur = S.current;
-  const opened = await openedFor(db, env, day, dev.code);
-  const ins = cur ? punches[cur.personId] || [] : [];
-  const clockedIn = ins.length > 0;
-  const firstIn = clockedIn ? Math.min(...ins.map(x => x[0])) : null;
-  const onNow = clockedIn && ins.some(x => x[1] == null);
-  // Counts are never blocked by the time clock (Neal, Oct 19: the clock-in machine was down and nothing could be entered).
-  // They go to whoever the plan has on the station; hours come from the plan until the punches arrive, then the clock.
-  const locked = false;
-  const me = cur ? S.people.find(p => p.personId === cur.personId) : null;
-  // the person's own line shows when someone else has pressed on this station today too
-  const showPerson = !!(me && me.count > 0 && me.count !== S.station.count);
-  const asOf = await db.prepare("SELECT value_json FROM core_settings WHERE org_id=? AND app_id='core' AND key='rippling_last'").bind(env.ORG_ID).first();
-  let clockAsOf = null; try { clockAsOf = asOf ? JSON.parse(asOf.value_json).at || null : null; } catch {}
+  const [set, names, labels, entries, startRows, { crew, source }] = await Promise.all([tallySettings(db, env.ORG_ID), peopleNames(db, env.ORG_ID), stationLabels(db, env.ORG_ID),
+    entriesFor(db, env.ORG_ID, day, dev.code), startsFor(db, env.ORG_ID, day, dev.code), crewFor(db, env, day)]);
+  const S = stationDay(dev.code, entries, { segs: segmentsOf(crew), names, goal: set.goal, now, labels, starts: latestByCode(startRows), delay: set.startDelay });
   const undoFrom = Date.now() - UNDO_MIN * 60000;
   return {
     paired: true, device: { name: dev.name }, day, now, station: { code: dev.code, label: S.label },
-    person: cur ? { id: cur.personId, name: cur.name, status: cur.status, from: cur.from, to: cur.to ?? null, goal: cur.goal, ownGoal: !!(names.get(cur.personId) || {}).rate,
-      clockedIn, onNow, firstIn } : null,
-    locked, opened: !clockedIn && !locked, planSource: source, clockAsOf,
-    totals: S.station, mine: showPerson ? me : null,
-    entries: entries.slice(-6).reverse().map(e => ({ id: e.id, count: e.count, minute: e.minute, name: e.personId ? (names.get(e.personId) || {}).name || "Someone" : null,
+    start: S.start, planSource: source, totals: S.station,
+    entries: entries.slice(-6).reverse().map(e => ({ id: e.id, count: e.count, minute: e.minute,
       undo: e.deviceId === dev.id && e.source === "tablet" && Date.parse(e.at) >= undoFrom })),
     photos: !!set.photos,
   };
 }
-async function openedFor(db, env, day, code) {
-  const r = (await db.prepare("SELECT key FROM plan_events WHERE org_id=? AND day=? AND key LIKE ?").bind(env.ORG_ID, day, `tally-open:${code}:%`).all()).results;
-  return new Set(r.map(x => x.key.split(":")[2]));
-}
 
-/** "They're clocked in": opens counting for today's person before the time clock shows them (logged in Changes today). */
-export async function openTablet(db, env, dev) {
+/** The press's start set by hand on the tablet ({at: "HH:MM"}), or back to the plan ({at: null}). Logged in Changes today. */
+export async function tabletStart(db, env, dev, body) {
   const tz = env.TIMEZONE || "America/Chicago", L = localMin(tz);
-  const S = await tabletState(db, env, dev);
-  const pid = S.person ? S.person.id : "none";
-  await db.prepare("INSERT INTO plan_events(id, org_id, day, key, kind, text, at, user_id) VALUES(?,?,?,?,?,?,?,NULL) ON CONFLICT(org_id, day, key) DO NOTHING")
-    .bind(ulid(), env.ORG_ID, L.day, `tally-open:${dev.code}:${pid}`, "note",
-      `${S.station.label} tablet opened for counts ${S.person ? `for ${S.person.name} before the time clock showed them clocked in` : "with no one on the station in the plan"}`, nowIso()).run();
-  return tabletState(db, env, dev);
+  const at = body.at == null || body.at === "" ? null : String(body.at);
+  if (at != null && !TIME.test(at)) throw new HttpError(400, "Enter the start time like 6:05.");
+  const minute = at == null ? null : toMin(at);
+  if (minute != null && minute > L.min) throw new HttpError(400, "The start can't be later than now.");
+  const id = ulid(), label = (await stationLabels(db, env.ORG_ID)).get(dev.code)?.label || dev.code;
+  const clock = m => { let h = Math.floor(m / 60); const ap = h >= 12 ? "PM" : "AM"; h = h % 12 || 12; return `${h}:${String(m % 60).padStart(2, "0")} ${ap}`; };
+  await db.batch([
+    db.prepare("INSERT INTO plan_station_starts(id, org_id, day, station_code, minute, at, device_id) VALUES(?,?,?,?,?,?,?)").bind(id, env.ORG_ID, L.day, dev.code, minute, nowIso(), dev.id),
+    db.prepare("INSERT INTO plan_events(id, org_id, day, key, kind, text, at, user_id) VALUES(?,?,?,?,?,?,?,NULL)")
+      .bind(ulid(), env.ORG_ID, L.day, `tally-start:${dev.code}:${id}`, "note", minute == null ? `${label} press start set back to the plan on the tablet` : `${label} press start set to ${clock(minute)} on the tablet`, nowIso()),
+  ]);
+  return { id, state: await tabletState(db, env, dev) };
+}
+/** The photo of whoever changed the start (front camera), sent right after the change. Kept even with count photos off. */
+export async function tabletStartPhoto(db, env, dev, id, bytes) {
+  const e = await db.prepare("SELECT id, at, device_id AS d FROM plan_station_starts WHERE id=? AND org_id=? AND deleted_at IS NULL").bind(id, env.ORG_ID).first();
+  if (!e || e.d !== dev.id) throw new HttpError(404, "That change isn't there any more.");
+  if (Date.now() - Date.parse(e.at) > 5 * 60000) throw new HttpError(409, "Too late for a photo of that change.");
+  const b = new Uint8Array(bytes);
+  if (b.length < 200 || b.length > 300000 || b[0] !== 0xff || b[1] !== 0xd8) throw new HttpError(400, "The photo must be a JPEG under 300 KB.");
+  await db.prepare("UPDATE plan_station_starts SET jpeg=? WHERE id=? AND jpeg IS NULL").bind(b, id).run();
+  return { ok: true };
 }
 
-/** A count from the tablet, credited to whoever the plan has on the station now. */
+/** A count from the tablet. The person the plan has on the press is noted for history only; pace is the station's. */
 export async function tabletCount(db, env, dev, body) {
   const n = Math.round(+body.count);
   if (!(n >= 1 && n <= 999)) throw new HttpError(400, "Enter how many pairs (1 or more).");
-  const S = await tabletState(db, env, dev);
   const tz = env.TIMEZONE || "America/Chicago", L = localMin(tz), id = ulid();
+  const occ = occupantAt(segmentsOf((await crewFor(db, env, L.day)).crew), dev.code, L.min);
+  const S = { current: occ && occ.status === "on" ? occ : null };
   await db.prepare(`INSERT INTO plan_station_tally(id, org_id, day, station_code, person_id, count, at, minute, source, device_id) VALUES(?,?,?,?,?,?,?,?,?,?)`)
-    .bind(id, env.ORG_ID, L.day, dev.code, S.person ? S.person.id : null, n, nowIso(), L.min, body.source === "button" ? "button" : "tablet", dev.id).run();
+    .bind(id, env.ORG_ID, L.day, dev.code, S.current ? S.current.personId : null, n, nowIso(), L.min, body.source === "button" ? "button" : "tablet", dev.id).run();
   return { id, state: await tabletState(db, env, dev) };
 }
 export async function tabletUndo(db, env, dev, id) {
@@ -374,12 +345,20 @@ export async function photoOf(db, env, me, id) {
   if (!r) throw new HttpError(404, "No photo for that count.");
   return new Response(r.jpeg instanceof Uint8Array ? r.jpeg : new Uint8Array(r.jpeg), { headers: { "content-type": "image/jpeg", "cache-control": "private, max-age=86400" } });
 }
+/** The photo taken with a start-time change, for Admins and the Owner. */
+export async function startPhotoOf(db, env, me, id) {
+  requireRole(me, "admin");
+  const r = await db.prepare("SELECT jpeg FROM plan_station_starts WHERE id=? AND org_id=? AND jpeg IS NOT NULL").bind(id, env.ORG_ID).first();
+  if (!r) throw new HttpError(404, "No photo for that change.");
+  return new Response(r.jpeg instanceof Uint8Array ? r.jpeg : new Uint8Array(r.jpeg), { headers: { "content-type": "image/jpeg", "cache-control": "private, max-age=86400" } });
+}
 /** Photos older than Settings' "keep photos" days are deleted (from the cron). */
 export async function cleanupPhotos(env) {
   const set = await tallySettings(env.DB, env.ORG_ID);
   const cut = new Date(Date.now() - set.keepDays * 864e5).toISOString().slice(0, 10);
   const r = await env.DB.prepare("DELETE FROM plan_station_photos WHERE org_id=? AND day < ?").bind(env.ORG_ID, cut).run();
-  return { deleted: r?.meta?.changes || 0 };
+  const s = await env.DB.prepare("UPDATE plan_station_starts SET jpeg=NULL WHERE org_id=? AND day < ? AND jpeg IS NOT NULL").bind(env.ORG_ID, cut).run();
+  return { deleted: (r?.meta?.changes || 0) + (s?.meta?.changes || 0) };
 }
 
 // ------------------------------------------------------------ Admins: the tablets
