@@ -87,6 +87,9 @@ await t("due today like SMRT's report: every piece due today, done whenever it w
   eq(U.q, { dct: 2 + 2, dcb: 0, slt: 1 + 1 + 5, slb: 0, comf: 1, tc: 0 });
   eq(U.done, { dct: 1 + 2, dcb: 0, slt: 1, slb: 0, comf: 0, tc: 0 });
   eq([U.total, U.doneTotal, U.earlier, U.route], [12, 4, 1, 0]);
+  eq(U.before, { dct: 1, dcb: 0, slt: 0, slb: 0, comf: 0, tc: 0 }, "done before today");
+  eq(U.today, { dct: 2, dcb: 0, slt: 1, slb: 0, comf: 0, tc: 0 }, "done today");
+  eq([U.beforeTotal, U.todayTotal], [1, 3]);
   eq(U.total - U.earlier - U.route, Object.values(T.q).reduce((a, b) => a + b, 0), "the plan's count = due today less earlier and route");
 });
 await t("item type wins over department (comforter under Laundry Bottoms)", () => eq(T.q.comf, 1));

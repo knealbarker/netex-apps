@@ -358,18 +358,20 @@ export async function render(main, ctx) {
     if (!U || pick !== st.V.today || !U.total) { el.hidden = true; el.innerHTML = ""; return; }
     el.hidden = false;
     const open = el.querySelector("details")?.open ?? true;
+    const n = v => (v ? fmtN(v) : raw('<span class="dim">0</span>'));
     const rows = CATS.filter(k => U.q[k] > 0).map(k => {
       const left = Math.max(0, U.q[k] - U.done[k]);
-      return html`<tr><th scope="row"><i class="sw" style="--c:${CAT_COLOR[k]}"></i> ${TILE[k]}</th><td class="num">${fmtN(U.q[k])}</td><td class="num">${fmtN(U.done[k])}</td>
+      return html`<tr><th scope="row"><i class="sw" style="--c:${CAT_COLOR[k]}"></i> ${TILE[k]}</th><td class="num">${fmtN(U.q[k])}</td>
+        <td class="num">${n(U.before[k])}</td><td class="num">${n(U.today[k])}</td>
         <td class="num">${left ? raw(html`<b>${fmtN(left)}</b>`) : raw('<span class="good-txt">done</span>')}</td></tr>`;
     });
     const leftT = Math.max(0, U.total - U.doneTotal);
-    const why = [U.route ? `${fmtN(U.route)} on route orders (worked the day before)` : "", U.earlier ? `${fmtN(U.earlier)} finished before today` : ""].filter(Boolean);
-    el.innerHTML = html`<details ${open ? "open" : ""}><summary class="pl-cardhead"><div><h2>Due today <span class="count soft">${fmtN(U.doneTotal)} done · ${fmtN(leftT)} left of ${fmtN(U.total)}</span></h2>
+    const why = [U.route ? `${fmtN(U.route)} on route orders (worked the day before)` : "", U.earlier ? `${fmtN(U.earlier)} done before today` : ""].filter(Boolean);
+    el.innerHTML = html`<details ${open ? "open" : ""}><summary class="pl-cardhead"><div><h2>Due today <span class="count soft">${fmtN(U.todayTotal)} done today · ${fmtN(leftT)} left of ${fmtN(U.total)}</span></h2>
         <p>Every piece due today, counted like SMRT's Due Today report.</p></div></summary>
-      <table class="rt pv-due-t"><thead><tr><th></th><th class="num">Due</th><th class="num">Done</th><th class="num">Remaining</th></tr></thead>
+      <table class="rt pv-due-t"><thead><tr><th></th><th class="num">Due</th><th class="num">Done before today</th><th class="num">Done today</th><th class="num">Remaining</th></tr></thead>
         <tbody>${raw(rows.join(""))}</tbody>
-        <tfoot><tr><th scope="row">Total</th><td class="num"><b>${fmtN(U.total)}</b></td><td class="num"><b>${fmtN(U.doneTotal)}</b></td><td class="num"><b>${fmtN(leftT)}</b></td></tr></tfoot></table>
+        <tfoot><tr><th scope="row">Total</th><td class="num">${fmtN(U.total)}</td><td class="num">${fmtN(U.beforeTotal)}</td><td class="num">${fmtN(U.todayTotal)}</td><td class="num">${fmtN(leftT)}</td></tr></tfoot></table>
       ${why.length ? raw(html`<p class="muted small">The plan above counts less: ${why.join(" and ")} aren't today's work.</p>`) : ""}</details>`;
   }
   function hmShort(h) { const m = Math.round(h * 60) % 1440, H = Math.floor(m / 60) % 12 || 12; return `${H}:${String(m % 60).padStart(2, "0")}`; }

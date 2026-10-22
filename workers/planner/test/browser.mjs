@@ -331,8 +331,9 @@ await t("Plan: Due today card counts like SMRT (due, done, remaining) and says w
   await p.goto(url + "/#/plan"); await p.reload();
   await p.waitForSelector("#pl-due:not([hidden]) table");
   const txt = await p.textContent("#pl-due");
-  ok(/2 done · 3 left of 5/.test(txt), txt);
-  ok(/2 on route orders .* and 1 finished before today/.test(txt), txt);
+  ok(/1 done today · 3 left of 5/.test(txt), txt);
+  ok(/Done before today/.test(txt) && /Done today/.test(txt), txt);
+  ok(/2 on route orders .* and 1 done before today/.test(txt), txt);
   await p.locator("#pl-due").screenshot({ path: join(SHOTS, "15-due-today.png") });
 });
 await t("no page errors", async () => { ok(!errors.length, errors.join("\n")); });

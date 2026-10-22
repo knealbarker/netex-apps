@@ -232,19 +232,23 @@ export async function piecesView(db, env, { at = new Date(), day = null } = {}) 
   overdue.todo = CATS.reduce((t, k) => t + overdue.q[k], 0);
 
   // Due today the way SMRT's "Due Today" report counts it (Neal, Oct 22): every piece on an order due today, route orders and
-  // pieces finished on earlier days included. Done = assembled (or the order is done), whenever it happened.
+  // pieces finished on earlier days included. Done = assembled (or the order is done), split into before today and today
+  // (Neal, Oct 22); a piece done with no date on record counts as today, as on the plan.
   // route and earlier say why the plan's own count is smaller (route orders are worked the day before; earlier work isn't today's).
-  const dueToday = { q: zero(), done: zero(), route: 0, earlier: 0, orders: 0 };
+  const dueToday = { q: zero(), done: zero(), before: zero(), today: zero(), route: 0, earlier: 0, orders: 0 };
   for (const o of orders) {
     if (o.dueDay !== today) continue;
     dueToday.orders++;
     for (const [k, p] of Object.entries(o.per)) {
-      dueToday.q[k] += p[0]; dueToday.done[k] += Math.min(p[0], p[1]);
+      const done = Math.min(p[0], p[1]), before = Math.min(done, p[2]);
+      dueToday.q[k] += p[0]; dueToday.done[k] += done; dueToday.before[k] += before; dueToday.today[k] += done - before;
       if (o.loc === "Route" && route.dayBefore) dueToday.route += p[0]; else dueToday.earlier += p[2];
     }
   }
   dueToday.total = CATS.reduce((t, k) => t + dueToday.q[k], 0);
   dueToday.doneTotal = CATS.reduce((t, k) => t + dueToday.done[k], 0);
+  dueToday.beforeTotal = CATS.reduce((t, k) => t + dueToday.before[k], 0);
+  dueToday.todayTotal = CATS.reduce((t, k) => t + dueToday.today[k], 0);
 
   // average price per piece from SMRT (before tax), when at least 15 priced pieces back it up
   const pr = {}; for (const o of orders) for (const [k, p] of Object.entries(o.per)) { const a = pr[k] = pr[k] || [0, 0]; a[0] += p[4]; a[1] += p[5]; }
