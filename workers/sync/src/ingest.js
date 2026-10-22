@@ -114,6 +114,17 @@ async function existingItems(db, orgId, barcodes, sinceIso) {
   return out;
 }
 
+/** Stored lines with no barcode on these orders, grouped by order | item type | created time, in the order they were stored. */
+async function blankItems(db, orderIds) {
+  const out = new Map();
+  for (const c of chunks(orderIds, CHUNK)) {
+    const r = await db.prepare(`SELECT id, order_id, item_type_id, line_no, row_hash, notes, removed_at, smrt_created_at FROM pos_items
+      WHERE COALESCE(barcode,'')='' AND order_id IN (${c.map(() => "?").join(",")}) ORDER BY rowid`).bind(...c).all();
+    for (const x of r.results) { const k = `${x.order_id}|${x.item_type_id}|${x.smrt_created_at}`; (out.get(k) || out.set(k, []).get(k)).push(x); }
+  }
+  return out;
+}
+
 /**
  * @param db      D1 database (or the test adapter)
  * @param ctx     { orgId, runId, mode: 'live' | 'backfill', userId? }
@@ -211,6 +222,15 @@ export async function ingestDay(db, ctx, orders, items) {
   for (const r of items) { const o = orderOf.get(orderNo(r["Sale Id"])); const b = text(r["Barcode"]); if (o && b) inReport.add(`${b}|${o.id}`); }
   const claimed = new Set();
   const stillThere = x => inReport.has(`${x.barcode}|${x.order_id}`);
+  // Lines with no tag number ("Describe and Price" placeholders, employee discounts, retail bags) can't be matched by
+  // barcode. They're matched on the same order by item type and created time, same line first. Before Oct 22 they
+  // weren't matched at all, so every sync added another copy (26289-6547 had 385 phantom DC tops).
+  const blankRows = await blankItems(db, [...new Set([...orderOf.values()].filter(o => o && o.existed).map(o => o.id))]);
+  const blankKey = (orderId, typeId, created) => `${orderId}|${typeId}|${created}`;
+  const blankFree = (orderId, typeId, created, ln) => {
+    const rows = (blankRows.get(blankKey(orderId, typeId, created)) || []).filter(x => !claimed.has(x.id));
+    return rows.find(x => x.line_no === ln) || rows[0] || null;
+  };
   for (const r of items) {
     const no = orderNo(r["Sale Id"]); const o = orderOf.get(no);
     if (!o) continue;
@@ -229,7 +249,8 @@ export async function ingestDay(db, ctx, orders, items) {
       base_cents: int(r["Item base price"]), upcharge_cents: int(r["Up Charge Amount"]), discount_cents: int(r["Discounted amount"]), price_cents: int(r["Price"]),
     };
     const hash = await sha1(ITEM_HASH + JSON.stringify(r));
-    const old = v.barcode ? samePiece(knownItems.get(v.barcode), o.id, v.smrt_created_at, { claimed, stillThere }) : null;
+    const old = v.barcode ? samePiece(knownItems.get(v.barcode), o.id, v.smrt_created_at, { claimed, stillThere })
+      : blankFree(o.id, v.item_type_id, v.smrt_created_at, ln);
     if (old) claimed.add(old.id);
     const cols = Object.keys(v);
     if (old) {
@@ -248,6 +269,19 @@ export async function ingestDay(db, ctx, orders, items) {
       claimed.add(id);
     }
     stats.itemsWritten++;
+  }
+
+  // Extra copies of an untagged line: a stored row nobody claimed, when another row with the same order, item type and
+  // created time was claimed in this read. Removed with the "piece added" changes they made.
+  for (const rows of blankRows.values()) {
+    if (!rows.some(x => claimed.has(x.id))) continue; // that line wasn't in this read; leave it
+    for (const x of rows) {
+      if (claimed.has(x.id)) continue;
+      writes.push(db.prepare("DELETE FROM plan_followups WHERE item_id=? OR change_id IN (SELECT id FROM pos_changes WHERE item_id=?)").bind(x.id, x.id));
+      writes.push(db.prepare("DELETE FROM pos_changes WHERE item_id=?").bind(x.id));
+      writes.push(db.prepare("DELETE FROM pos_items WHERE id=?").bind(x.id));
+      stats.duplicatesRemoved = (stats.duplicatesRemoved || 0) + 1;
+    }
   }
 
   // new lookup rows first (orders reference them), then everything else

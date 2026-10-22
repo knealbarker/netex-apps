@@ -543,6 +543,49 @@ ok("custom work days: Saturday as a work day waits", !backfillAllowed({ day: "20
   ok(`history keeps going back (${RACK_HISTORY_DAYS} days)`, st.backTo < "2026-10-17", st.backTo);
 }
 
+// ---- lines with no tag number (Oct 22: 26289-6547 grew to 385 copies of one "Describe and Price" line)
+{
+  const { sqlite: S, db: sdb } = freshDb();
+  const f = new FakeSmrt();
+  const D = "2026-10-16";
+  f.addOrder(D, "262896547", { status: "processing", pieces: 3, store: "TCC Emory" });
+  const its = f.days.get(D).items;
+  its[0]["Barcode"] = ""; its[0]["Item Type"] = "Describe and Price";             // the untagged placeholder
+  its[2]["Barcode"] = ""; its[2]["Item Type"] = "100 employee discount"; its[2]["Financial department"] = "Miscellaneous";
+  for (const id of ["r1", "r2", "r3", "r4"]) S.prepare("INSERT INTO int_sync_runs(id,integration_id,started_at,status) VALUES(?,'smrt','x','ok')").run(id);
+  const count = () => S.prepare("SELECT COUNT(*) n FROM pos_items").get().n;
+  const day = f.days.get(D);
+  await ingestDay(sdb, { orgId: "tcc", runId: "r1", mode: "live", day: D }, day.orders, day.items);
+  ok("untagged lines stored once", count() === 3, count());
+  await ingestDay(sdb, { orgId: "tcc", runId: "r2", mode: "live", day: D }, day.orders, [...day.items].reverse()); // report order changes too
+  ok("reading the day again adds no copies", count() === 3, count());
+  ok("no 'piece added' changes for the re-read", S.prepare("SELECT COUNT(*) n FROM pos_changes WHERE kind='item_added'").get().n === 0);
+  // copies left by the old sync are removed on the next read, with their changes
+  const orig = S.prepare("SELECT * FROM pos_items WHERE COALESCE(barcode,'')='' ORDER BY line_no LIMIT 1").get();
+  for (let k = 0; k < 5; k++) {
+    const cid = "c" + k, iid = "dup" + k;
+    S.prepare("INSERT INTO pos_items(id,order_id,barcode,line_no,item_type_id,department_id,smrt_created_at,row_hash,last_sync_id,created_at) VALUES(?,?,'',?,?,?,?,'h','r3',?)")
+      .run(iid, orig.order_id, orig.line_no, orig.item_type_id, orig.department_id, orig.smrt_created_at, "2026-10-20T00:00:0" + k + "Z");
+    S.prepare("INSERT INTO pos_changes(id,order_id,item_id,kind,detected_at) VALUES(?,?,?,'item_added','x')").run(cid, orig.order_id, iid);
+  }
+  ok("(setup) 5 old copies", count() === 8);
+  // the migration's cleanup keeps the rows from the first run that saw each line
+  const mig = readFileSync(join(MIG, "0027_untagged_item_copies.sql"), "utf8");
+  S.exec("SAVEPOINT m"); S.exec(mig);
+  ok("migration 0027 removes the old copies and keeps the real lines", count() === 3 && S.prepare("SELECT COUNT(*) n FROM pos_changes").get().n === 0, count());
+  S.exec("ROLLBACK TO m"); S.exec("RELEASE m");
+  ok("(setup) copies back", count() === 8);
+  const st = await ingestDay(sdb, { orgId: "tcc", runId: "r4", mode: "live", day: D }, day.orders, day.items);
+  ok("the next read removes the copies", count() === 3 && st.duplicatesRemoved === 5, { n: count(), st });
+  ok("…and the 'piece added' changes they made", S.prepare("SELECT COUNT(*) n FROM pos_changes WHERE item_id LIKE 'dup%'").get().n === 0);
+  ok("the real untagged rows are the first ones stored", S.prepare("SELECT COUNT(*) n FROM pos_items WHERE COALESCE(barcode,'')='' AND last_sync_id='r1'").get().n === 2);
+  // a second untagged line of the same type on the same order is a real line, not a copy
+  its.push({ ...its[2] });
+  await ingestDay(sdb, { orgId: "tcc", runId: "r4", mode: "live", day: D }, day.orders, day.items);
+  await ingestDay(sdb, { orgId: "tcc", runId: "r4", mode: "live", day: D }, day.orders, day.items);
+  ok("two real untagged lines of one type are both kept, once each", S.prepare("SELECT COUNT(*) n FROM pos_items i JOIN pos_item_types t ON t.id=i.item_type_id WHERE t.name='100 employee discount'").get().n === 2);
+}
+
 console.log(`\nSMRT calls made by the fake: ${fake.calls}`);
 console.log(failures ? `${failures} FAILED` : "all passed");
 process.exit(failures ? 1 : 0);
