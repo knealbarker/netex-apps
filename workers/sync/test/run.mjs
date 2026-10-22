@@ -570,9 +570,9 @@ ok("custom work days: Saturday as a work day waits", !backfillAllowed({ day: "20
   }
   ok("(setup) 5 old copies", count() === 8);
   // the migration's cleanup keeps the rows from the first run that saw each line
-  const mig = readFileSync(join(MIG, "0027_untagged_item_copies.sql"), "utf8");
+  const mig = readFileSync(join(MIG, "0028_untagged_item_copies.sql"), "utf8");
   S.exec("SAVEPOINT m"); S.exec(mig);
-  ok("migration 0027 removes the old copies and keeps the real lines", count() === 3 && S.prepare("SELECT COUNT(*) n FROM pos_changes").get().n === 0, count());
+  ok("migration 0028 removes the old copies and keeps the real lines", count() === 3 && S.prepare("SELECT COUNT(*) n FROM pos_changes").get().n === 0, count());
   S.exec("ROLLBACK TO m"); S.exec("RELEASE m");
   ok("(setup) copies back", count() === 8);
   const st = await ingestDay(sdb, { orgId: "tcc", runId: "r4", mode: "live", day: D }, day.orders, day.items);
