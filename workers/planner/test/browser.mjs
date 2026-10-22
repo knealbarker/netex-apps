@@ -317,6 +317,24 @@ await t("Plan: pieces for the next work day, by store, with a late list", async 
   ok(await p.locator("#pl-board .tl-row").count() >= 6, "a row per kind of work");
   await p.screenshot({ path: join(SHOTS, "14-plan.png"), fullPage: true });
 });
+await t("Plan: Due today card counts like SMRT (due, done, remaining) and says why the plan is smaller", async () => {
+  const today = localNow("America/Chicago").day;
+  if (![1, 2, 3, 4, 5].includes(new Date(today + "T12:00:00Z").getUTCDay())) return; // only on a work day
+  const ts = (d, hm = "10:00") => `${d}T${hm}:00-05:00`, made = addDays(today, -2);
+  const orders = [], items = []; let k = 0;
+  const add = (due, pcs, extra = {}) => { const id = `2698${String(++k).padStart(5, "0")}`;
+    orders.push({ "ID": id, "Status": "processing", "Due date": due, "Created": ts(made), "Piece Count": String(pcs.length), "Return Location": "TCC Quitman", "Customer Id": "c2", ...extra });
+    pcs.forEach(([dep, asm], i) => items.push({ "Sale Id": id, "Barcode": `${id}${i}`, "Item Status": asm ? "assembled" : "detailed", "Financial department": dep, "Item Type": "Shirt", "Created": ts(made), "Item assembly date": asm || null })); };
+  add(ts(today, "12:00"), [["Dry Cleaning Tops", ts(addDays(today, -1), "15:00")], ["Dry Cleaning Tops", ts(today, "08:00")], ["Dry Cleaning Tops"]]);
+  add(ts(today, "08:00"), [["Laundry Tops"], ["Laundry Tops"]], { "Is Route Delivery": "true" });
+  await ingestDay(db, { orgId: "tcc", runId: "lv", mode: "backfill", day: made }, orders, items);
+  await p.goto(url + "/#/plan"); await p.reload();
+  await p.waitForSelector("#pl-due:not([hidden]) table");
+  const txt = await p.textContent("#pl-due");
+  ok(/2 done · 3 left of 5/.test(txt), txt);
+  ok(/2 on route orders .* and 1 finished before today/.test(txt), txt);
+  await p.locator("#pl-due").screenshot({ path: join(SHOTS, "15-due-today.png") });
+});
 await t("no page errors", async () => { ok(!errors.length, errors.join("\n")); });
 
 await browser.close(); server.close();

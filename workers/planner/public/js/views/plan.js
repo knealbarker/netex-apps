@@ -197,6 +197,7 @@ export async function render(main, ctx) {
       <div id="pl-note"></div>
       <section class="pv-presses" id="pl-presses" aria-label="Starch bottoms presses" hidden></section>
       <section class="pv-work" id="pl-work" aria-label="The rest of the work"></section>
+      <section class="card pl-card pv-due" id="pl-due" aria-label="Due today" hidden></section>
       <section class="pv-board" aria-label="Stations">
         <div class="pv-board-head"><div class="seg tl-view" role="tablist" aria-label="Show the day by"><button type="button" role="tab" data-view="stations" aria-selected="${boardView === "stations"}">Stations</button><button type="button" role="tab" data-view="people" aria-selected="${boardView === "people"}">People</button></div>
           <span class="muted small" id="pl-board-hint"></span>
@@ -273,7 +274,7 @@ export async function render(main, ctx) {
     const L = st.L = null;   // no predictions (Neal, Oct 14)
     // the production day is over: what's left waits for later or for a manager, so nothing more is planned (Neal, Oct 13)
     st.over = M.productionDone(X.P, X.P.dp?.D?.lastAsm, M.breaksOf(X.R));
-    drawNote(); drawStatus(X, L); drawPresses(); drawWork(X, L); drawBoard(X, L); drawAway(X.P);
+    drawNote(); drawStatus(X, L); drawPresses(); drawWork(X, L); drawDue(); drawBoard(X, L); drawAway(X.P);
     drawPub(X); saveStatus();
   }
 
@@ -349,6 +350,27 @@ export async function render(main, ctx) {
     });
     el.innerHTML = cells.length ? cells.join("") : "";
     el.querySelectorAll("[data-cat]").forEach(b => b.addEventListener("click", () => countDialog(b.dataset.cat)));
+  }
+  // ---- Due today, counted like SMRT's "Due Today" report, with done and remaining (Neal, Oct 22)
+  function drawDue() {
+    const el = document.getElementById("pl-due"); if (!el) return;
+    const U = st.V.dueToday;
+    if (!U || pick !== st.V.today || !U.total) { el.hidden = true; el.innerHTML = ""; return; }
+    el.hidden = false;
+    const open = el.querySelector("details")?.open ?? true;
+    const rows = CATS.filter(k => U.q[k] > 0).map(k => {
+      const left = Math.max(0, U.q[k] - U.done[k]);
+      return html`<tr><th scope="row"><i class="sw" style="--c:${CAT_COLOR[k]}"></i> ${TILE[k]}</th><td class="num">${fmtN(U.q[k])}</td><td class="num">${fmtN(U.done[k])}</td>
+        <td class="num">${left ? raw(html`<b>${fmtN(left)}</b>`) : raw('<span class="good-txt">done</span>')}</td></tr>`;
+    });
+    const leftT = Math.max(0, U.total - U.doneTotal);
+    const why = [U.route ? `${fmtN(U.route)} on route orders (worked the day before)` : "", U.earlier ? `${fmtN(U.earlier)} finished before today` : ""].filter(Boolean);
+    el.innerHTML = html`<details ${open ? "open" : ""}><summary class="pl-cardhead"><div><h2>Due today <span class="count soft">${fmtN(U.doneTotal)} done · ${fmtN(leftT)} left of ${fmtN(U.total)}</span></h2>
+        <p>Every piece due today, counted like SMRT's Due Today report.</p></div></summary>
+      <table class="rt pv-due-t"><thead><tr><th></th><th class="num">Due</th><th class="num">Done</th><th class="num">Remaining</th></tr></thead>
+        <tbody>${raw(rows.join(""))}</tbody>
+        <tfoot><tr><th scope="row">Total</th><td class="num"><b>${fmtN(U.total)}</b></td><td class="num"><b>${fmtN(U.doneTotal)}</b></td><td class="num"><b>${fmtN(leftT)}</b></td></tr></tfoot></table>
+      ${why.length ? raw(html`<p class="muted small">The plan above counts less: ${why.join(" and ")} aren't today's work.</p>`) : ""}</details>`;
   }
   function hmShort(h) { const m = Math.round(h * 60) % 1440, H = Math.floor(m / 60) % 12 || 12; return `${H}:${String(m % 60).padStart(2, "0")}`; }
 

@@ -82,6 +82,13 @@ await t("today: due less finished before today; finished today still counts", ()
   eq(T.q, { dct: 1 + 2, dcb: 0, slt: 1 + 1 + 5, slb: 0, comf: 1, tc: 0 });
   eq(T.done, { dct: 2, dcb: 0, slt: 1, slb: 0, comf: 0, tc: 0 });
 });
+await t("due today like SMRT's report: every piece due today, done whenever it was finished", () => {
+  const U = V.dueToday;
+  eq(U.q, { dct: 2 + 2, dcb: 0, slt: 1 + 1 + 5, slb: 0, comf: 1, tc: 0 });
+  eq(U.done, { dct: 1 + 2, dcb: 0, slt: 1, slb: 0, comf: 0, tc: 0 });
+  eq([U.total, U.doneTotal, U.earlier, U.route], [12, 4, 1, 0]);
+  eq(U.total - U.earlier - U.route, Object.values(T.q).reduce((a, b) => a + b, 0), "the plan's count = due today less earlier and route");
+});
 await t("item type wins over department (comforter under Laundry Bottoms)", () => eq(T.q.comf, 1));
 await t("deleted orders and removed pieces don't count; unmapped departments are reported", () => { eq(V.unmapped["Wash & Fold"], 1); });
 await t("overdue: open pieces from earlier days", () => { eq(V.overdue.q.slb, 2); eq(V.overdue.orders, 1); });

@@ -1040,3 +1040,11 @@ dialog.sheet .dlg-body { max-height: min(70vh, 640px); overflow: auto; }
 /* Shuttles tab: a dot when a van leaves within the hour and that store isn't all on VAN (js/app.js shuttleDot) */
 .tabs a { position: relative; }
 .tab-dot { position: absolute; top: 5px; right: 6px; width: 9px; height: 9px; border-radius: 50%; background: var(--bad); box-shadow: 0 0 0 2px var(--bg2); }
+
+/* Due today card on the Plan page (counted like SMRT's Due Today report) */
+.pv-due { margin-bottom: 16px; }
+.pv-due-t { max-width: 560px; }
+.pv-due-t tbody th, .pv-due-t tfoot th { text-transform: none; letter-spacing: 0; font-size: 14px; font-weight: 500; color: inherit; padding: 8px 8px 8px 0; border-bottom: 1px solid var(--line); }
+.pv-due-t tbody th .sw { margin-right: 4px; }
+.pv-due-t tfoot th, .pv-due-t tfoot td { border-top: 1px solid var(--line2); border-bottom: 0; font-weight: 700; }
+.pv-due p.small { margin: 8px 0 0; }

@@ -231,6 +231,21 @@ export async function piecesView(db, env, { at = new Date(), day = null } = {}) 
   for (const o of overdueOrders) for (const [k, p] of Object.entries(o.per)) overdue.q[k] += Math.max(0, p[0] - p[1]);
   overdue.todo = CATS.reduce((t, k) => t + overdue.q[k], 0);
 
+  // Due today the way SMRT's "Due Today" report counts it (Neal, Oct 22): every piece on an order due today, route orders and
+  // pieces finished on earlier days included. Done = assembled (or the order is done), whenever it happened.
+  // route and earlier say why the plan's own count is smaller (route orders are worked the day before; earlier work isn't today's).
+  const dueToday = { q: zero(), done: zero(), route: 0, earlier: 0, orders: 0 };
+  for (const o of orders) {
+    if (o.dueDay !== today) continue;
+    dueToday.orders++;
+    for (const [k, p] of Object.entries(o.per)) {
+      dueToday.q[k] += p[0]; dueToday.done[k] += Math.min(p[0], p[1]);
+      if (o.loc === "Route" && route.dayBefore) dueToday.route += p[0]; else dueToday.earlier += p[2];
+    }
+  }
+  dueToday.total = CATS.reduce((t, k) => t + dueToday.q[k], 0);
+  dueToday.doneTotal = CATS.reduce((t, k) => t + dueToday.done[k], 0);
+
   // average price per piece from SMRT (before tax), when at least 15 priced pieces back it up
   const pr = {}; for (const o of orders) for (const [k, p] of Object.entries(o.per)) { const a = pr[k] = pr[k] || [0, 0]; a[0] += p[4]; a[1] += p[5]; }
   const prices = Object.fromEntries(Object.entries(pr).filter(([, a]) => a[1] >= 15).map(([k, a]) => [k, Math.round(a[0] / a[1]) / 100]));
@@ -256,7 +271,7 @@ export async function piecesView(db, env, { at = new Date(), day = null } = {}) 
   return {
     today, next, now: hm, isWorkDay, workDays,
     days,
-    overdue, late, prices, unmapped, undetailed, notReady,
+    overdue, late, prices, unmapped, undetailed, notReady, dueToday,
     forecast: { ratio: fc.all.ratio, basedOn: fc.all.n },
     smrt: { lastRun: live || null, lastOk: lastOk?.at || null },
   };
