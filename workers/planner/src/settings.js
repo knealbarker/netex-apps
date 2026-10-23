@@ -34,7 +34,9 @@ export const SCHEMA = {
   alerts: { warnFirst: f.int(45, 0, 240), warnSecond: f.int(15, 0, 240), notify: f.bool(true), weekStart: f.int(1, 0, 6) },
   smrt: { overdue: f.bool(true), transitRack: f.text("Van", 40),
     departments: f.perCat(f.text("", 200), { dct: "Dry Cleaning Tops", dcb: "Dry Cleaning Bottoms", slt: "Laundry Tops", slb: "Laundry Bottoms", comf: "", tc: "" }),
-    itemTypes: f.perCat(f.text("", 200), { dct: "", dcb: "", slt: "", slb: "", comf: "Comforter, Bedspread", tc: "Tablecloth, Table Cloth" }) },
+    itemTypes: f.perCat(f.text("", 200), { dct: "", dcb: "", slt: "", slb: "", comf: "Z-SS*", tc: "Tablecloth, Table Cloth" }),
+    // item types worked at the Laundry Hub, left out of the planner unless a kind of work above claims them (Neal, Oct 23)
+    hubTypes: f.text("Bedspread, Comforter", 200) },
   rippling: { departments: f.list(["Production"]), useTimes: f.bool(true) },
   // the end-of-day email: today against the plan, and the next work day
   summary: { on: f.bool(true), to: f.emails(["neal@towncountryclean.com"]), at: f.time("18:10") },

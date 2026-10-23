@@ -26,16 +26,27 @@ export function localNow(tz = "America/Chicago", at = new Date()) {
 const normStore = s => String(s || "").toLowerCase().replace(/^tcc\s+/, "").replace(/\s+/g, " ").trim();
 const list = s => String(s || "").split(",").map(x => x.trim().toLowerCase()).filter(Boolean);
 
-/** Category of a piece: item type keywords first, then the department name. */
+/**
+ * Category of a piece: item type first, then the department name.
+ * Item type words are compared on letters and digits only ("Z- SS- Bedspread" = "z-ss bedspread"); a word ending in *
+ * matches only names that start with it ("Z-SS*").
+ * Neal, Oct 23: only bedspreads whose item type starts with Z-SS are worked in the Sulphur Springs workshop. Other
+ * bedspreads/comforters go to the Laundry Hub with Wash & Fold: cat.elsewhere(type) is true for those, and the planner
+ * leaves them out completely (counts, late lists, not-mapped).
+ */
+const norm = s => String(s || "").toLowerCase().replace(/[^a-z0-9*]/g, "");
+const typeMatch = keys => {
+  const ks = keys.map(norm).filter(k => k && k !== "*");
+  return t => { const n = norm(t).replace(/\*/g, ""); return ks.some(k => (k.endsWith("*") ? n.startsWith(k.slice(0, -1)) : n.includes(k))); };
+};
 export function categorizer(smrt) {
-  const types = CATS.map(k => [k, list(smrt.itemTypes?.[k])]).filter(x => x[1].length);
+  const types = CATS.map(k => [k, list(smrt.itemTypes?.[k])]).filter(x => x[1].length).map(([k, keys]) => [k, typeMatch(keys)]);
   const deps = new Map(); for (const k of CATS) for (const d of list(smrt.departments?.[k])) deps.set(d, k);
-  return (type, dep) => {
-    const t = String(type || "").toLowerCase();
-    const hit = types.find(([, keys]) => keys.some(w => t.includes(w)));
-    if (hit) return hit[0];
-    return deps.get(String(dep || "").toLowerCase().trim()) || null;
-  };
+  const hub = typeMatch(list(smrt.hubTypes));
+  const byType = type => types.find(([, m]) => m(type))?.[0] || null;
+  const cat = (type, dep) => (cat.elsewhere(type) ? null : byType(type) || deps.get(String(dep || "").toLowerCase().trim()) || null);
+  cat.elsewhere = type => !byType(type) && hub(type);
+  return cat;
 }
 
 const toMin = t => { const m = /^(\d\d):(\d\d)$/.exec(t || ""); return m ? +m[1] * 60 + +m[2] : null; };
@@ -96,7 +107,9 @@ export function splitOrders({ orders, items, deps }, cat, today, transitRack = "
     const per = {}, open = {}, other = {};
     let pieces = 0, complete = 0, washing = 0, undetailed = 0, onVan = 0, noteCount = o.notes ? 1 : 0, recent = 0, lastAsm = 0;
     const add = (k, p, c, b, t, cents, pp) => { const a = per[k] = per[k] || [0, 0, 0, 0, 0, 0]; a[0] += p; a[1] += c; a[2] += b; a[3] += t; a[4] += cents; a[5] += pp; };
-    const its = byOrder.get(o.id) || [];
+    // pieces worked somewhere else (Laundry Hub bedspreads) aren't part of this plant's work at all
+    const all = byOrder.get(o.id) || [], its = cat.elsewhere ? all.filter(it => !cat.elsewhere(it.type)) : all;
+    if (all.length && !its.length) return null;
     for (const it of its) {
       const isC = prodDone || !!it.isAsm || !!it.asm;
       if (isC && it.rack && transit.test(it.rack)) onVan++;
@@ -128,7 +141,7 @@ export function splitOrders({ orders, items, deps }, cat, today, transitRack = "
     const no = String(o.no);
     return { id: o.id, no: no.length > 5 ? `${no.slice(0, 5)}-${no.slice(5)}` : no, due: o.due, dueDay: String(o.due || "").slice(0, 10), status: o.status,
       loc: o.route ? "Route" : o.loc || "Route", customer: o.customer, done, detailed: its.length > 0, recent, lastAsm, pieces, complete, washing, undetailed, onVan, per, open, other, notes: noteCount };
-  });
+  }).filter(Boolean);
 }
 
 /** How many more pieces usually come in for a day after a given time on the work day before (median of recent days). */

@@ -6,7 +6,7 @@ Every app and report should use these. If a new question needs a definition that
 Town & Country Cleaners: dry cleaning and starched laundry, about 900–1,100 pieces a day.
 - **Workshop** (production plant) and **Sulphur Springs** counter at 1415 S. Broadway, Sulphur Springs, TX.
 - Drop stores: **Quitman**, **Emory**, **Greenville** (a full store), **Winnsboro** (no staff; its numbers roll into Sulphur Springs).
-- **Laundry Hub**: wash & fold and comforters.
+- **Laundry Hub**: wash & fold, and bedspreads/comforters whose item type doesn't start with Z-SS.
 - Pickup and delivery routes. Route orders are worked the work day **before** their due date.
 - Production works **Monday–Friday**. Systems: SMRT (POS), Rippling (time clock and payroll; ADP before).
 
@@ -24,7 +24,7 @@ Town & Country Cleaners: dry cleaning and starched laundry, about 900–1,100 pi
 - **A piece is complete when it's assembled** (Neal: "Assembled = complete for production"): `assembled_at` set, or an assembled
   status, or its order is done (ready / returned / picked up / delivered date or a done status).
 - **Categories:** DCT Dry Cleaning Tops, DCB Dry Cleaning Bottoms, SLT starch (laundry) tops, SLB starch (laundry) bottoms,
-  Comforters (item type Comforter or Bedspread), Tablecloths. Item type is matched before department. Wash & Fold isn't planned.
+  Comforters (workshop bedspreads: item type starting with Z-SS, e.g. "Z- SS- Bedspread Queen King"; Neal, Oct 23, 2026), Tablecloths. Other bedspreads/comforters are Laundry Hub work and the planner leaves them out (Settings › SMRT mapping › Laundry Hub item types). Item type is matched before department. Wash & Fold isn't planned.
 - Overdue leaves out tickets never detailed (no pieces).
 - Starch bottoms steady pace ≈ 20 pairs per presser-hour; a press starting from empty loses about 20 minutes.
 

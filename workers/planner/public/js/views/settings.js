@@ -52,11 +52,12 @@ const GROUPS = [
     ["notify", "Show shuttle alerts", "bool", ""]] : []),
     ["weekStart", "Week starts on", "select", "", { options: [[0, "Sunday"], [1, "Monday"], [6, "Saturday"]] }],
   ] },
-  { id: "smrt", title: "SMRT mapping", lead: "Which SMRT departments and item types count toward each kind of work. Item types win over departments (a comforter is a comforter whatever its department).", fields: [
+  { id: "smrt", title: "SMRT mapping", lead: "Which SMRT departments and item types count toward each kind of work. Item types win over departments. Item type words match anywhere in the name; end a word with * to match only names that start with it (Z-SS* = bedspreads for the workshop).", fields: [
     ["overdue", "Count overdue pieces in today's work", "bool", ""],
     ["transitRack", "Rack location for orders on the van", "text", "Finished orders racked here and not yet racked at the store are listed as \"not checked in at the store\"."],
     ["departments", "SMRT department", "perCatText", "", { placeholder: "none" }],
     ["itemTypes", "SMRT item types (comma-separated)", "perCatText", "", { placeholder: "none" }],
+    ["hubTypes", "Laundry Hub item types (left out of the planner)", "text", "Comma-separated. Pieces of these item types are worked at the Laundry Hub, so the planner doesn't count them, unless a kind of work above matches them first (Z-SS bedspreads)."],
   ] },
   { id: "rippling", title: "Rippling", lead: "Which hours from the Rippling time-clock report belong to production.", fields: [
     ["departments", "Rippling departments", "listText", "Comma-separated, as Rippling spells them."],

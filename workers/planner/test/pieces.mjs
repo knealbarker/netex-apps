@@ -38,8 +38,11 @@ function order(created, { due, store = "TCC Quitman", status = "processing", pie
 const DCT = "Dry Cleaning Tops", DCB = "Dry Cleaning Bottoms", SLT = "Laundry Tops", SLB = "Laundry Bottoms";
 // due today, Quitman: 2 DC tops (one finished Friday), 1 laundry top finished this morning
 order(ts("2026-10-09"), { due: ts(TODAY, "12:00"), pieces: [{ dep: DCT, status: "assembled", asm: ts("2026-10-09", "15:00") }, { dep: DCT }, { dep: SLT, status: "assembled", asm: ts(TODAY, "08:00") }] });
-// due today, Sulphur Springs: a comforter filed under Laundry Bottoms -> comforter
-order(ts("2026-10-09"), { due: ts(TODAY, "17:00"), store: "TCC Sulphur Springs", pieces: [{ dep: SLB, type: "Comforter King" }] });
+// due today, Sulphur Springs: a workshop bedspread (Z-SS) filed under Laundry Bottoms -> comforter
+order(ts("2026-10-09"), { due: ts(TODAY, "17:00"), store: "TCC Sulphur Springs", pieces: [{ dep: SLB, type: "Z- SS- Bedspread Queen King" }] });
+// due today, Sulphur Springs: Laundry Hub bedspreads (no Z-SS), one alone and one with a shirt -> left out of the planner
+const HUB_ONLY = order(ts("2026-10-09"), { due: ts(TODAY, "17:00"), store: "TCC Sulphur Springs", pieces: [{ dep: "Household", type: "Bedspread Queen King" }, { dep: "Household", type: "Comforter Twin" }] });
+order(ts("2026-10-09"), { due: ts(TODAY, "17:00"), store: "TCC Sulphur Springs", pieces: [{ dep: "Household", type: "Bedspread Twin Full" }, { dep: DCT, status: "assembled", asm: ts("2026-10-09", "15:00") }] });
 // overdue (due Friday), still open: 2 laundry bottoms, one in the washer
 order(ts("2026-10-08"), { due: ts("2026-10-09", "12:00"), pieces: [{ dep: SLB, lot: "Washing" }, { dep: SLB, status: "to pre-spot" }] });
 // overdue but every piece assembled (order status not "ready" yet): done for production, not late
@@ -84,15 +87,22 @@ await t("today: due less finished before today; finished today still counts", ()
 });
 await t("due today like SMRT's report: every piece due today, done whenever it was finished", () => {
   const U = V.dueToday;
-  eq(U.q, { dct: 2 + 2, dcb: 0, slt: 1 + 1 + 5, slb: 0, comf: 1, tc: 0 });
-  eq(U.done, { dct: 1 + 2, dcb: 0, slt: 1, slb: 0, comf: 0, tc: 0 });
-  eq([U.total, U.doneTotal, U.earlier, U.route], [12, 4, 1, 0]);
-  eq(U.before, { dct: 1, dcb: 0, slt: 0, slb: 0, comf: 0, tc: 0 }, "done before today");
+  // + 1 DC top finished Friday on the order that also has a Laundry Hub bedspread (the bedspread isn't counted)
+  eq(U.q, { dct: 2 + 2 + 1, dcb: 0, slt: 1 + 1 + 5, slb: 0, comf: 1, tc: 0 });
+  eq(U.done, { dct: 1 + 2 + 1, dcb: 0, slt: 1, slb: 0, comf: 0, tc: 0 });
+  eq([U.total, U.doneTotal, U.earlier, U.route], [13, 5, 2, 0]);
+  eq(U.before, { dct: 2, dcb: 0, slt: 0, slb: 0, comf: 0, tc: 0 }, "done before today");
   eq(U.today, { dct: 2, dcb: 0, slt: 1, slb: 0, comf: 0, tc: 0 }, "done today");
-  eq([U.beforeTotal, U.todayTotal], [1, 3]);
+  eq([U.beforeTotal, U.todayTotal], [2, 3]);
   eq(U.total - U.earlier - U.route, Object.values(T.q).reduce((a, b) => a + b, 0), "the plan's count = due today less earlier and route");
 });
-await t("item type wins over department (comforter under Laundry Bottoms)", () => eq(T.q.comf, 1));
+await t("item type wins over department (Z-SS bedspread under Laundry Bottoms)", () => eq(T.q.comf, 1));
+await t("Laundry Hub bedspreads (no Z-SS) are left out: not counted, not late, not unmapped", () => {
+  const no = `${HUB_ONLY.slice(0, 5)}-${HUB_ONLY.slice(5)}`;
+  ok(!V.late.some(o => o.no === no), "hub-only order not late");
+  ok(!V.notReady.some(o => o.no === no), "hub-only order not in not-ready");
+  ok(!V.unmapped.Household, JSON.stringify(V.unmapped));
+});
 await t("deleted orders and removed pieces don't count; unmapped departments are reported", () => { eq(V.unmapped["Wash & Fold"], 1); });
 await t("overdue: open pieces from earlier days", () => { eq(V.overdue.q.slb, 2); eq(V.overdue.orders, 1); });
 await t("late list shows the overdue order with where its pieces are", () => {
@@ -160,6 +170,11 @@ await t("finished orders not ready in SMRT are listed for the stores, van ones f
 await t("categorizer: comma lists, case-insensitive", () => {
   const c = categorizer({ departments: { dct: "Dry Cleaning Tops, DC Tops" }, itemTypes: { tc: "Tablecloth, Table Cloth" } });
   eq([c("Shirt", "dc tops"), c("Round TABLE CLOTH", "Dry Cleaning Bottoms"), c("Shirt", "Alterations")], ["dct", "tc", null]);
+});
+await t("categorizer: Z-SS* = starts with Z-SS; other bedspreads are Laundry Hub work", () => {
+  const c = categorizer({ itemTypes: { comf: "Z-SS*" }, hubTypes: "Bedspread, Comforter" });
+  eq([c("Z- SS- Bedspread Queen King", "Household"), c("Z- SS Bedspread Twin Full", "Household"), c("Bedspread Queen King", "Household"), c("Duvet Cover", "Household")], ["comf", "comf", null, null]);
+  eq([c.elsewhere("Bedspread Queen King"), c.elsewhere("Comforter King"), c.elsewhere("Z-SS Bedspread"), c.elsewhere("Duvet Cover"), c.elsewhere("Bedspread Z-SS")], [true, true, false, false, true]);
 });
 
 await t("overdue orders with no pieces detailed are left out of overdue and the late list", async () => {
