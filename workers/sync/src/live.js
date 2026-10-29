@@ -40,9 +40,9 @@ export async function openCreatedDays(db, orgId, { since, before, dueFrom, dueTo
   const r = await db.prepare(`SELECT DISTINCT substr(o.smrt_created_at, 1, 10) AS day FROM pos_orders o JOIN pos_order_statuses s ON s.id = o.status_id
       WHERE o.org_id=? AND s.is_done=0 AND s.is_closed=0 AND s.is_void=0
         AND o.ready_at IS NULL AND o.returned_at IS NULL AND o.picked_up_at IS NULL AND o.delivered_at IS NULL AND o.smrt_deleted_at IS NULL
-        AND substr(o.smrt_created_at, 1, 10) >= ? AND substr(o.smrt_created_at, 1, 10) < ?
-        ${dueFrom ? "AND substr(o.due_at, 1, 10) BETWEEN ? AND ?" : ""}
-      ORDER BY 1`).bind(orgId, since, before, ...(dueFrom ? [dueFrom, dueTo] : [])).all();
+        AND o.smrt_created_at >= ? AND o.smrt_created_at < ?
+        ${dueFrom ? "AND o.due_at >= ? AND o.due_at < ?" : ""}
+      ORDER BY 1`).bind(orgId, since, before, ...(dueFrom ? [dueFrom, addDays(dueTo, 1)] : [])).all();
   return r.results.map(x => x.day).filter(Boolean);
 }
 
@@ -61,13 +61,13 @@ export async function shuttleCreatedDays(db, orgId, today) {
   const r = await db.prepare(`SELECT DISTINCT substr(o.smrt_created_at, 1, 10) AS day FROM pos_orders o JOIN pos_order_statuses s ON s.id=o.status_id
       WHERE o.org_id=? AND s.is_void=0 AND s.is_closed=0 AND o.smrt_deleted_at IS NULL AND o.returned_at IS NULL AND o.picked_up_at IS NULL
         AND o.delivered_at IS NULL AND o.is_route_delivery=0
-        AND substr(o.due_at, 1, 10) BETWEEN ? AND ?
+        AND o.due_at >= ? AND o.due_at < ?
         AND o.return_location_id IN (SELECT st.location_id FROM plan_run_stops st JOIN plan_runs ru ON ru.id=st.run_id
           WHERE ru.org_id=? AND ru.kind='shuttle' AND ru.is_active=1 AND ru.deleted_at IS NULL AND st.deleted_at IS NULL)
         AND EXISTS (SELECT 1 FROM pos_items i WHERE i.order_id=o.id AND i.removed_at IS NULL AND i.returned_at IS NULL
           AND (i.last_rack_store_id IS NULL OR i.last_rack_store_id <> o.return_location_id)
           AND upper(trim(COALESCE(i.last_rack_location, ''))) NOT IN (?, 'RETURNED', 'DELIVERED'))
-      ORDER BY 1`).bind(orgId, addDays(today, -SHUTTLE_LOOKBACK_DAYS), today, orgId, transit).all();
+      ORDER BY 1`).bind(orgId, addDays(today, -SHUTTLE_LOOKBACK_DAYS), addDays(today, 1), orgId, transit).all();
   return r.results.map(x => x.day).filter(Boolean);
 }
 

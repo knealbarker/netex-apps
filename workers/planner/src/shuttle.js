@@ -66,12 +66,12 @@ async function loadRows(db, orgId, storeIds, today) {
   if (!storeIds.length) return { due: [], held: [] };
   const ins = storeIds.map(() => "?").join(",");
   const due = (await db.prepare(`SELECT ${COLS} ${JOINS} WHERE ${OPEN} AND o.return_location_id IN (${ins})
-      AND substr(o.due_at,1,10) BETWEEN ? AND ?`).bind(orgId, ...storeIds, addDays(today, -LOOKBACK_DAYS), today).all()).results;
+      AND o.due_at >= ? AND o.due_at < ?`).bind(orgId, ...storeIds, addDays(today, -LOOKBACK_DAYS), addDays(today, 1)).all()).results;
   // held over today: the order's due date moved from today-or-earlier to later, or the piece was split onto such an order
   const since = dayStartUtc(today);
   const moved = (await db.prepare(`SELECT ${COLS}, c.old_value AS heldFrom, c.kind AS heldHow, c.detected_at AS heldAt ${JOINS}
       JOIN pos_changes c ON c.order_id=o.id AND c.kind='due_changed' AND c.detected_at>=? AND substr(c.old_value,1,10)<=? AND substr(c.new_value,1,10)>?
-      WHERE ${OPEN} AND o.return_location_id IN (${ins}) AND substr(o.due_at,1,10)>?`).bind(since, today, today, orgId, ...storeIds, today).all()).results;
+      WHERE ${OPEN} AND o.return_location_id IN (${ins}) AND o.due_at >= ?`).bind(since, today, today, orgId, ...storeIds, addDays(today, 1)).all()).results;
   const split = (await db.prepare(`SELECT ${COLS}, po.due_at AS heldFrom, c.kind AS heldHow, c.detected_at AS heldAt
       FROM pos_changes c JOIN pos_items i ON i.id=c.item_id AND i.removed_at IS NULL JOIN pos_orders o ON o.id=i.order_id JOIN pos_orders po ON po.id=c.old_value
       JOIN pos_order_statuses s ON s.id=o.status_id
@@ -79,8 +79,8 @@ async function loadRows(db, orgId, storeIds, today) {
       LEFT JOIN pos_item_statuses st ON st.id=i.status_id LEFT JOIN core_locations rs ON rs.id=i.last_rack_store_id
       LEFT JOIN pos_staff ps ON ps.id=i.racked_by_staff_id
       WHERE c.kind='item_moved' AND c.detected_at>=? AND substr(po.due_at,1,10)<=? AND substr(po.due_at,1,10)>=?
-        AND ${OPEN} AND o.return_location_id IN (${ins}) AND substr(o.due_at,1,10)>?`)
-    .bind(since, today, addDays(today, -LOOKBACK_DAYS), orgId, ...storeIds, today).all()).results;
+        AND ${OPEN} AND o.return_location_id IN (${ins}) AND o.due_at >= ?`)
+    .bind(since, today, addDays(today, -LOOKBACK_DAYS), orgId, ...storeIds, addDays(today, 1)).all()).results;
   const seen = new Set(), held = [];
   for (const r of [...moved, ...split].sort((a, b) => String(b.heldAt).localeCompare(String(a.heldAt)))) {
     const k = r.iid || "o" + r.oid; if (seen.has(k)) continue; seen.add(k); held.push(r);

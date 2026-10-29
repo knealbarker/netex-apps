@@ -29,9 +29,9 @@ const cents = it => Math.max(0, (+it.base || 0) + (+it.up || 0) - (+it.disc || 0
 async function assembled(db, orgId, day, cat, prices, workDayOf = null) {
   const rows = (await db.prepare(`SELECT i.assembled_at AS asm, t.name AS type, d.name AS dep, i.base_cents AS base, i.upcharge_cents AS up, i.discount_cents AS disc,
       substr(o.due_at,1,10) AS due, o.is_route_delivery AS route
-      FROM pos_items i JOIN pos_orders o ON o.id=i.order_id JOIN pos_order_statuses s ON s.id=o.status_id
+      FROM pos_items i CROSS JOIN pos_orders o ON o.id=i.order_id JOIN pos_order_statuses s ON s.id=o.status_id
       LEFT JOIN pos_item_types t ON t.id=i.item_type_id LEFT JOIN pos_departments d ON d.id=i.department_id
-      WHERE o.org_id=? AND s.is_void=0 AND i.removed_at IS NULL AND substr(i.assembled_at,1,10)=?`).bind(orgId, day).all()).results;
+      WHERE o.org_id=? AND s.is_void=0 AND i.removed_at IS NULL AND i.assembled_at >= ? AND i.assembled_at < ?`).bind(orgId, day, addDays(day, 1)).all()).results;
   const q = Object.fromEntries(CATS.map(k => [k, 0])), revQ = Object.fromEntries(CATS.map(k => [k, 0])); let rev = 0, n = 0;
   // what each piece assembled this day was for: due this day, due later (ahead), or past due (catching up)
   const forQ = { today: Object.fromEntries(CATS.map(k => [k, 0])), ahead: Object.fromEntries(CATS.map(k => [k, 0])), overdue: Object.fromEntries(CATS.map(k => [k, 0])) };
@@ -196,9 +196,9 @@ export async function trend(db, env, day, workDays, departmentId, cat, prices, p
   for (const r of (await db.prepare(`SELECT work_date AS d, person_id AS personId, SUM(hours) AS hours FROM labor_daily_hours WHERE department_id=? AND work_date BETWEEN ? AND ? AND deleted_at IS NULL GROUP BY work_date, person_id`)
     .bind(departmentId, from, day).all()).results) (byDay.get(r.d) || byDay.set(r.d, []).get(r.d)).push(r);
   const items = (await db.prepare(`SELECT substr(i.assembled_at,1,10) AS d, t.name AS type, dep.name AS dep, i.base_cents AS base, i.upcharge_cents AS up, i.discount_cents AS disc
-      FROM pos_items i JOIN pos_orders o ON o.id=i.order_id JOIN pos_order_statuses s ON s.id=o.status_id
+      FROM pos_items i CROSS JOIN pos_orders o ON o.id=i.order_id JOIN pos_order_statuses s ON s.id=o.status_id
       LEFT JOIN pos_item_types t ON t.id=i.item_type_id LEFT JOIN pos_departments dep ON dep.id=i.department_id
-      WHERE o.org_id=? AND s.is_void=0 AND i.removed_at IS NULL AND substr(i.assembled_at,1,10) BETWEEN ? AND ?`).bind(env.ORG_ID, from, day).all()).results;
+      WHERE o.org_id=? AND s.is_void=0 AND i.removed_at IS NULL AND i.assembled_at >= ? AND i.assembled_at < ?`).bind(env.ORG_ID, from, addDays(day, 1)).all()).results;
   const per = new Map();
   for (const it of items) { const k = cat(it.type, it.dep); if (!k) continue; const x = per.get(it.d) || per.set(it.d, { pieces: 0, rev: 0 }).get(it.d); x.pieces++; x.rev += it.base != null ? cents(it) / 100 : (+prices[k] || 0); }
   return days.map(d => {

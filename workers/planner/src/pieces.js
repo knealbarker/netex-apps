@@ -75,10 +75,10 @@ function cutoffOf(runs, loc) {
 const doneSql = "(s.is_done=1 OR o.ready_at IS NOT NULL OR o.returned_at IS NOT NULL OR o.picked_up_at IS NOT NULL OR o.delivered_at IS NOT NULL)";
 
 export async function loadOpen(db, orgId, { from, to, overdueFrom }) {
-  const where = `o.org_id=? AND s.is_void=0 AND o.smrt_deleted_at IS NULL AND (
-      substr(o.due_at,1,10) BETWEEN ? AND ?
-      OR (substr(o.due_at,1,10) >= ? AND substr(o.due_at,1,10) < ? AND NOT ${doneSql}))`;
-  const args = [orgId, from, to, overdueFrom, from];
+  // due_at is compared whole (not substr) so the (org_id, due_at) index is used: due_at < the day after `to` = due by `to`
+  const where = `o.org_id=? AND s.is_void=0 AND o.smrt_deleted_at IS NULL AND o.due_at >= ? AND o.due_at < ?
+      AND (o.due_at >= ? OR NOT ${doneSql})`;
+  const args = [orgId, overdueFrom < from ? overdueFrom : from, addDays(to, 1), from];
   const orders = (await db.prepare(`SELECT o.id, o.smrt_order_no AS no, o.due_at AS due, o.piece_count AS pieces, o.is_route_delivery AS route, o.notes,
       o.customer_ref AS customer, o.ready_at, o.returned_at, o.picked_up_at, o.delivered_at, s.name AS status, s.is_done, rl.name AS loc
       FROM pos_orders o JOIN pos_order_statuses s ON s.id=o.status_id LEFT JOIN core_locations rl ON rl.id=o.return_location_id WHERE ${where}`).bind(...args).all()).results;
@@ -151,7 +151,7 @@ export async function forecastRatios(db, orgId, { today, next, hm, workDays, run
   const from = addDays(today, -7 * FORECAST_WEEKS);
   const rows = (await db.prepare(`SELECT substr(o.due_at,1,10) AS d, o.smrt_created_at AS created, o.piece_count AS pieces, o.is_route_delivery AS route, rl.name AS loc
       FROM pos_orders o JOIN pos_order_statuses s ON s.id=o.status_id LEFT JOIN core_locations rl ON rl.id=o.return_location_id
-      WHERE o.org_id=? AND s.is_void=0 AND substr(o.due_at,1,10) >= ? AND substr(o.due_at,1,10) < ?`).bind(orgId, from, today).all()).results;
+      WHERE o.org_id=? AND s.is_void=0 AND o.due_at >= ? AND o.due_at < ?`).bind(orgId, from, today).all()).results;
   const byDay = new Map();
   for (const r of rows) { if (!workDays.includes(weekday(r.d))) continue; (byDay.get(r.d) || byDay.set(r.d, []).get(r.d)).push({ ...r, loc: r.route ? "Route" : r.loc || "Route" }); }
   const wd = weekday(next);

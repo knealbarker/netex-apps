@@ -107,7 +107,7 @@ function samePiece(rows, orderId, createdAt, { claimed = new Set(), stillThere =
 async function existingItems(db, orgId, barcodes, sinceIso) {
   const out = new Map();
   for (const c of chunks(barcodes, CHUNK)) {
-    const r = await db.prepare(`SELECT i.id, i.barcode, i.order_id, i.row_hash, i.notes, i.removed_at, i.smrt_created_at FROM pos_items i JOIN pos_orders o ON o.id=i.order_id
+    const r = await db.prepare(`SELECT i.id, i.barcode, i.order_id, i.row_hash, i.notes, i.removed_at, i.smrt_created_at FROM pos_items i CROSS JOIN pos_orders o ON o.id=i.order_id
       WHERE o.org_id=? AND i.smrt_created_at >= ? AND i.barcode IN (${c.map(() => "?").join(",")}) ORDER BY i.smrt_created_at`).bind(orgId, sinceIso, ...c).all();
     for (const x of r.results) (out.get(x.barcode) || out.set(x.barcode, []).get(x.barcode)).push(x); // every row with that tag, oldest first
   }
