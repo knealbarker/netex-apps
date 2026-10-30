@@ -113,6 +113,16 @@ await t("people: hours per person per day at each store", async () => {
   const sam = snap.people.find(p => p.name === "Sam Counter");
   eq(sam.line, "Sulphur Springs"); near(sam.hours, 56); eq(sam.days[LAST], 8);
 });
+await t("someone marked 'not in labor %': on the Hours grid, out of the plant's hours, labor $ and labor %", async () => {
+  const p = snap.people.find(x => x.line === "Workshop"), ws0 = snap.plants.find(x => x.name === "Workshop");
+  sqlite.prepare("UPDATE core_people SET no_labor=1 WHERE id=?").run(p.personId);
+  try {
+    const s2 = (await call("GET", `/api/snapshot?from=${FROM}&to=${LAST}`)).body, ws = s2.plants.find(x => x.name === "Workshop");
+    near(ws.hours, ws0.hours - p.hours); ok(ws.cost < ws0.cost && ws.laborPct < ws0.laborPct, JSON.stringify([ws.cost, ws0.cost]));
+    near(s2.totals.company.cost, snap.totals.company.cost - (ws0.cost - ws.cost));
+    const again = s2.people.find(x => x.personId === p.personId); ok(again && again.noLabor && Math.abs(again.hours - p.hours) < 1e-6, JSON.stringify(again));
+  } finally { sqlite.prepare("UPDATE core_people SET no_labor=0 WHERE id=?").run(p.personId); }
+});
 await t("previous period of the same length compared (empty here)", async () => {
   eq(snap.prevRange, { from: addDays(FROM, -7), to: addDays(FROM, -1) }); near(snap.totals.company.prev.sales, 0);
 });

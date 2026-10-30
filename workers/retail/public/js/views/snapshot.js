@@ -286,17 +286,17 @@ function renderHours(body, d, st) {
     <div class="hours-bar">
       <label class="inline"><span>Store</span>
         <select class="input" id="pick"><option value="">All stores</option>${lines.map(n => raw(html`<option ${raw(n === pick ? "selected" : "")}>${n}</option>`))}</select></label>
-      <span class="muted">${people.length} ${people.length === 1 ? "person" : "people"} · ${hrs(people.reduce((t, p) => t + p.hours, 0))} hours</span>
+      <span class="muted">${people.length} ${people.length === 1 ? "person" : "people"} · ${hrs(people.filter(p => !p.noLabor).reduce((t, p) => t + p.hours, 0))} hours</span>
     </div>
     ${many ? raw(html`<div class="banner">That's ${days.length} days — showing totals per person. Pick a shorter range to see each day.</div>`) : ""}
     ${groups.length ? groups.map(g => {
       const ps = people.filter(p => p.line === g);
-      const dayTot = days.map(dd => ps.reduce((t, p) => t + (p.days[dd] || 0), 0));
+      const dayTot = days.map(dd => ps.reduce((t, p) => t + (p.noLabor ? 0 : p.days[dd] || 0), 0));   // "not in labor %" people: shown, not totaled
       return raw(html`<section class="card hgrid-card">
-        <h2>${g} <small class="muted">${hrs(ps.reduce((t, p) => t + p.hours, 0))} h</small></h2>
+        <h2>${g} <small class="muted">${hrs(ps.filter(p => !p.noLabor).reduce((t, p) => t + p.hours, 0))} h</small></h2>
         <div class="hgrid" role="table" aria-label="Hours at ${g}" style="--days:${many ? 0 : days.length}">
           <div class="hrow head" role="row"><span role="columnheader">Person</span>${many ? "" : raw(days.map(dd => html`<span role="columnheader" class="${dd === d.today ? "is-today" : ""}">${wk(dd).slice(0, 2)}<br>${nice(dd).replace(/^\w+ /, "")}</span>`).join(""))}<span role="columnheader">Total</span></div>
-          ${ps.map(p => raw(html`<div class="hrow" role="row"><span role="cell" class="nm">${p.name}${p.live ? raw(" <i class='live' title='On the clock now'></i>") : ""}<small>${p.depts.join(", ")}</small></span>
+          ${ps.map(p => raw(html`<div class="hrow" role="row"><span role="cell" class="nm">${p.name}${p.live ? raw(" <i class='live' title='On the clock now'></i>") : ""}<small>${p.depts.join(", ")}${p.noLabor ? " · not in labor %" : ""}</small></span>
             ${many ? "" : raw(days.map(dd => `<span role="cell" class="${p.days[dd] ? "" : "zero"} ${dd === d.today ? "is-today" : ""}">${p.days[dd] ? hrs(p.days[dd]) : "·"}</span>`).join(""))}
             <span role="cell" class="tot">${hrs(p.hours)}${p.otHours ? raw(html`<small class="ot">${hrs(p.otHours)} OT</small>`) : ""}</span></div>`))}
           <div class="hrow total" role="row"><span role="cell">Total</span>${many ? "" : raw(dayTot.map((v, i) => `<span role="cell" class="${days[i] === d.today ? "is-today" : ""}">${v ? hrs(v) : "·"}</span>`).join(""))}<span role="cell" class="tot">${hrs(dayTot.reduce((a, b) => a + b, 0))}</span></div>

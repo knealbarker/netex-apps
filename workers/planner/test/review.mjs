@@ -130,6 +130,19 @@ await t("trend: 10 work days ending on the day, with hours and pieces per hour; 
   ok(v.targetPerHour > 0 && v.avgWage === undefined && v.avgPrice === undefined && v.cost === undefined, "viewers get the target, no money");
   ok(r.trend.every(d => ![0, 6].includes(new Date(d.day + "T12:00:00Z").getUTCDay())), "no weekends");
 });
+await t("someone marked 'not in labor %' (Team Lead): still listed with hours, left out of hours, cost, labor %, departments and the trend", async () => {
+  sqlite.prepare("UPDATE core_people SET no_labor=1 WHERE id=?").run(cora);
+  try {
+    const r = (await call("GET", `/review/${DAY}`)).body;
+    eq([r.labor.hours, r.labor.people], [14, 2]); near(r.labor.perHour, 7 / 14); near(r.labor.cost, 14 * 15);
+    eq(r.labor.notCounted.map(p => p.name), ["Cora Tres"]); near(r.labor.notCounted[0].hours, 4);
+    const c = r.people.find(p => p.personId === cora); ok(c && c.noLabor && c.actualHours > 3.9, JSON.stringify(c));
+    ok(r.actual.find(p => p.personId === cora).noLabor, "actual keeps her, flagged");
+    ok(!r.departments.rows.find(x => x.key === "none"), "no 'Not on the plan' row for her hours");
+    near(r.departments.total.hours, 14); near(r.departments.total.cost, 14 * 15);
+    near(r.trend[9].hours, 14); near(r.trend[9].pct, 14 * 15 / r.done.revenue * 100);
+  } finally { sqlite.prepare("UPDATE core_people SET no_labor=0 WHERE id=?").run(cora); }
+});
 await t("bad dates and future days are refused", async () => {
   eq((await call("GET", `/review/${addDays(today, 3)}`)).status, 400);
 });

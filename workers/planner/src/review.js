@@ -55,14 +55,14 @@ async function assembled(db, orgId, day, cat, prices, workDayOf = null) {
 /** Hours worked in Production on a day: finished days from Rippling's daily totals; today from the punches so far. */
 async function hours(db, env, day, today, departmentId) {
   if (day === today) {
-    const rows = (await db.prepare(`SELECT c.person_id AS personId, c.clock_in AS cin, c.clock_out AS cout, p.first_name || ' ' || p.last_name AS name
+    const rows = (await db.prepare(`SELECT c.person_id AS personId, c.clock_in AS cin, c.clock_out AS cout, p.first_name || ' ' || p.last_name AS name, p.no_labor AS noLabor
         FROM labor_clock_today c JOIN core_people p ON p.id=c.person_id WHERE p.org_id=? AND substr(c.clock_in,1,10)=? AND (c.department_id IS NULL OR c.department_id=(SELECT d.id FROM core_departments d WHERE d.org_id=p.org_id AND d.name='Production'))`).bind(env.ORG_ID, day).all()).results;
     const nowH = toH(localNow(env.TIMEZONE).hm);
     const by = new Map(), punches = new Map();
     for (const r of rows) {
       (punches.get(r.personId) || punches.set(r.personId, []).get(r.personId)).push({ i: minuteOf(r.cin), o: r.cout ? minuteOf(r.cout) : null });
       const a = hmOf(r.cin), b = r.cout ? hmOf(r.cout) : nowH;
-      const x = by.get(r.personId) || by.set(r.personId, { personId: r.personId, name: r.name, hours: 0, firstIn: null, lastOut: null, open: false }).get(r.personId);
+      const x = by.get(r.personId) || by.set(r.personId, { personId: r.personId, name: r.name, noLabor: !!r.noLabor, hours: 0, firstIn: null, lastOut: null, open: false }).get(r.personId);
       if (a != null && b != null) x.hours += Math.max(0, b - a);
       if (a != null && (x.firstIn == null || a < x.firstIn)) x.firstIn = a;
       if (!r.cout) x.open = true; else if (x.lastOut == null || b > x.lastOut) x.lastOut = b;
@@ -75,13 +75,13 @@ async function hours(db, env, day, today, departmentId) {
     return [...by.values()].map(x => ({ ...x, lastOut: x.open ? null : x.lastOut }));
   }
   // finished days: Rippling's hours already include the paid break (netex-sync)
-  return (await db.prepare(`SELECT h.person_id AS personId, h.hours, h.break_paid_hours AS bp, h.first_in AS fi, h.last_out AS lo, p.first_name || ' ' || p.last_name AS name
+  return (await db.prepare(`SELECT h.person_id AS personId, h.hours, h.break_paid_hours AS bp, h.first_in AS fi, h.last_out AS lo, p.first_name || ' ' || p.last_name AS name, p.no_labor AS noLabor
       FROM labor_daily_hours h JOIN core_people p ON p.id=h.person_id WHERE h.department_id=? AND h.work_date=? AND h.deleted_at IS NULL`).bind(departmentId, day).all()).results
     .map(r => {
       const hours = +r.hours || 0, breakPaid = +r.bp || 0, firstIn = toH(r.fi), lastOut = toH(r.lo);
       // punches aren't kept after the day is added up: time off the clock = first in to last out, less the hours worked
       const offMin = firstIn != null && lastOut != null ? Math.max(0, Math.round((lastOut - firstIn - (hours - breakPaid)) * 60)) : null;
-      return { personId: r.personId, name: r.name, hours, breakPaid, offMin, firstIn, lastOut, open: !r.lo };
+      return { personId: r.personId, name: r.name, noLabor: !!r.noLabor, hours, breakPaid, offMin, firstIn, lastOut, open: !r.lo };
     });
 }
 
@@ -148,10 +148,12 @@ export async function reviewDay(db, env, me, day) {
   }).sort((a, b) => (a.deadline ?? 99) - (b.deadline ?? 99));
 
   const people = await hours(db, env, day, today, departmentId);
-  const laborH = people.reduce((t, p) => t + p.hours, 0);
+  // people marked "not in labor %" (core_people.no_labor, e.g. the Team Lead): listed with their hours, left out of every labor number
+  const counted = people.filter(p => !p.noLabor);
+  const laborH = counted.reduce((t, p) => t + p.hours, 0);
   const rates = money ? await payRates(db, env.ORG_ID) : null;
-  const lc = money ? laborCost(people, day, rates, groups.money.payAvg) : null;
-  const labor = { hours: laborH, breakPaid: people.reduce((t, p) => t + (p.breakPaid || 0), 0), people: people.length, perHour: laborH > 0 ? done.pieces / laborH : null,
+  const lc = money ? laborCost(counted, day, rates, groups.money.payAvg) : null;
+  const labor = { hours: laborH, breakPaid: counted.reduce((t, p) => t + (p.breakPaid || 0), 0), people: counted.length, notCounted: people.filter(p => p.noLabor).map(p => ({ name: p.name, hours: p.hours })), perHour: laborH > 0 ? done.pieces / laborH : null,
     ...(money ? { cost: lc.cost, avgHours: lc.avgHours, revenue: done.revenue, pct: done.revenue > 0 && laborH > 0 ? lc.cost / done.revenue * 100 : null, target: groups.money.laborTarget, payAvg: groups.money.payAvg } : {}) };
 
   // plan vs actual, person by person
@@ -161,18 +163,18 @@ export async function reviewDay(db, env, me, day) {
     for (const c of planned.crew) {
       const ps = toH(c.start), pe = ps != null ? ps + c.hours + (c.hours > planned.settings.breakAfter ? planned.settings.breakMin / 60 : 0) : null;
       const a = people.find(p => p.personId === c.personId); if (a) seen.add(a.personId);
-      vs.push({ personId: c.personId, name: a?.name || null, station: c.label, plannedIn: ps, plannedOut: c.stop ? Math.min(pe, toH(c.stop)) : pe, plannedHours: c.hours,
+      vs.push({ personId: c.personId, name: a?.name || null, station: c.label, noLabor: !!a?.noLabor, plannedIn: ps, plannedOut: c.stop ? Math.min(pe, toH(c.stop)) : pe, plannedHours: c.hours,
         actualIn: a?.firstIn ?? null, actualOut: a?.lastOut ?? null, actualHours: a?.hours ?? null, breakPaid: a?.breakPaid ?? 0, breakMin: a?.breakMin ?? null, breakOpen: !!a?.breakOpen, offMin: a?.offMin ?? null, stillIn: !!a?.open, missing: !a });
     }
-    for (const a of people) if (!seen.has(a.personId)) vs.push({ personId: a.personId, name: a.name, station: null, unplanned: true, actualIn: a.firstIn, actualOut: a.lastOut, actualHours: a.hours, breakPaid: a.breakPaid || 0, breakMin: a.breakMin ?? null, breakOpen: !!a.breakOpen, offMin: a.offMin ?? null, stillIn: a.open });
+    for (const a of people) if (!seen.has(a.personId)) vs.push({ personId: a.personId, name: a.name, station: null, unplanned: true, noLabor: !!a.noLabor, actualIn: a.firstIn, actualOut: a.lastOut, actualHours: a.hours, breakPaid: a.breakPaid || 0, breakMin: a.breakMin ?? null, breakOpen: !!a.breakOpen, offMin: a.offMin ?? null, stillIn: a.open });
     const names = new Map((await db.prepare("SELECT id, first_name || ' ' || last_name AS n FROM core_people WHERE org_id=?").bind(env.ORG_ID).all()).results.map(r => [r.id, r.n]));
     for (const v of vs) if (!v.name) v.name = names.get(v.personId) || "Someone";
   }
 
   return { day, today, isToday: day === today, isWorkDay: workDays.includes(weekday(day)), prev: prevWorkDay(day, workDays), next: day < today ? nextWorkDay(day, workDays) : null, nextWork: nextWorkDay(day, workDays),
-    departments: await departments(db, env, { day, today, people, done, due, rates, money, groups }),
+    departments: await departments(db, env, { day, today, people: counted, done, due, rates, money, groups }),
     done: money ? done : { ...done, revenue: undefined, revQ: undefined }, due, deadlines, labor, people: vs,
-    actual: people.map(a => ({ personId: a.personId, name: a.name, hours: a.hours, breakPaid: a.breakPaid || 0, breakMin: a.breakMin ?? null, breakOpen: !!a.breakOpen,
+    actual: people.map(a => ({ personId: a.personId, name: a.name, noLabor: !!a.noLabor, hours: a.hours, breakPaid: a.breakPaid || 0, breakMin: a.breakMin ?? null, breakOpen: !!a.breakOpen,
       offMin: a.offMin ?? null, firstIn: a.firstIn, lastOut: a.lastOut, open: !!a.open })), planned: planned ? { source: planned.source, at: planned.at || null, by: planned.by || null, metrics: planned.metrics } : null,
     tally: await dayTally(db, env, day).catch(e => { console.error(JSON.stringify({ job: "review", tallyError: String(e && e.stack || e) })); return null; }),
     followups: await followups(db, env, day), trend: await trend(db, env, day, workDays, departmentId, cat, prices, money ? { payAvg: groups.money.payAvg, rates } : null, 10), money };
@@ -193,7 +195,8 @@ export async function trend(db, env, day, workDays, departmentId, cat, prices, p
   const days = [day]; while (days.length < n) days.unshift(prevWorkDay(days[0], workDays));
   const from = days[0];
   const byDay = new Map();
-  for (const r of (await db.prepare(`SELECT work_date AS d, person_id AS personId, SUM(hours) AS hours FROM labor_daily_hours WHERE department_id=? AND work_date BETWEEN ? AND ? AND deleted_at IS NULL GROUP BY work_date, person_id`)
+  for (const r of (await db.prepare(`SELECT h.work_date AS d, h.person_id AS personId, SUM(h.hours) AS hours FROM labor_daily_hours h JOIN core_people p ON p.id=h.person_id
+      WHERE h.department_id=? AND h.work_date BETWEEN ? AND ? AND h.deleted_at IS NULL AND p.no_labor=0 GROUP BY h.work_date, h.person_id`)
     .bind(departmentId, from, day).all()).results) (byDay.get(r.d) || byDay.set(r.d, []).get(r.d)).push(r);
   const items = (await db.prepare(`SELECT substr(i.assembled_at,1,10) AS d, t.name AS type, dep.name AS dep, i.base_cents AS base, i.upcharge_cents AS up, i.discount_cents AS disc
       FROM pos_items i CROSS JOIN pos_orders o ON o.id=i.order_id JOIN pos_order_statuses s ON s.id=o.status_id

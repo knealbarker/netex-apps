@@ -33,6 +33,7 @@ Town & Country Cleaners: dry cleaning and starched laundry, about 900–1,100 pi
 - Hours are **paid** hours: Production and Laundry Hub get one paid break a day, up to 30 min (the first gap; back within
   35 min = paid, longer = all unpaid). Store staff: no paid break in the calculations.
 - Labor $ = hours × the person's rate from that date (`labor_pay_rates`), or the department average when missing.
+- **Not in labor % (Neal, Oct 30):** people with `core_people.no_labor = 1` (Kerry Mann, Team Lead) are listed with their punches and hours but left out of hours totals, labor $, labor % and pieces per hour everywhere (planner Review, trend, summary email, Retail Snapshot).
   **Overtime**: hours past 40 in a Monday-start week, all locations together, at 1.5×.
 - **Pay rates are for Admins and the Owner only**, in every app and report.
 

@@ -74,13 +74,13 @@ async function gather(db, env, from, to, { s = {}, now = Date.now() } = {}) {
 
   // hours: one row per person, day, department, location
   const hours = (await db.prepare(`SELECT h.work_date AS day, h.location_id AS loc, h.person_id AS pid, d.name AS dept, h.hours,
-        COALESCE(p.display_name, p.first_name || ' ' || p.last_name) AS name
+        COALESCE(p.display_name, p.first_name || ' ' || p.last_name) AS name, p.no_labor AS noLabor
       FROM labor_daily_hours h JOIN core_people p ON p.id=h.person_id LEFT JOIN core_departments d ON d.id=h.department_id
      WHERE p.org_id=? AND h.work_date BETWEEN ? AND ? AND h.deleted_at IS NULL`).bind(org, hoursFrom, to).all()).results;
   const today = localToday(env.TIMEZONE, new Date(now));
   if (today >= from && today <= to) {
     const punches = (await db.prepare(`SELECT c.location_id AS loc, c.person_id AS pid, d.name AS dept, c.clock_in AS cin, c.clock_out AS cout,
-          COALESCE(p.display_name, p.first_name || ' ' || p.last_name) AS name, p.home_location_id AS home, l.name AS locName
+          COALESCE(p.display_name, p.first_name || ' ' || p.last_name) AS name, p.home_location_id AS home, l.name AS locName, p.no_labor AS noLabor
         FROM labor_clock_today c JOIN core_people p ON p.id=c.person_id LEFT JOIN core_departments d ON d.id=c.department_id
         LEFT JOIN core_locations l ON l.id=COALESCE(c.location_id, p.home_location_id) WHERE p.org_id=?`).bind(org).all()).results;
     const by = new Map(), perPerson = new Map();
@@ -88,7 +88,7 @@ async function gather(db, env, from, to, { s = {}, now = Date.now() } = {}) {
       const a = Date.parse(c.cin), b = c.cout ? Date.parse(c.cout) : now;
       if (!(a > 0) || localToday(env.TIMEZONE, new Date(a)) !== today) continue;
       const k = `${c.pid}|${c.loc || c.home}|${c.dept}`;
-      const x = by.get(k) || by.set(k, { day: today, loc: c.loc || c.home, pid: c.pid, dept: c.dept, name: c.name, hours: 0 }).get(k);
+      const x = by.get(k) || by.set(k, { day: today, loc: c.loc || c.home, pid: c.pid, dept: c.dept, name: c.name, noLabor: c.noLabor, hours: 0 }).get(k);
       x.hours += Math.max(0, Math.min(b, now) - a) / 36e5;
       (perPerson.get(c.pid) || perPerson.set(c.pid, []).get(c.pid)).push({ i: minuteOf(c.cin), o: c.cout ? minuteOf(c.cout) : null, key: k,
         paidBreak: c.dept === "Production" || /laundry\s*hub/i.test(c.locName || "") });
@@ -227,11 +227,12 @@ export async function snapshot(db, env, me, from, to, { now = Date.now() } = {})
     for (const h of g.hours) {
       const w = where(h.loc); const { cost, est } = costOf(h, g.rates, s);
       const v = { hours: h.hours, cost, estHours: est ? h.hours : 0, otHours: h.otHours || 0 };
-      for (const t of line(w)) add(t, v);
+      // "not in labor %" people (core_people.no_labor, e.g. the production Team Lead): on the Hours grid, out of every total
+      if (!h.noLabor) for (const t of line(w)) add(t, v);
       if (detail) {
-        add(dayRow(h.day, w), v);
+        if (!h.noLabor) add(dayRow(h.day, w), v);
         const k = `${w.line}|${h.pid}`;
-        const P = people.get(k) || people.set(k, { line: w.line, personId: h.pid, name: h.name, depts: new Set(), days: {}, hours: 0, otHours: 0, live: false }).get(k);
+        const P = people.get(k) || people.set(k, { line: w.line, personId: h.pid, name: h.name, noLabor: !!h.noLabor, depts: new Set(), days: {}, hours: 0, otHours: 0, live: false }).get(k);
         P.days[h.day] = r2((P.days[h.day] || 0) + h.hours); P.hours += h.hours; P.otHours += h.otHours || 0; P.depts.add(h.dept || "—"); if (h.live) P.live = true;
       }
     }
@@ -301,7 +302,7 @@ export async function snapshot(db, env, me, from, to, { now = Date.now() } = {})
     prevRange: { from: pFrom, to: pTo },
     unmappedWork: [...cur.unmapped.entries()].map(([dept, pieces]) => ({ dept, pieces })).sort((a, b) => b.pieces - a.pieces),
     daily,
-    people: [...cur.people.values()].map(p => ({ line: p.line, personId: p.personId, name: p.name, depts: [...p.depts], days: p.days, hours: r2(p.hours), otHours: r2(p.otHours), live: p.live }))
+    people: [...cur.people.values()].map(p => ({ line: p.line, personId: p.personId, name: p.name, noLabor: p.noLabor, depts: [...p.depts], days: p.days, hours: r2(p.hours), otHours: r2(p.otHours), live: p.live }))
       .sort((a, b) => a.line.localeCompare(b.line) || b.hours - a.hours),
     freshness,
   };

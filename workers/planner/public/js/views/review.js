@@ -59,7 +59,7 @@ export async function render(main, ctx) {
     const tiles = [
       { v: T.due ? fmtN(T.finished) : "—", s: T.due ? `of ${fmtN(T.due)} due, finished` : "pieces due", c: T.left ? "warn" : T.due ? "good" : "" },
       { v: fmtN(T.assembled), s: "pieces assembled" },
-      { v: L.hours ? fmtH(L.hours) : "—", s: `paid hours · ${L.people} ${L.people === 1 ? "person" : "people"}`, t: L.breakPaid > 0.01 ? `Includes ${fmtH(L.breakPaid)} of paid breaks (up to 30 min each)` : "" },
+      { v: L.hours ? fmtH(L.hours) : "—", s: `paid hours · ${L.people} ${L.people === 1 ? "person" : "people"}`, t: [L.breakPaid > 0.01 ? `Includes ${fmtH(L.breakPaid)} of paid breaks (up to 30 min each).` : "", (L.notCounted || []).length ? `Not counted in labor: ${L.notCounted.map(p => `${p.name} ${fmtH(p.hours)}`).join(", ")}.` : ""].filter(Boolean).join(" ") },
       { v: T.perHour != null ? T.perHour.toFixed(1) : "—", s: `pieces per paid hour${T.targetPerHour ? ` · target ${T.targetPerHour.toFixed(1)}` : ""}`, c: T.perHour != null && T.targetPerHour ? (T.perHour >= T.targetPerHour ? "good" : "bad") : "",
         t: T.targetPerHour ? `To keep labor at ${tgt}%: average wage${T.avgWage ? ` ${fmt$(T.avgWage)}/h` : ""} ÷ (${tgt}% × average price per piece${T.avgPrice ? ` ${fmt$(T.avgPrice)}` : ""}). Uses this day's real pay rates and price mix.` : "" },
       ...(D.money ? [{ v: T.cost != null ? fmt$(T.cost) : "—", s: `labor · ${fmt$(T.value || 0)} of sales assembled` },
@@ -167,7 +167,7 @@ export async function render(main, ctx) {
     };
     const wk = h => (h == null ? "—" : raw(html`<span class="${h > 40 ? "c-bad" : h >= 36 ? "c-warn" : ""}">${fmtH(h)}</span>`));
     return html`<div class="t-scroll"><table class="rt"><thead><tr><th>Person</th><th>In–out</th><th>Break</th><th class="num">Paid</th><th class="num">Week</th></tr></thead><tbody>
-      ${A.map(a => { const b = brk(a); return raw(html`<tr><td><b>${a.name}</b></td><td>${a.firstIn != null ? hm(a.firstIn) : "?"}–${a.lastOut != null ? hm(a.lastOut) : "…"}</td>
+      ${A.map(a => { const b = brk(a); return raw(html`<tr><td><b>${a.name}</b>${a.noLabor ? raw(html`<small class="muted" title="Hours shown, left out of labor $, labor % and pieces per hour"> · not in labor %</small>`) : ""}</td><td>${a.firstIn != null ? hm(a.firstIn) : "?"}–${a.lastOut != null ? hm(a.lastOut) : "…"}</td>
         <td class="${b.c ? "c-" + b.c : ""}">${b.t}</td><td class="num">${fmtH(a.hours)}</td><td class="num">${wk(weekOf(a.personId, a.hours))}</td></tr>`); })}
       </tbody></table></div>`;
   }

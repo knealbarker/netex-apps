@@ -125,8 +125,8 @@ export async function buildSummary(db, env, day, { now = Date.now() } = {}) {
   const noShow = R.people.filter(x => x.missing);
   H.push(h2("Today: crew"));
   if (crew.length) {
-    H.push(table([th("Person"), th("Planned station"), th("In"), th("Out"), th("Hours", "right")], crew.map(x => `<tr>${td(`<b>${esc(x.name)}</b>`)}${td(esc(x.station || "not in the plan"), "left", x.unplanned ? `color:${C.warn}` : "")}${td(clock(x.actualIn))}${td(x.actualOut != null ? clock(x.actualOut) : "still in")}${td(hrs(x.actualHours || 0), "right")}</tr>`)));
-    T.push("TODAY - CREW (Rippling)", ...crew.map(x => `  ${x.name.padEnd(22)} ${(x.station || "not in the plan").padEnd(22)} ${clock(x.actualIn)} - ${x.actualOut != null ? clock(x.actualOut) : "still in"}  ${hrs(x.actualHours || 0)}`));
+    H.push(table([th("Person"), th("Planned station"), th("In"), th("Out"), th("Hours", "right")], crew.map(x => `<tr>${td(`<b>${esc(x.name)}</b>`)}${td(esc(x.station || (x.noLabor ? "not in labor %" : "not in the plan")), "left", x.unplanned && !x.noLabor ? `color:${C.warn}` : "")}${td(clock(x.actualIn))}${td(x.actualOut != null ? clock(x.actualOut) : "still in")}${td(hrs(x.actualHours || 0), "right")}</tr>`)));
+    T.push("TODAY - CREW (Rippling)", ...crew.map(x => `  ${x.name.padEnd(22)} ${(x.station || (x.noLabor ? "not in labor %" : "not in the plan")).padEnd(22)} ${clock(x.actualIn)} - ${x.actualOut != null ? clock(x.actualOut) : "still in"}  ${hrs(x.actualHours || 0)}`));
   } else { H.push(p("No production clock-ins from Rippling today.", `color:${C.mute}`)); T.push("TODAY - CREW", "  No production clock-ins from Rippling today."); }
   if (noShow.length) { const t = `In the plan but didn't clock in: ${noShow.map(x => `${x.name} (${x.station})`).join(", ")}.`; H.push(p(esc(t), `color:${C.bad}`)); T.push("  " + t); }
   T.push("");
