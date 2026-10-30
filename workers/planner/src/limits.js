@@ -1,9 +1,10 @@
 // Daily limits (Settings › Daily limits, Neal Oct 30): a text when the pieces due the next work day get close to a
 // department's max. With a max of 300 and 15%, the text goes out at 255 pieces; a second one if it goes over 300.
 //  - Pieces are the Plan's count: due that work day and not finished, route orders the work day before, no forecast.
-//  - At most two texts per department for each day planned: near the max, then over it. Dropping back doesn't reset them.
+//  - At most two texts per department for each day planned, to each number: near the max, then over it. Dropping back doesn't reset them.
 //  - Work days, 7 AM to 7 PM Central. A level reached outside those hours waits, if it's still there at 7 AM.
-// What's been sent is in core_settings (planner.limits_last). A text that fails isn't marked, so the next check tries again.
+// What's been sent, per number, is in core_settings (planner.limits_last). A text that fails isn't marked, so the next check
+// tries that number again without repeating the others.
 import { HttpError } from "./util.js";
 import { loadGroups, putGroupStmt } from "./settings.js";
 import { piecesView, localNow } from "./pieces.js";
@@ -40,34 +41,45 @@ async function loadLast(db, org) {
 /** Cron: checks the next work day against the limits and texts when one is reached. */
 export async function checkLimits(env, { at = new Date() } = {}) {
   const db = env.DB, org = env.ORG_ID, groups = await loadGroups(db, org), lim = groups.limits;
-  if (!lim.phone || !LIMITS.some(([, f]) => +lim[f] > 0)) return { status: "off" };
+  if (!lim.phones.length || !LIMITS.some(([, f]) => +lim[f] > 0)) return { status: "off" };
   const { day: today, hm } = localNow(env.TIMEZONE, at);
   if (!(groups.day.workDays || [1, 2, 3, 4, 5]).includes(weekday(today)) || hm < FROM || hm >= UNTIL) return { status: "outside hours" };
   if (!env.TEXTS) return { status: "no texts binding" };
 
   const V = await piecesView(db, env, { at }), D = V.days[V.next];
   if (!D) return { status: "no day" };
-  const last = await loadLast(db, org), sent = last.day === V.next ? last.sent || {} : {};
-  const list = dueAlerts(D.q, lim, sent);
-  const save = v => putGroupStmt(db, org, "limits_last", { ...last, day: V.next, sent, ...v }, null).run();
-  if (!list.length) return { status: "nothing new", day: V.next };
-
-  const body = alertText(list, V.next, lim.alertPct);
-  let r;
-  try { r = await env.TEXTS.send({ app: env.APP_ID, to: lim.phone, body, ref: `limits:${V.next}` }); }
-  catch (e) { r = { ok: false, error: String(e.message || e) }; }
-  if (!r.ok) { await save({ error: r.error || "Not sent.", errorAt: at.toISOString() }); return { status: "failed", error: r.error, day: V.next }; }
-  for (const a of list) sent[a.k] = a.stage;
-  await save({ error: null, errorAt: null, lastAt: at.toISOString(), lastBody: body });
-  return { status: "sent", sent: list.map(a => `${a.label} ${a.stage}`), day: V.next };
+  const last = await loadLast(db, org), same = last.day === V.next;
+  const before = same ? last.sent || {} : {}, sentTo = same ? last.sentTo || {} : {};   // `sent`: from when there was one number
+  const results = [], failed = [];
+  let lastBody = null;
+  for (const to of lim.phones) {
+    const list = dueAlerts(D.q, lim, { ...before, ...sentTo[to] });
+    if (!list.length) continue;
+    const body = alertText(list, V.next, lim.alertPct);
+    let r;
+    try { r = await env.TEXTS.send({ app: env.APP_ID, to, body, ref: `limits:${V.next}` }); }
+    catch (e) { r = { ok: false, error: String(e.message || e) }; }
+    if (!r.ok) { failed.push(`${to}: ${r.error || "Not sent."}`); continue; }
+    sentTo[to] = { ...sentTo[to] }; for (const x of list) sentTo[to][x.k] = x.stage;
+    lastBody = body; results.push(...list.map(x => `${x.label} ${x.stage}`));
+  }
+  if (!lastBody && !failed.length) return { status: "nothing new", day: V.next };
+  const error = failed.join(" · ") || null;
+  await putGroupStmt(db, org, "limits_last", { ...last, day: V.next, sent: before, sentTo, error, errorAt: error ? at.toISOString() : null,
+    ...(lastBody ? { lastAt: at.toISOString(), lastBody } : {}) }, null).run();
+  return { status: lastBody ? "sent" : "failed", day: V.next, ...(lastBody ? { sent: [...new Set(results)] } : {}), ...(error ? { error } : {}) };
 }
 
-/** Settings' "Send a test text": to the saved number. */
+/** Settings' "Send a test text": to each saved number. */
 export async function testText(env) {
   const lim = (await loadGroups(env.DB, env.ORG_ID)).limits;
-  if (!lim.phone) throw new HttpError(400, "Save a mobile number first.");
+  if (!lim.phones.length) throw new HttpError(400, "Save a mobile number first.");
   if (!env.TEXTS) throw new HttpError(503, "Texts aren't switched on for the planner yet.");
-  const r = await env.TEXTS.send({ app: env.APP_ID, to: lim.phone, body: "Test from the Production Planner: daily limit alerts will come to this number.", ref: "limits:test" });
-  if (!r.ok) throw new HttpError(502, r.error || "Not sent.");
-  return { ok: true };
+  const sent = [], failed = [];
+  for (const to of lim.phones) {
+    const r = await env.TEXTS.send({ app: env.APP_ID, to, body: "Test from the Production Planner: daily limit alerts will come to this number.", ref: "limits:test" });
+    if (r.ok) sent.push(to); else failed.push(`${to}: ${r.error || "Not sent."}`);
+  }
+  if (failed.length) throw new HttpError(502, failed.join(" · "));
+  return { sent };
 }

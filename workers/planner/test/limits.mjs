@@ -28,7 +28,7 @@ function setup({ texts = [], fail: failing = () => null } = {}) {
   };
   return { db, env, add, texts, set: patch => saveGroup(db, env, ADMIN, "limits", patch).catch(e => { throw e; }) };
 }
-const LIM = { maxDcb: 0, maxDct: 0, maxSlb: 300, maxSlt: 0, alertPct: 15, phone: "+19035550123" };
+const LIM = { maxDcb: 0, maxDct: 0, maxSlb: 300, maxSlt: 0, alertPct: 15, phones: ["+19035550123"] };
 
 await t("the alert level: 300 at 15% texts at 255, not 254; over the max is a second stage", () => {
   eq(dueAlerts({ slb: 254 }, LIM), []);
@@ -85,7 +85,7 @@ await t("off with no phone or no max; a new day starts fresh", async () => {
   const a = setup(); await a.add("Laundry Bottoms", 260);
   eq((await checkLimits(a.env, { at: AT })).status, "off");
   await a.set({ maxSlb: 300 }); eq((await checkLimits(a.env, { at: AT })).status, "off", "no phone");
-  await a.set({ phone: "(903) 555-0123" }); eq((await checkLimits(a.env, { at: AT })).status, "sent");
+  await a.set({ phones: ["(903) 555-0123"] }); eq((await checkLimits(a.env, { at: AT })).status, "sent");
   await a.add("Laundry Bottoms", 260, "2026-11-04");
   const r = await checkLimits(a.env, { at: new Date("2026-11-03T18:00:00Z") });
   eq([r.status, r.day], ["sent", "2026-11-04"], "Tuesday looks at Wednesday");
@@ -101,20 +101,45 @@ await t("a text that fails isn't marked: the error shows in Settings and the nex
   const { env, add, set, db } = setup({ texts, fail: () => (refuse ? "That number texted STOP." : null) });
   await set(LIM); await add("Laundry Bottoms", 260);
   eq((await checkLimits(env, { at: AT })).status, "failed");
-  const s = await allSettings(db, env, ADMIN); eq(s.status.limits.error, "That number texted STOP.");
+  const s = await allSettings(db, env, ADMIN); eq(s.status.limits.error, "+19035550123: That number texted STOP.");
   refuse = false;
   eq((await checkLimits(env, { at: AT })).status, "sent"); eq(texts.length, 1);
   eq((await allSettings(db, env, ADMIN)).status.limits.error, null);
 });
 await t("Settings: bad phone refused; only Admins see the number; the test text goes to the saved number", async () => {
   const texts = [], { env, db, set } = setup({ texts });
-  let e = null; try { await set({ phone: "12345" }); } catch (x) { e = x; } ok(e && e.status === 400, "bad number refused");
-  await set({ phone: "(903) 555-0123" });
-  eq((await loadGroups(db, "tcc")).limits.phone, "+19035550123");
-  eq((await allSettings(db, env, ADMIN)).groups.limits.phone, "+19035550123");
-  eq((await allSettings(db, env, { id: null, role: "manager" })).groups.limits.phone, "");
-  await testText(env); eq(texts[0].to, "+19035550123");
+  let e = null; try { await set({ phones: ["(903) 555-0123", "12345"] }); } catch (x) { e = x; } ok(e && e.status === 400 && e.message.includes("12345"), "bad number refused, and named");
+  await set({ phones: ["(903) 555-0123", "903-555-0124", "9035550123"] });
+  eq((await loadGroups(db, "tcc")).limits.phones, ["+19035550123", "+19035550124"], "tidied, no repeats");
+  eq((await allSettings(db, env, ADMIN)).groups.limits.phones, ["+19035550123", "+19035550124"]);
+  eq((await allSettings(db, env, { id: null, role: "manager" })).groups.limits.phones, []);
+  await testText(env); eq(texts.map(m => m.to), ["+19035550123", "+19035550124"]);
+  let many = null; try { await set({ phones: Array.from({ length: 11 }, (_, i) => `90355501${10 + i}`) }); } catch (x) { many = x; } ok(many && many.status === 400, "more than 10 refused");
   let d = null; try { await saveGroup(db, env, { id: null, role: "manager" }, "limits", { maxSlb: 1 }); } catch (x) { d = x; } ok(d && d.status === 403, "Managers can't change it");
+});
+await t("several numbers: each gets the text; one failing retries alone, without repeating the others", async () => {
+  let refuse = true; const texts = [];
+  const { env, add, set, db } = setup({ texts, fail: m => (refuse && m.to === "+19035550124" ? "Twilio said no." : null) });
+  await set({ ...LIM, phones: ["9035550123", "9035550124"] }); await add("Laundry Bottoms", 260);
+  const r = await checkLimits(env, { at: AT });
+  eq([r.status, r.error], ["sent", "+19035550124: Twilio said no."]); eq(texts.map(m => m.to), ["+19035550123"]);
+  eq((await allSettings(db, env, ADMIN)).status.limits.error, "+19035550124: Twilio said no.");
+  refuse = false;
+  eq((await checkLimits(env, { at: AT })).status, "sent"); eq(texts.map(m => m.to), ["+19035550123", "+19035550124"], "only the one that failed");
+  eq((await allSettings(db, env, ADMIN)).status.limits.error, null);
+  eq((await checkLimits(env, { at: AT })).status, "nothing new"); eq(texts.length, 2);
+  await add("Laundry Bottoms", 50);
+  await checkLimits(env, { at: AT }); eq(texts.slice(2).map(m => m.to), ["+19035550123", "+19035550124"], "both get the over-max text");
+});
+await t("a number saved before this change still works, and what it was already sent still counts", async () => {
+  const texts = [], { env, add, db } = setup({ texts });
+  await db.prepare("INSERT INTO core_settings(org_id,app_id,key,value_json) VALUES('tcc','planner','limits',?)").bind(JSON.stringify({ maxSlb: 300, alertPct: 15, phone: "+19035550123" })).run();
+  eq((await loadGroups(db, "tcc")).limits.phones, ["+19035550123"]);
+  await db.prepare("INSERT INTO core_settings(org_id,app_id,key,value_json) VALUES('tcc','planner','limits_last',?)").bind(JSON.stringify({ day: NEXT, sent: { slb: "near" } })).run();
+  await add("Laundry Bottoms", 260);
+  eq((await checkLimits(env, { at: AT })).status, "nothing new"); eq(texts.length, 0);
+  await add("Laundry Bottoms", 50);
+  eq((await checkLimits(env, { at: AT })).status, "sent"); ok(texts[0].body.includes("over the 300 max"), texts[0].body);
 });
 
 console.log(`\n${pass} passed, ${fail} failed`);

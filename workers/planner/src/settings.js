@@ -19,7 +19,7 @@ const f = {
   text: (d, max = 80) => ({ kind: "text", d, max }),
   list: d => ({ kind: "list", d }),
   emails: d => ({ kind: "emails", d }),
-  phone: d => ({ kind: "phone", d }),
+  phones: d => ({ kind: "phones", d }),
   days: d => ({ kind: "days", d }),
   perCat: (inner, d) => ({ kind: "perCat", inner, d }),
 };
@@ -30,7 +30,7 @@ export const SCHEMA = {
     prices: f.perCat(f.num(0, 0, 1000), { dct: 7.5, dcb: 8, slt: 4.15, slb: 7.25, comf: 30, tc: 12 }) },
   route: { dayBefore: f.bool(true) },
   // the most pieces a department should have due in a day (0 = no limit) and who gets a text as the next work day nears it (Neal, Oct 30)
-  limits: { maxDcb: f.int(0, 0, 100000), maxDct: f.int(0, 0, 100000), maxSlb: f.int(0, 0, 100000), maxSlt: f.int(0, 0, 100000), alertPct: f.int(15, 0, 100), phone: f.phone("") },
+  limits: { maxDcb: f.int(0, 0, 100000), maxDct: f.int(0, 0, 100000), maxSlb: f.int(0, 0, 100000), maxSlt: f.int(0, 0, 100000), alertPct: f.int(15, 0, 100), phones: f.phones([]) },
   alerts: { warnFirst: f.int(45, 0, 240), warnSecond: f.int(15, 0, 240), notify: f.bool(true), weekStart: f.int(1, 0, 6) },
   smrt: { overdue: f.bool(true), transitRack: f.text("Van", 40),
     departments: f.perCat(f.text("", 200), { dct: "Dry Cleaning Tops", dcb: "Dry Cleaning Bottoms", slt: "Laundry Tops", slb: "Laundry Bottoms", comf: "", tc: "" }),
@@ -75,7 +75,12 @@ function check(group, key, s, v) {
       if (list.length > 10) throw new HttpError(400, "Up to 10 addresses.");
       return list;
     }
-    case "phone": if (typeof v !== "string") throw new HttpError(400, `${where}: must be a phone number.`); return cleanPhone(v) || "";
+    case "phones": {
+      if (!Array.isArray(v) || v.some(x => typeof x !== "string")) throw new HttpError(400, `${where}: must be a list of phone numbers.`);
+      const list = v.map(x => { try { return cleanPhone(x); } catch { throw new HttpError(400, `"${x}" isn't a 10-digit mobile number. Separate numbers with commas.`); } }).filter(Boolean);
+      if (new Set(list).size > 10) throw new HttpError(400, "Up to 10 numbers.");
+      return [...new Set(list)];
+    }
     case "perCat": {
       if (!v || typeof v !== "object") throw new HttpError(400, `${where}: missing values.`);
       return Object.fromEntries(CATS.map(c => [c, check(group, `${key}.${c}`, s.inner, v[c] ?? s.d[c])]));
@@ -99,6 +104,7 @@ export async function loadGroups(db, orgId) {
   const saved = Object.fromEntries(results.map(r => [r.key, JSON.parse(r.value_json)]));
   // only what's in SCHEMA: values saved for settings since removed are left out
   const known = g => Object.fromEntries(Object.entries(saved[g] || {}).filter(([k]) => SCHEMA[g][k]));
+  if (saved.limits?.phone && !saved.limits.phones) saved.limits.phones = [saved.limits.phone];   // saved when there was one number
   return Object.fromEntries(Object.keys(SCHEMA).map(g => [g, { ...defaults(g), ...known(g) }]));
 }
 
@@ -256,7 +262,7 @@ export async function saveBoardOrder(db, env, me, body) {
 export async function allSettings(db, env, me = null) {
   const [groups, production, runs, boardOrder] = await Promise.all([loadGroups(db, env.ORG_ID), loadProduction(db, env.ORG_ID), loadRuns(db, env.ORG_ID), loadBoardOrder(db, env.ORG_ID)]);
   const admin = me && rank(me.role) >= rank("admin");
-  if (me && !admin) groups.limits.phone = "";   // someone's mobile number: Admins and the Owner only
+  if (me && !admin) groups.limits.phones = [];   // people's mobile numbers: Admins and the Owner only
   return { groups, ...production, runs, boardOrder, ...(admin ? { status: await adminStatus(db, env) } : {}) };
 }
 

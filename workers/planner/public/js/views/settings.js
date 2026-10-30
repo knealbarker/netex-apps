@@ -28,7 +28,7 @@ const GROUPS = [
     ["maxSlb", "Starch bottoms", "int", "", { min: 0, max: 100000, unit: "pieces" }],
     ["maxSlt", "Starch tops", "int", "", { min: 0, max: 100000, unit: "pieces" }],
     ["alertPct", "Text when within", "int", "With a max of 300 and 15%, the text goes out at 255 pieces.", { min: 0, max: 100, unit: "% of max" }],
-    ["phone", "Mobile number to text", "text", "Texts go out on work days, 7 AM to 7 PM. Leave blank for no texts."],
+    ["phones", "Mobile numbers to text", "listText", "Separate numbers with commas, up to 10. Texts go out on work days, 7 AM to 7 PM. Leave blank for no texts."],
   ] },
   { id: "route", title: "Route deliveries", lead: "Route orders are due by early morning on the route day, so they're normally finished the work day before.", fields: [
     ["dayBefore", "Plan route orders the work day before they're due", "bool", "Turn off to plan them on their due day like store orders."],
@@ -230,7 +230,7 @@ export async function render(main, ctx) {
   drawNotify();
   main.querySelector("#limTest")?.addEventListener("click", async e => {
     const b = e.currentTarget; b.disabled = true;
-    try { await api("/limits/test", { method: "POST" }); toast("Test text sent."); } catch (x) { toast(x.message, "bad"); } finally { b.disabled = false; }
+    try { const r = await api("/limits/test", { method: "POST" }); toast(r.sent.length === 1 ? "Test text sent." : `Test text sent to ${r.sent.length} numbers.`); } catch (x) { toast(x.message, "bad"); } finally { b.disabled = false; }
   });
   main.querySelector("#sumPreview")?.addEventListener("click", async e => {
     const b = e.currentTarget; b.disabled = true;
