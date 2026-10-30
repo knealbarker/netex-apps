@@ -1,8 +1,8 @@
 // Planner settings.
-//  - Simple values (working day, overtime, money, washers, alerts, SMRT/Rippling mapping) live in core_settings,
+//  - Simple values (working day, money, alerts, SMRT/Rippling mapping) live in core_settings,
 //    one row per group, checked against SCHEMA below so bad values never get saved.
-//  - Things with their own shape live in their own tables: piece categories, station speeds, wash programs,
-//    stations (max hours, on/off) and the shuttle runs with their stops.
+//  - Things with their own shape live in their own tables: piece categories, station speeds,
+//    stations (names, on/off) and the shuttle runs with their stops.
 // Everyone can read settings; Admins and the Owner change them.
 import { HttpError, ulid, nowIso, audit } from "./util.js";
 import { requireRole, rank } from "./auth.js";
@@ -24,20 +24,17 @@ const f = {
 };
 export const SCHEMA = {
   business: { name: f.text("Town & Country Cleaners") },
-  day: { workDays: f.days([1, 2, 3, 4, 5]), defStart: f.time("07:00"), fullDay: f.num(7.5, 1, 14), breakMin: f.int(30, 0, 120), breakAfter: f.num(4, 0, 12), spread: f.int(30, 0, 240), staggerBreaks: f.bool(true) },
-  staffing: { allowOT: f.bool(true), otMax: f.num(2, 0, 8), otMult: f.num(1.5, 1, 3), allowMoves: f.bool(true), allowClockOut: f.bool(true), minPaid: f.num(4, 0, 12),
-    comfMax: f.int(2, 1, 4), comfExtra: f.int(20, 0, 100), slbPrime: f.int(20, 0, 90), slbCover: f.bool(true) },
+  day: { workDays: f.days([1, 2, 3, 4, 5]), defStart: f.time("07:00"), breakMin: f.int(30, 0, 120), breakAfter: f.num(4, 0, 12) },
   money: { payAvg: f.num(15, 0, 200), laborTarget: f.num(17, 0, 100), pdfMoney: f.bool(false),
     prices: f.perCat(f.num(0, 0, 1000), { dct: 7.5, dcb: 8, slt: 4.15, slb: 7.25, comf: 30, tc: 12 }) },
-  route: { dayBefore: f.bool(true), readyBy: f.time("08:00") },
-  wash: { on: f.bool(true), washers: f.int(3, 0, 20), delay: f.int(20, 0, 240) },
+  route: { dayBefore: f.bool(true) },
   alerts: { warnFirst: f.int(45, 0, 240), warnSecond: f.int(15, 0, 240), notify: f.bool(true), weekStart: f.int(1, 0, 6) },
   smrt: { overdue: f.bool(true), transitRack: f.text("Van", 40),
     departments: f.perCat(f.text("", 200), { dct: "Dry Cleaning Tops", dcb: "Dry Cleaning Bottoms", slt: "Laundry Tops", slb: "Laundry Bottoms", comf: "", tc: "" }),
     itemTypes: f.perCat(f.text("", 200), { dct: "", dcb: "", slt: "", slb: "", comf: "Z-SS*", tc: "Tablecloth, Table Cloth" }),
     // item types worked at the Laundry Hub, left out of the planner unless a kind of work above claims them (Neal, Oct 23)
     hubTypes: f.text("Bedspread, Comforter", 200) },
-  rippling: { departments: f.list(["Production"]), useTimes: f.bool(true) },
+  rippling: { departments: f.list(["Production"]) },
   // the end-of-day email: today against the plan, and the next work day
   summary: { on: f.bool(true), to: f.emails(["neal@towncountryclean.com"]), at: f.time("18:10") },
   // station tablets at the starch bottoms presses (Neal, Oct 14): the station goal, and a photo with each count;
@@ -96,7 +93,9 @@ export function validateGroup(group, current, patch) {
 export async function loadGroups(db, orgId) {
   const { results } = await db.prepare("SELECT key, value_json FROM core_settings WHERE org_id=? AND app_id='planner' AND deleted_at IS NULL").bind(orgId).all();
   const saved = Object.fromEntries(results.map(r => [r.key, JSON.parse(r.value_json)]));
-  return Object.fromEntries(Object.keys(SCHEMA).map(g => [g, { ...defaults(g), ...(saved[g] || {}) }]));
+  // only what's in SCHEMA: values saved for settings since removed are left out
+  const known = g => Object.fromEntries(Object.entries(saved[g] || {}).filter(([k]) => SCHEMA[g][k]));
+  return Object.fromEntries(Object.keys(SCHEMA).map(g => [g, { ...defaults(g), ...known(g) }]));
 }
 
 export const putGroupStmt = (db, orgId, group, value, userId) =>
@@ -114,16 +113,15 @@ export async function saveGroup(db, env, me, group, patch) {
   return next;
 }
 
-// ---------------- production setup: categories, stations, speeds, wash programs ----------------
+// ---------------- production setup: categories, stations, speeds ----------------
 export async function loadProduction(db, orgId) {
   const q = async (sql, ...a) => (await db.prepare(sql).bind(...a).all()).results;
   const categories = await q("SELECT id, name, color, needs_assembly AS needsAssembly, sort FROM plan_categories ORDER BY sort");
   const stationTypes = await q("SELECT id, name FROM plan_station_types");
-  const stations = await q(`SELECT s.id, s.code, s.label, s.station_type_id AS type, s.training_id AS training, s.max_hours AS maxHours, s.is_active AS active, s.sort
+  const stations = await q(`SELECT s.id, s.code, s.label, s.station_type_id AS type, s.training_id AS training, s.is_active AS active, s.sort
       FROM plan_stations s JOIN core_locations l ON l.id = s.location_id WHERE l.org_id = ? AND s.deleted_at IS NULL ORDER BY s.sort`, orgId);
   const rates = await q("SELECT station_type_id AS type, category_id AS category, pieces_per_hour AS perHour FROM plan_station_rates WHERE deleted_at IS NULL");
-  const wash = await q("SELECT category_id AS category, pieces_per_load AS perLoad, cycle_min AS cycleMin FROM plan_wash_programs WHERE deleted_at IS NULL");
-  return { categories: categories.map(c => ({ ...c, needsAssembly: !!c.needsAssembly })), stationTypes, stations: stations.map(s => ({ ...s, active: !!s.active })), rates, wash };
+  return { categories: categories.map(c => ({ ...c, needsAssembly: !!c.needsAssembly })), stationTypes, stations: stations.map(s => ({ ...s, active: !!s.active })), rates };
 }
 
 const posNum = (v, what, max = 10000) => {
@@ -144,13 +142,6 @@ export async function productionStmts(db, orgId, userId, body) {
       ON CONFLICT(station_type_id, category_id) DO UPDATE SET pieces_per_hour=excluded.pieces_per_hour, updated_at=?, updated_by=excluded.updated_by, deleted_at=NULL, rev=rev+1`)
       .bind(r.type, r.category, posNum(r.perHour, `Speed for ${r.type}`), userId, now));
   }
-  for (const w of body.wash || []) {
-    if (!catIds.has(w.category)) throw new HttpError(400, `Unknown category ${w.category}.`);
-    const perLoad = Math.round(posNum(w.perLoad, "Pieces per load", 1000)), cycle = Math.round(posNum(w.cycleMin, "Cycle minutes", 600));
-    stmts.push(db.prepare(`INSERT INTO plan_wash_programs(category_id, pieces_per_load, cycle_min, updated_by) VALUES(?,?,?,?)
-      ON CONFLICT(category_id) DO UPDATE SET pieces_per_load=excluded.pieces_per_load, cycle_min=excluded.cycle_min, updated_at=?, updated_by=excluded.updated_by, deleted_at=NULL, rev=rev+1`)
-      .bind(w.category, perLoad, cycle, userId, now));
-  }
   for (const c of body.categories || []) {
     if (!catIds.has(c.id)) throw new HttpError(400, `Unknown category ${c.id}.`);
     stmts.push(db.prepare("UPDATE plan_categories SET needs_assembly=? WHERE id=?").bind(c.needsAssembly ? 1 : 0, c.id));
@@ -159,11 +150,10 @@ export async function productionStmts(db, orgId, userId, body) {
   for (const s of body.stations || []) {
     const id = stationIds.get(s.code);
     if (!id) throw new HttpError(400, `Unknown station ${s.code}.`);
-    const max = s.maxHours === null || s.maxHours === "" || s.maxHours === undefined ? null : posNum(s.maxHours, `Max hours for ${s.code}`, 24);
     const label = s.label !== undefined ? String(s.label).trim().slice(0, 40) : null;
     if (label === "") throw new HttpError(400, "A station needs a name.");
-    stmts.push(db.prepare(`UPDATE plan_stations SET max_hours=?, is_active=COALESCE(?, is_active), label=COALESCE(?, label), updated_at=?, updated_by=?, rev=rev+1 WHERE id=?`)
-      .bind(max, s.active === undefined ? null : s.active ? 1 : 0, label, now, userId, id));
+    stmts.push(db.prepare(`UPDATE plan_stations SET is_active=COALESCE(?, is_active), label=COALESCE(?, label), updated_at=?, updated_by=?, rev=rev+1 WHERE id=?`)
+      .bind(s.active === undefined ? null : s.active ? 1 : 0, label, now, userId, id));
   }
   return stmts;
 }

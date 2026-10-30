@@ -154,7 +154,7 @@ await t("route orders are planned the work day before they're due; unfinished on
     [...its("263100001"), ...its("263100002"), ...its("263100003")]);
   const v = await piecesView(db, env, { at: AT });
   const r = v.days[TODAY].stores.find(s => s.loc === "Route");
-  ok(r, "route group in today's plan"); eq(r.q.dct, 4, "the order due tomorrow 8 am"); ok(/ready by 08:00/.test(r.run), r.run);
+  ok(r, "route group in today's plan"); eq(r.q.dct, 4, "the order due tomorrow 8 am"); eq(r.run, "Route deliveries");
   eq(v.days[TODAY].stores[v.days[TODAY].stores.length - 1].loc, "Route", "route last (end of day)");
   eq(v.days[NEXT].stores.find(s => s.loc === "Route")?.q.dct, 4, "Wednesday's route order is Tuesday's work");
   ok(v.late.some(x => x.no === "26310-0002" && x.overdue && x.route), "route due today and not done is overdue");

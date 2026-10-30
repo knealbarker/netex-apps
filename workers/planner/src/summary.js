@@ -1,7 +1,7 @@
 // Daily summary email (as the desktop planner sent it): how today went against the plan, and the next work day.
 //  - Today: pieces due and finished by kind of work, plan vs. actual (finish, hours, labor $, labor %),
 //    the crew from the time clock, who was planned but didn't clock in, and work done ahead for the next day.
-//  - Next work day: pieces to plan for (with what usually still comes in), the crew (saved, or suggested from history),
+//  - Next work day: pieces to plan for (with what usually still comes in), the crew (saved, or copied from the last plan),
 //    and the projection: when everyone's done, hours, labor $ and %, overtime, pieces that wouldn't get done.
 // Sent by this Worker's cron after Settings › Daily summary email's time on work days, once a day, through Cloudflare
 // Email Routing (send_email binding SEND_EMAIL) from reports@netexcleaners.com. Cloudflare only delivers to addresses

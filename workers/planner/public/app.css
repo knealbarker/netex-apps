@@ -293,10 +293,9 @@ main > .set-card, main > section.card { margin-bottom: 16px; }
 .percat .inwrap { flex-direction: row-reverse; justify-content: flex-end; }
 .percat .inwrap .input { width: 100%; font-size: 15px; color: var(--text); }
 .speed-list .row-field:last-child { border-bottom: 0; }
-.st-table, .wash-table { display: flex; flex-direction: column; gap: 6px; }
+.st-table { display: flex; flex-direction: column; gap: 6px; }
 .st-head { font-size: 12px; color: var(--faint); font-weight: 700; text-transform: uppercase; letter-spacing: .05em; }
-.st-table .st-row, .st-table .st-head { display: grid; grid-template-columns: minmax(0, 1fr) 130px 70px; gap: 10px; align-items: center; }
-.wash-table .st-row, .wash-table .st-head { display: grid; grid-template-columns: minmax(0, 1fr) 150px 150px; gap: 10px; align-items: center; }
+.st-table .st-row, .st-table .st-head { display: grid; grid-template-columns: minmax(0, 1fr) 70px; gap: 10px; align-items: center; }
 .st-row input[type="checkbox"] { width: 18px; height: 18px; accent-color: var(--accent); justify-self: start; }
 .checks { display: flex; flex-wrap: wrap; gap: 10px 20px; }
 .set-foot { display: flex; align-items: center; justify-content: flex-end; gap: 14px; margin-top: 14px; }

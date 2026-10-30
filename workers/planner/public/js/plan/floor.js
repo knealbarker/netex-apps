@@ -33,7 +33,7 @@ export function replay(snapshot) {
   return { E, R, I, who, label };
 }
 
-/** Everything that happens in the day, grouped by time (people starting, moving, breaks, going home; the washers). */
+/** Everything that happens in the day, grouped by time (people starting, moving, breaks, going home). */
 export function events(F, t) {
   const { E, R, who, label } = F, ev = [];
   if (R.empty) return [];
@@ -44,19 +44,13 @@ export function events(F, t) {
     ev.push({ t: row.x.start, o: 0, kind: "start", stn: st[0] ? st[0].stn : row.st.id, nm });
     st.slice(1).forEach(x => ev.push({ t: x.from, o: 1, kind: "move", stn: x.stn, nm, rot: !!x.rotFrom }));
     if (row.brkTaken > 0) ev.push({ t: row.brkS, o: 2, kind: "brk", nm, until: row.brkS + row.brkTaken });
-    const oi = outInfo(row);
-    ev.push({ t: row.clockOut, o: 3, kind: oi.cls === "home" ? "home" : oi.cls === "ot" ? "otx" : "end", nm, ot: row.ot });
+    ev.push({ t: row.clockOut, o: 3, kind: "end", nm });
   }
   for (const x of E.opsInfo()) if (x.on) {
     const nm = who(x.o.id);
     ev.push({ t: x.start, o: 0, kind: "start", stn: x.o.id, nm });
     if (x.b) ev.push({ t: x.brkS, o: 2, kind: "brk", nm, until: x.brkS + x.b });
     ev.push({ t: x.end, o: 3, kind: "end", nm });
-  }
-  if (R.W && R.W.loads.length) {
-    ev.push({ t: R.W.start, o: 0, kind: "wash", txt: t.washStart });
-    if (R.W.laundryDone && (R.W.tcDone || R.W.comfDone)) ev.push({ t: R.W.laundryDone, o: 1, kind: "wash", txt: t.washDone });
-    if (R.W.comfDone) ev.push({ t: R.W.comfDone, o: 1, kind: "wash", txt: t.comfDone });
   }
   for (const e of ev) e.label = e.stn ? L(e.stn) : null;
   return ev.sort((a, b) => a.t - b.t || a.o - b.o);

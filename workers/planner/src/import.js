@@ -1,5 +1,5 @@
 // One-time (repeatable) import from the desktop planner:
-//   planner-data.json  -> team, station rankings, usual clock-ins, settings, speeds, wash programs, shuttle runs
+//   planner-data.json  -> team, station rankings, usual clock-ins, settings, speeds, shuttle runs
 //   Plan History/*.json -> each day's saved plan (as a published plan) and actual hours from Rippling (labor_daily_hours)
 // Running it again updates the same rows (people are matched by Rippling id, then by name); nothing is duplicated.
 // Owner only.
@@ -20,10 +20,8 @@ export function mapSettings(d) {
   const pick = pairs => Object.fromEntries(pairs.filter(([, k]) => has(k)).map(([to, k]) => [to, d[k]]));
   const g = {
     business: pick([["name", "biz"]]),
-    day: pick([["defStart", "defStart"], ["fullDay", "fullDay"], ["breakMin", "breakMin"], ["breakAfter", "breakAfter"], ["spread", "spread"], ["staggerBreaks", "staggerBreaks"]]),
-    staffing: pick([["allowOT", "allowOT"], ["otMax", "otMax"], ["otMult", "otMult"], ["allowMoves", "allowMoves"], ["allowClockOut", "allowClockOut"], ["minPaid", "minPaid"]]),
+    day: pick([["defStart", "defStart"], ["breakMin", "breakMin"], ["breakAfter", "breakAfter"]]),
     money: { ...pick([["payAvg", "payAvg"], ["laborTarget", "laborTarget"], ["pdfMoney", "pdfMoney"]]), ...(d.price ? { prices: d.price } : {}) },
-    wash: pick([["on", "washOn"], ["washers", "washers"], ["delay", "washDelay"]]),
     alerts: {}, smrt: {}, rippling: {},
   };
   const sh = d.shuttles || {};
@@ -40,7 +38,7 @@ export function mapSettings(d) {
     types[cat] = [...list].join(", ");
   }
   if (Object.keys(types).length) g.smrt.itemTypes = types;
-  if (d.rip) { if (Array.isArray(d.rip.depts)) g.rippling.departments = d.rip.depts; if (d.rip.useTimes !== undefined) g.rippling.useTimes = !!d.rip.useTimes; }
+  if (d.rip) { if (Array.isArray(d.rip.depts)) g.rippling.departments = d.rip.depts; }
   return g;
 }
 
@@ -52,13 +50,6 @@ export function mapRates(r = {}) {
   add("dct", "dct", r.dct); add("dcb", "dcb", r.dcb); add("dcb", "tc", r.tc); add("comf", "comf", r.comf);
   for (const c of CATS) add("asm", c, r.asm);
   return out;
-}
-
-export function mapWash(d) {
-  const w = [];
-  const add = (category, perLoad, cycleMin) => { if (perLoad > 0 && cycleMin > 0) w.push({ category, perLoad, cycleMin }); };
-  add("slt", d.washSlt, d.cycLaundry); add("slb", d.washSlb, d.cycLaundry); add("comf", d.washComf, d.cycComf); add("tc", d.washTc, d.cycTc);
-  return w;
 }
 
 export function mapRuns(sh = {}) {
@@ -135,10 +126,9 @@ export async function importDesktop(db, env, me, body) {
     stmts.push(putGroupStmt(db, orgId, group, validateGroup(group, current[group], patch), me.id));
     summary.settings++;
   }
-  // ---- speeds, wash programs, assembly, station max hours
+  // ---- speeds, assembly
   const categories = CATS.filter(c => d.asmInclude && c in d.asmInclude).map(c => ({ id: c, needsAssembly: !!d.asmInclude[c] }));
-  const stationMax = Object.entries(d.stationMax || {}).filter(([code]) => stations.has(code)).map(([code, h]) => ({ code, maxHours: h || null }));
-  stmts.push(...(await productionStmts(db, orgId, me.id, { rates: mapRates(d.rates), wash: mapWash(d), categories, stations: stationMax })));
+  stmts.push(...(await productionStmts(db, orgId, me.id, { rates: mapRates(d.rates), categories })));
   // ---- shuttle runs
   const runs = mapRuns(d.shuttles);
   if (runs.length) { stmts.push(...(await runsStmts(db, orgId, me.id, runs))); summary.runs = runs.length; }

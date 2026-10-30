@@ -186,7 +186,7 @@ export async function piecesView(db, env, { at = new Date(), day = null } = {}) 
   const { day: today, hm } = localNow(env.TIMEZONE, at);
   const isWorkDay = workDays.includes(weekday(today));
   const next = nextWorkDay(today, workDays), after = nextWorkDay(next, workDays);
-  const route = groups.route || { dayBefore: true, readyBy: "08:00" };
+  const route = groups.route || { dayBefore: true };
   const cat = categorizer(groups.smrt), runOf = storeToRun(runs);
   const data = await loadOpen(db, env.ORG_ID, { from: today, to: after, overdueFrom: addDays(today, -OVERDUE_DAYS) });
   // the work day an order belongs to: its due day, or the work day before for route deliveries
@@ -200,7 +200,7 @@ export async function piecesView(db, env, { at = new Date(), day = null } = {}) 
     const d2 = await loadOpen(db, env.ORG_ID, { from: extra, to: nextWorkDay(extra, workDays), overdueFrom: extra });
     extraOrders = splitOrders(d2, cat, today, groups.smrt.transitRack).map(o => ({ ...o, workDay: workDayOf(o) })).filter(o => o.workDay === extra);
   }
-  const ROUTE_RUN = { id: "route", name: `Route deliveries · ready by ${route.readyBy} on the route day`, kind: "route", deadline: 24 * 60 };
+  const ROUTE_RUN = { id: "route", name: "Route deliveries", kind: "route", deadline: 24 * 60 };
   const runFor = loc => (loc === "Route" ? ROUTE_RUN : runOf(loc));
 
   const fc = await forecastRatios(db, env.ORG_ID, { today, next, hm, workDays, runs });

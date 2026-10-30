@@ -238,7 +238,7 @@ export async function render(main, ctx) {
     });
     main.querySelector("#pl-reorder")?.addEventListener("click", e => {
       reorder = !reorder; e.currentTarget.setAttribute("aria-pressed", String(reorder)); e.currentTarget.textContent = reorder ? "Done" : "Reorder";
-      boardHint(); if (st.X) drawBoard(st.X, st.L);
+      boardHint(); if (st.X) drawBoard(st.X);
     });
     main.querySelectorAll(".tl-view [data-view]").forEach(b => b.addEventListener("click", () => {
       if (boardView === b.dataset.view) return;
@@ -247,7 +247,7 @@ export async function render(main, ctx) {
       if (reorder) { reorder = false; const r = main.querySelector("#pl-reorder"); if (r) { r.setAttribute("aria-pressed", "false"); r.textContent = "Reorder"; } }
       const r = main.querySelector("#pl-reorder"); if (r) r.hidden = boardView === "people";
       const el = document.getElementById("pl-board"); if (el) delete el.dataset.scrolled;
-      boardHint(); if (st.X) drawBoard(st.X, st.L);
+      boardHint(); if (st.X) drawBoard(st.X);
     }));
     boardHint();
     drawHeadPill(); update({ table: true });
@@ -271,15 +271,14 @@ export async function render(main, ctx) {
   function update() {
     if (!alive()) return;
     const X = st.X = M.evaluate(makeP());
-    const L = st.L = null;   // no predictions (Neal, Oct 14)
     // the production day is over: what's left waits for later or for a manager, so nothing more is planned (Neal, Oct 13)
     st.over = M.productionDone(X.P, X.P.dp?.D?.lastAsm, M.breaksOf(X.R));
-    drawNote(); drawStatus(X, L); drawPresses(); drawWork(X, L); drawDue(); drawBoard(X, L); drawAway(X.P);
+    drawNote(); drawStatus(X); drawPresses(); drawWork(X); drawDue(); drawBoard(X); drawAway(X.P);
     drawPub(X); saveStatus();
   }
 
   // ---- one line: how the day goes (today: re-planned from now with who's here)
-  function drawStatus(X, L) {
+  function drawStatus(X) {
     const el = document.getElementById("pl-status"); if (!el) return;
     const P = X.P, tot = CATS.reduce((t, k) => t + (P.q[k] || 0), 0);
     let txt, cls = "";
@@ -391,9 +390,9 @@ export async function render(main, ctx) {
     const h = document.getElementById("pl-board-hint"); if (!h) return;
     h.textContent = reorder ? "Move a station up or down. Everyone sees the same order." : !can ? "" : boardView === "people" ? "Each bar is the station they're on · tap one to set times, a break or a move" : "Tap a person to set their times, break or a move · tap a station to add someone";
   }
-  function drawBoard(X, L) {
+  function drawBoard(X) {
     const el = document.getElementById("pl-board"); if (!el) return;
-    const P = X.P, groups = M.boardGroups(POS, order()), people = boardView === "people", rows = people ? M.personRows(X, groups) : M.stationRows(X, groups), ends = M.catEnds(X.E, X.R), live = P.isToday && L && L.on && L.cats;
+    const P = X.P, groups = M.boardGroups(POS, order()), people = boardView === "people", rows = people ? M.personRows(X, groups) : M.stationRows(X, groups);
     const now = P.isToday && P.now != null ? P.now : null;
     // people: clocked out (gray from then on), not clocked in yet, on break
     const info = {}; for (const code of Object.keys(st.crew)) { const pi = personInfo(X, code); if (pi) info[pi.id] = pi; }
@@ -492,10 +491,10 @@ export async function render(main, ctx) {
     if (i < 0 || j < 0 || j >= cur.length) return;
     [cur[i], cur[j]] = [cur[j], cur[i]];
     const before = SET.boardOrder; SET.boardOrder = [...cur, ...M.BOARD_ORDER.filter(k => !cur.includes(k))];
-    if (st.X) drawBoard(st.X, st.L);
+    if (st.X) drawBoard(st.X);
     main.querySelector(`[data-${dir < 0 ? "up" : "down"}="${key}"]:not([disabled])`)?.focus();
     try { const r = await api("/settings/board-order", { method: "PUT", body: { order: SET.boardOrder } }); SET.boardOrder = r.boardOrder; }
-    catch (e) { SET.boardOrder = before; if (st.X) drawBoard(st.X, st.L); toast(`Not saved: ${e.message}`, "bad"); }
+    catch (e) { SET.boardOrder = before; if (st.X) drawBoard(st.X); toast(`Not saved: ${e.message}`, "bad"); }
   }
   function drawAway(P) {
     const el = document.getElementById("pl-away"); if (!el) return;
@@ -616,7 +615,7 @@ export async function render(main, ctx) {
   }
   function showHelp(id) {
     const h = HELP[id]; if (!h) return;
-    openDialog({ title: h.title, body: h.body.replace("${FULL}", fmtH(s.fullDay)), submitLabel: "Got it", onOpen: (form, dlg) => { dlg.querySelector("[data-close]").hidden = true; dlg.classList.add("help-dlg"); }, onSubmit: () => {} });
+    openDialog({ title: h.title, body: h.body, submitLabel: "Got it", onOpen: (form, dlg) => { dlg.querySelector("[data-close]").hidden = true; dlg.classList.add("help-dlg"); }, onSubmit: () => {} });
   }
 
   // ---- typed piece counts
@@ -749,8 +748,8 @@ export async function render(main, ctx) {
         ${rows.map(r => raw(html`<div class="ps-row"><div class="ps-name"><b>${r.name}</b><small>in ${fmtClock(r.start)}</small></div>
           <div class="ps-track">${raw(hrs.join(""))}${W.map(w => raw(html`<i class="ps-dl" style="left:${pct(w.deadline)}"></i>`))}${r.steps.map(x => raw(html`<span class="ps-bar" style="left:${pct(x.from)};width:${wid(x.from, x.to)};--c:${col(x.stn)}">${lbl(x.stn)}${x.rot ? " (rot.)" : ""}</span>`))}
             ${r.brk ? raw(html`<span class="ps-brk" style="left:${pct(r.brk[0])};width:${wid(r.brk[0], r.brk[1])}">Break</span>`) : ""}</div>
-          <div class="ps-done ${r.cls}"><b>${fmtClock(r.done)}</b>${r.cls === "home" ? raw("<small>send home</small>") : r.cls === "ot" ? raw(html`<small>+${fmtH(r.ot)} overtime</small>`) : ""}</div></div>`))}</div>
-      ${W.length ? raw(html`<div class="ps-waves">${W.map(w => { const st2 = X.states[w.id] || {}; return raw(html`<span><b>${hm(w.deadline)}</b> ${w.name} · ${fmtN(w.todo)} pieces${st2.eta != null && isFinite(st2.eta) ? ` · ready about ${hm(st2.eta)}` : ""}</span>`); })}</div>`) : ""}
+          <div class="ps-done ${r.cls}"><b>${fmtClock(r.done)}</b></div></div>`))}</div>
+      ${W.length ? raw(html`<div class="ps-waves">${W.map(w => { return raw(html`<span><b>${hm(w.deadline)}</b> ${w.name} · ${fmtN(w.todo)} pieces</span>`); })}</div>`) : ""}
       <footer class="ps-foot">Printed ${new Date().toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })} by ${ctx.me.name}${st.plan.published ? ` · published ${new Date(st.plan.published.at).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })}` : " · not published"}</footer>`;
     sheet.style.setProperty("--rh", `${Math.max(30, Math.min(54, Math.floor(520 / rows.length)))}px`);
     document.body.classList.add("printing");

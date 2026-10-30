@@ -51,7 +51,7 @@ const HISTORY = [
 ];
 
 console.log("desktop import");
-await t("imports team, rankings, settings, speeds, wash, runs and history", async () => {
+await t("imports team, rankings, settings, speeds, runs and history", async () => {
   const { call, sqlite } = app();
   const r = await call("POST", "/api/import/desktop", { body: { data: DESKTOP, history: HISTORY } });
   eq(r.status, 200, JSON.stringify(r.body));
@@ -68,7 +68,6 @@ await t("imports team, rankings, settings, speeds, wash, runs and history", asyn
   eq(s.groups.money.prices.comf, 35.7); eq(s.groups.money.payAvg, 13); eq(s.groups.smrt.itemTypes.comf, "Comforter, Bedspread");
   eq(s.rates.find(x => x.type === "slb" && x.category === "slb").perHour, 20);
   eq(s.categories.find(c => c.id === "comf").needsAssembly, false);
-  eq(s.stations.find(x => x.code === "dcb1").maxHours, 6);
   eq(s.runs.map(x => [x.name, x.kind, x.stops.map(y => y.store)]), [["Winnsboro + Quitman", "shuttle", ["Winnsboro", "Quitman"]], ["Sulphur Springs store", "counter", ["Sulphur Springs"]]]);
   eq(s.runs[0].stops[0], { store: "Winnsboro", arrive: "11:30", drive: 30, stay: 15, cutoff: "11:00" });
   const hrs = sqlite.prepare("SELECT hours, first_in, last_out FROM labor_daily_hours h JOIN core_people p ON p.id=h.person_id WHERE p.payroll_id='40'").get();
@@ -182,8 +181,10 @@ await t("defaults come back before anything is saved", async () => {
 });
 await t("saving a group validates every value", async () => {
   const { call } = app();
-  eq((await call("PUT", "/api/settings/day", { body: { fullDay: 8, defStart: "06:30" } })).body.day.fullDay, 8);
-  eq((await call("PUT", "/api/settings/day", { body: { fullDay: 30 } })).status, 400);
+  eq((await call("PUT", "/api/settings/day", { body: { breakMin: 45, defStart: "06:30" } })).body.day.breakMin, 45);
+  eq((await call("PUT", "/api/settings/day", { body: { breakMin: 300 } })).status, 400);
+  eq((await call("PUT", "/api/settings/day", { body: { fullDay: 8 } })).status, 400, "a setting that's gone");
+  eq((await call("PUT", "/api/settings/wash", { body: { on: true } })).status, 404, "a group that's gone");
   eq((await call("PUT", "/api/settings/day", { body: { defStart: "6:30" } })).status, 400);
   eq((await call("PUT", "/api/settings/day", { body: { bogus: 1 } })).status, 400);
   eq((await call("PUT", "/api/settings/nope", { body: {} })).status, 404);
@@ -200,14 +201,14 @@ await t("work days: Mon-Fri by default; must pick at least one valid day", async
 await t("Managers can't change settings", async () => {
   const { call } = app();
   await withRole(call, "manager", "m@example.com");
-  eq((await call("PUT", "/api/settings/day", { as: "m@example.com", body: { fullDay: 8 } })).status, 403);
+  eq((await call("PUT", "/api/settings/day", { as: "m@example.com", body: { breakMin: 45 } })).status, 403);
   eq((await call("GET", "/api/settings", { as: "m@example.com" })).status, 200);
 });
-await t("speeds, wash, stations save; bad numbers refused", async () => {
+await t("speeds and stations save; bad numbers refused", async () => {
   const { call } = app();
-  const r = await call("PUT", "/api/settings/production", { body: { rates: [{ type: "slb", category: "slb", perHour: 42 }], wash: [{ category: "slt", perLoad: 60, cycleMin: 50 }], stations: [{ code: "dct3", active: false, maxHours: 5 }] } });
+  const r = await call("PUT", "/api/settings/production", { body: { rates: [{ type: "slb", category: "slb", perHour: 42 }], stations: [{ code: "dct3", active: false, maxHours: 5 }] } });
   eq(r.status, 200);
-  eq(r.body.rates.find(x => x.type === "slb").perHour, 42); eq(r.body.wash.find(x => x.category === "slt").cycleMin, 50);
+  eq(r.body.rates.find(x => x.type === "slb").perHour, 42);
   eq(r.body.stations.find(x => x.code === "dct3").active, false);
   eq((await call("PUT", "/api/settings/production", { body: { rates: [{ type: "slb", category: "slb", perHour: -1 }] } })).status, 400);
   eq((await call("PUT", "/api/settings/production", { body: { rates: [{ type: "nope", category: "slb", perHour: 1 }] } })).status, 400);

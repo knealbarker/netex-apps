@@ -15,8 +15,7 @@ With the `CF_API_TOKEN` secret set, every change also rewrites the Netex users g
 
 ## What's where
 - **Plan** — pieces from SMRT (any day: tabs for today and the next work day, a date picker for others; past days are read-only),
-  the crew (suggest from history, auto-assign, all full day, call-outs, typed piece counts), the minute-by-minute timeline,
-  deadlines, checks with fixes, labor and revenue (Admins/Owner, with each person's Rippling pay rate), the washer schedule,
+  the crew (made by hand, call-outs, typed piece counts), the timeline, labor and revenue (Admins/Owner, with each person's Rippling pay rate),
   **Changes today**, **Print** (one landscape page; Save as PDF from the print dialog) and publishing.
 - **Floor** — no tab since Oct 18 (Neal: it will run on its own big screen, like the station tablets); still opens at `#/floor`. The published plan replayed live for the TV (`#/floor?tv`), English/Español, alerts, the labor streak.
 - **Review** — any past day against its plan, the 15-day trend, follow-ups, and the next work day's projection.
@@ -93,7 +92,7 @@ For the van driver: is everything due at a store on VAN? (Neal, Oct 18.) Signed 
 - `src/index.js` routes, security headers and the cron; `src/auth.js` sign-in; `src/users.js` users and the Access group.
 - `src/team.js`, `src/settings.js`, `src/import.js`, `src/pieces.js` (SMRT pieces), `src/plan.js` (save/publish),
   `src/review.js`, `src/pay.js` (Rippling pay rates), `src/changes.js` (Changes today, shuttle events), `src/summary.js`.
-- `public/` — the app (no build step). `js/engine/engine.js` is the desktop 1.9.0 engine; `js/plan/model.js` the Plan logic
+- `public/` — the app (no build step). `js/engine/engine.js` draws the plan as entered (no simulation since Oct 14; the automatic planner was removed Oct 30); `js/plan/model.js` the Plan logic
   (also used by the summary email on the server); `js/views/*` one file per section.
 
 ## Deploying
@@ -104,6 +103,6 @@ Secret: `CF_API_TOKEN` (Account › Access: Organizations, Identity Providers, a
 ## Tests (Node 22; Node's SQLite stands in for D1, headless Chromium for the pages)
 - `test/run.mjs` sign-in and users · `test/stage2.mjs` team, settings, import · `test/pieces.mjs` · `test/plan.mjs` · `test/model.mjs`
 - `test/shuttle.mjs` shuttle status (rules, Check now, the page in Chromium) · `test/tally.mjs` station tablets (pairing, press start, pace, photos) · `test/station-ui.mjs` the tablet page and its Plan/Review/Settings parts in Chromium
-- `test/breakpay.mjs` paid break rule · `test/review.mjs` · `test/stage5.mjs` pay rates, any day, changes, events, streak, summary email · `test/engine-parity.mjs`
+- `test/breakpay.mjs` paid break rule · `test/review.mjs` · `test/stage5.mjs` pay rates, any day, changes, events, streak, summary email
 - Browser: `test/browser.mjs`, `test/review-ui.mjs`, and **`test/e2e.mjs`** — the whole planner end to end,
   offline included. Screenshots (and the printed plan as a PDF) in `test/shots`.
