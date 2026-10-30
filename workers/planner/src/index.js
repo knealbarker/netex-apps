@@ -6,7 +6,6 @@ import { requireRole } from "./auth.js";
 import { HttpError, json, readJson } from "./util.js";
 import { allSettings, saveGroup, saveProduction, saveRuns, saveBoardOrder } from "./settings.js";
 import { listTeam, setChart, addPerson, updatePerson, setTrainings, teamHistory } from "./team.js";
-import { importDesktop } from "./import.js";
 import { piecesView } from "./pieces.js";
 import { loadPlan, savePlan, publishPlan, addCallout, removeCallout, publishedPlan } from "./plan.js";
 import { reviewDay, noteFollowup, laborStreak, reviewNote } from "./review.js";
@@ -17,6 +16,7 @@ import { localNow } from "./pieces.js";
 import { listTimeOff, addTimeOff, removeTimeOff } from "./timeoff.js";
 import * as T from "./tally.js";
 import { shuttleView, checkNow } from "./shuttle.js";
+import { checkLimits, testText } from "./limits.js";
 
 const SECURITY_HEADERS = {
   "x-content-type-options": "nosniff",
@@ -51,6 +51,7 @@ const routes = [
   ["PUT", /^\/api\/settings\/board-order$/, async (req, env, me) => json({ boardOrder: await saveBoardOrder(env.DB, env, me, await readJson(req)) })],
   ["PUT", /^\/api\/settings\/runs$/, async (req, env, me) => json({ runs: await saveRuns(env.DB, env, me, (await readJson(req)).runs) })],
   ["PUT", /^\/api\/settings\/(\w+)$/, async (req, env, me, m) => json({ [m[1]]: await saveGroup(env.DB, env, me, m[1], await readJson(req)) })],
+  ["POST", /^\/api\/limits\/test$/, async (req, env, me) => { requireRole(me, "admin"); return json(await testText(env)); }],
   ["GET", /^\/api\/team$/, async (req, env, me) => json(await listTeam(env.DB, env, me))],
   ["GET", /^\/api\/timeoff$/, async (req, env) => { const u = new URL(req.url).searchParams; return json(await listTimeOff(env.DB, env, { from: u.get("from"), to: u.get("to") })); }],
   ["POST", /^\/api\/timeoff$/, async (req, env, me) => json(await addTimeOff(env.DB, env, me, await readJson(req)), 201)],
@@ -60,7 +61,6 @@ const routes = [
   ["PATCH", /^\/api\/team\/([0-9A-Z]{26})$/, async (req, env, me, m) => json(await updatePerson(env.DB, env, me, m[1], await readJson(req)))],
   ["PUT", /^\/api\/team\/chart\/([a-z0-9_]{1,20})$/, async (req, env, me, m) => json(await setChart(env.DB, env, me, m[1], (await readJson(req)).people))],
   ["PUT", /^\/api\/team\/([0-9A-Z]{26})\/trainings$/, async (req, env, me, m) => json(await setTrainings(env.DB, env, me, m[1], (await readJson(req)).trainings))],
-  ["POST", /^\/api\/import\/desktop$/, async (req, env, me) => json(await importDesktop(env.DB, env, me, await readJson(req)))],
   ["GET", /^\/api\/pieces$/, async (req, env) => { const d = new URL(req.url).searchParams.get("day"); return json(await piecesView(env.DB, env, { day: /^\d{4}-\d{2}-\d{2}$/.test(d || "") ? d : null })); }],
   ["GET", /^\/api\/plan\/(\d{4}-\d{2}-\d{2})$/, async (req, env, me, m) => json(await loadPlan(env.DB, env, m[1]))],
   ["PUT", /^\/api\/plan\/(\d{4}-\d{2}-\d{2})$/, async (req, env, me, m) => json(await savePlan(env.DB, env, me, m[1], await readJson(req)))],
@@ -188,5 +188,8 @@ export default {
     ctx.waitUntil(T.cleanupPhotos(env).catch(e => console.error(JSON.stringify({ job: "tally-photos", error: String(e && e.stack || e) }))));
     ctx.waitUntil(scheduledSummary(env).then(r => { if (r.status === "sent" || r.status === "failed") console.log(JSON.stringify({ job: "summary", ...r })); })
       .catch(e => console.error(JSON.stringify({ job: "summary", error: String(e && e.stack || e) }))));
+    // daily limit texts: every 10 minutes, a few minutes after the SMRT sync (which runs on the 10s)
+    if (new Date(event.scheduledTime).getUTCMinutes() % 10 === 5) ctx.waitUntil(checkLimits(env).then(r => { if (r.sent || r.error) console.log(JSON.stringify({ job: "limits", ...r })); })
+      .catch(e => console.error(JSON.stringify({ job: "limits", error: String(e && e.stack || e) }))));
   },
 };

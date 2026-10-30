@@ -4,7 +4,7 @@
 //  - Things with their own shape live in their own tables: piece categories, station speeds,
 //    stations (names, on/off) and the shuttle runs with their stops.
 // Everyone can read settings; Admins and the Owner change them.
-import { HttpError, ulid, nowIso, audit } from "./util.js";
+import { HttpError, ulid, nowIso, audit, cleanPhone } from "./util.js";
 import { requireRole, rank } from "./auth.js";
 
 const CATS = ["dct", "dcb", "slt", "slb", "comf", "tc"];
@@ -19,6 +19,7 @@ const f = {
   text: (d, max = 80) => ({ kind: "text", d, max }),
   list: d => ({ kind: "list", d }),
   emails: d => ({ kind: "emails", d }),
+  phone: d => ({ kind: "phone", d }),
   days: d => ({ kind: "days", d }),
   perCat: (inner, d) => ({ kind: "perCat", inner, d }),
 };
@@ -28,6 +29,8 @@ export const SCHEMA = {
   money: { payAvg: f.num(15, 0, 200), laborTarget: f.num(17, 0, 100), pdfMoney: f.bool(false),
     prices: f.perCat(f.num(0, 0, 1000), { dct: 7.5, dcb: 8, slt: 4.15, slb: 7.25, comf: 30, tc: 12 }) },
   route: { dayBefore: f.bool(true) },
+  // the most pieces a department should have due in a day (0 = no limit) and who gets a text as the next work day nears it (Neal, Oct 30)
+  limits: { maxDcb: f.int(0, 0, 100000), maxDct: f.int(0, 0, 100000), maxSlb: f.int(0, 0, 100000), maxSlt: f.int(0, 0, 100000), alertPct: f.int(15, 0, 100), phone: f.phone("") },
   alerts: { warnFirst: f.int(45, 0, 240), warnSecond: f.int(15, 0, 240), notify: f.bool(true), weekStart: f.int(1, 0, 6) },
   smrt: { overdue: f.bool(true), transitRack: f.text("Van", 40),
     departments: f.perCat(f.text("", 200), { dct: "Dry Cleaning Tops", dcb: "Dry Cleaning Bottoms", slt: "Laundry Tops", slb: "Laundry Bottoms", comf: "", tc: "" }),
@@ -72,6 +75,7 @@ function check(group, key, s, v) {
       if (list.length > 10) throw new HttpError(400, "Up to 10 addresses.");
       return list;
     }
+    case "phone": if (typeof v !== "string") throw new HttpError(400, `${where}: must be a phone number.`); return cleanPhone(v) || "";
     case "perCat": {
       if (!v || typeof v !== "object") throw new HttpError(400, `${where}: missing values.`);
       return Object.fromEntries(CATS.map(c => [c, check(group, `${key}.${c}`, s.inner, v[c] ?? s.d[c])]));
@@ -130,7 +134,7 @@ const posNum = (v, what, max = 10000) => {
   return n;
 };
 
-/** Statements that save the production setup (used by the Settings screen and the desktop import). */
+/** Statements that save the production setup. */
 export async function productionStmts(db, orgId, userId, body) {
   const stmts = [];
   const now = nowIso();
@@ -251,7 +255,9 @@ export async function saveBoardOrder(db, env, me, body) {
 
 export async function allSettings(db, env, me = null) {
   const [groups, production, runs, boardOrder] = await Promise.all([loadGroups(db, env.ORG_ID), loadProduction(db, env.ORG_ID), loadRuns(db, env.ORG_ID), loadBoardOrder(db, env.ORG_ID)]);
-  return { groups, ...production, runs, boardOrder, ...(me && rank(me.role) >= rank("admin") ? { status: await adminStatus(db, env) } : {}) };
+  const admin = me && rank(me.role) >= rank("admin");
+  if (me && !admin) groups.limits.phone = "";   // someone's mobile number: Admins and the Owner only
+  return { groups, ...production, runs, boardOrder, ...(admin ? { status: await adminStatus(db, env) } : {}) };
 }
 
 /** For the Settings screen (Admins): what Rippling last sent (and whether it carries pay rates), and the last summary email. */
@@ -262,5 +268,6 @@ async function adminStatus(db, env) {
   const r = dep ? await db.prepare(`SELECT COUNT(*) AS people, SUM(CASE WHEN EXISTS (SELECT 1 FROM labor_pay_rates r WHERE r.person_id=p.id AND r.deleted_at IS NULL) THEN 1 ELSE 0 END) AS withRate
       FROM core_people p WHERE p.org_id=? AND p.department_id=? AND p.status='active' AND p.deleted_at IS NULL`).bind(env.ORG_ID, dep.id).first() : null;
   return { rippling: last ? { at: last.at, rows: last.rows, rateColumn: last.rateColumn || null } : null, payRates: { people: r?.people || 0, withRate: r?.withRate || 0 },
-    summary: await get("planner", "summary_last"), summaryTest: await get("planner", "summary_test"), emailReady: !!env.SEND_EMAIL };
+    summary: await get("planner", "summary_last"), summaryTest: await get("planner", "summary_test"), emailReady: !!env.SEND_EMAIL,
+    limits: await get("planner", "limits_last"), textsReady: !!env.TEXTS };
 }

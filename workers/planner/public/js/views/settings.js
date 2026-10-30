@@ -22,6 +22,14 @@ const GROUPS = [
     ["pdfMoney", "Show revenue & labor on the printed plan", "bool", ""],
     ["prices", "Average price per piece", "perCat", "", { step: 0.01, min: 0, max: 1000, unit: "$" }],
   ] },
+  { id: "limits", title: "Daily limits", lead: "The most pieces each department should have due in a day. A text goes out when the next work day's pieces reach the alert level, and another if they go over the max. Pieces are the Plan's count: due that day and not finished, with no estimate of drop-offs still to come.", fields: [
+    ["maxDcb", "Dry cleaning bottoms", "int", "0 = no limit.", { min: 0, max: 100000, unit: "pieces" }],
+    ["maxDct", "Dry cleaning tops", "int", "", { min: 0, max: 100000, unit: "pieces" }],
+    ["maxSlb", "Starch bottoms", "int", "", { min: 0, max: 100000, unit: "pieces" }],
+    ["maxSlt", "Starch tops", "int", "", { min: 0, max: 100000, unit: "pieces" }],
+    ["alertPct", "Text when within", "int", "With a max of 300 and 15%, the text goes out at 255 pieces.", { min: 0, max: 100, unit: "% of max" }],
+    ["phone", "Mobile number to text", "text", "Texts go out on work days, 7 AM to 7 PM. Leave blank for no texts."],
+  ] },
   { id: "route", title: "Route deliveries", lead: "Route orders are due by early morning on the route day, so they're normally finished the work day before.", fields: [
     ["dayBefore", "Plan route orders the work day before they're due", "bool", "Turn off to plan them on their due day like store orders."],
   ] },
@@ -55,11 +63,11 @@ const GROUPS = [
   { id: "business", title: "Business", lead: "", fields: [["name", "Business name", "text", "Printed at the top of the plan."]] },
 ];
 
-const SECTIONS = [["day", "Working day"], ["money", "Labor & prices"], ["stations", "Stations & speeds"], ["runs", "Shuttle runs"], ["route", "Route deliveries"], ["alerts", SHUTTLES ? "Shuttle alerts" : "Work week"], ["summary", "Daily summary email"], ["tally", "Station tablets"], ["smrt", "SMRT mapping"], ["rippling", "Rippling"], ["business", "Business"], ["import", "Import"]];
+const SECTIONS = [["day", "Working day"], ["money", "Labor & prices"], ["stations", "Stations & speeds"], ["limits", "Daily limits"], ["runs", "Shuttle runs"], ["route", "Route deliveries"], ["alerts", SHUTTLES ? "Shuttle alerts" : "Work week"], ["summary", "Daily summary email"], ["tally", "Station tablets"], ["smrt", "SMRT mapping"], ["rippling", "Rippling"], ["business", "Business"]];
 
 export async function render(main, ctx) {
   const { me } = ctx;
-  const canEdit = RANK[me.role] >= RANK.admin, isOwner = me.role === "owner";
+  const canEdit = RANK[me.role] >= RANK.admin;
   main.innerHTML = html`<div class="loading"><span class="spin"></span>Loading settings…</div>`;
   let S = await api("/settings");
   const dis = raw(canEdit ? "" : "disabled");
@@ -87,6 +95,8 @@ export async function render(main, ctx) {
   };
 
   const extras = {
+    limits: () => canEdit ? html`<div class="sum-status" id="limStatus">${raw(limitStatus())}</div>
+      <div class="set-actions"><button type="button" class="btn small" id="limTest">Send a test text</button></div>` : "",
     alerts: () => SHUTTLES ? html`<div class="sum-status" id="notifyLine"></div>` : "",
     summary: () => canEdit ? html`<div class="sum-status" id="sumStatus">${raw(summaryStatus())}</div>
       <div class="set-actions"><button type="button" class="btn small" id="sumPreview">Preview today's email</button><button type="button" class="btn small" id="sumTest">Send a test now</button></div>` : "",
@@ -103,6 +113,13 @@ export async function render(main, ctx) {
     else parts.push("Not sent yet.");
     if (T) parts.push(html`Last test ${fmtWhen(T.at)}: ${T.sent?.length ? `sent to ${T.sent.join(", ")}` : `failed — ${T.failed?.[0]?.error || ""}`}`);
     return parts.join("<br>");
+  }
+  function limitStatus() {
+    const st = S.status || {}, L = st.limits;
+    if (!st.textsReady) return '<span class="bad">●</span> Texts aren\'t switched on for the planner yet.';
+    if (L && L.error) return html`<span class="bad">●</span> ${fmtWhen(L.errorAt)}: couldn't send — ${L.error}`;
+    if (L && L.lastAt) return html`<span class="ok">●</span> Last text ${fmtWhen(L.lastAt)}: ${L.lastBody}`;
+    return "No texts sent yet.";
   }
   function ripStatus() {
     const r = S.status?.rippling, p = S.status?.payRates;
@@ -190,22 +207,13 @@ export async function render(main, ctx) {
     });
   }
 
-  const importCard = () => !isOwner ? "" : html`<section class="card set-card" id="sec-import">
-      <header><h2>Import from the desktop planner</h2><p>Brings over the team, trainings, settings and plan history. Safe to run again: it updates the same people and days instead of adding copies.</p></header>
-      <form class="set-form" novalidate data-kind="import">
-        <label class="field"><span>planner-data.json</span><input class="input" type="file" name="data" accept=".json,application/json"><small>On the office PC: %APPDATA%\\Production Planner\\planner-data.json</small></label>
-        <label class="field"><span>Plan History files <em>(optional)</em></span><input class="input" type="file" name="history" accept=".json,application/json" multiple><small>Documents\\Production Planner\\Plan History — select them all.</small></label>
-        <div class="import-result" hidden></div>
-        <div class="set-foot"><span class="saved-note" aria-live="polite"></span><button class="btn primary" type="submit" disabled>Import</button></div>
-      </form></section>`;
-
   main.innerHTML = html`
     <div class="page-head"><div><h1>Settings</h1><p>${canEdit ? "Changes apply to every PC as soon as you save." : "Only Admins can change settings."}</p></div></div>
     <div class="settings-layout">
-      <nav class="set-nav" aria-label="Settings sections">${SECTIONS.filter(([id]) => id !== "import" || isOwner).map(([id, l]) => raw(html`<a href="#/settings" data-jump="sec-${id}">${l}</a>`))}</nav>
+      <nav class="set-nav" aria-label="Settings sections">${SECTIONS.map(([id, l]) => raw(html`<a href="#/settings" data-jump="sec-${id}">${l}</a>`))}</nav>
       <div class="set-cards">
         ${["day", "money"].map(id => raw(groupCard(GROUPS.find(g => g.id === id))))}${raw(stationsCard())}
-        ${raw(runsCard())}${["route", "alerts", "summary", "tally", "smrt", "rippling", "business"].map(id => raw(groupCard(GROUPS.find(g => g.id === id))))}${raw(importCard())}
+        ${raw(groupCard(GROUPS.find(g => g.id === "limits")))}${raw(runsCard())}${["route", "alerts", "summary", "tally", "smrt", "rippling", "business"].map(id => raw(groupCard(GROUPS.find(g => g.id === id))))}
       </div>
     </div>`;
 
@@ -220,6 +228,10 @@ export async function render(main, ctx) {
     el.querySelector("#notifyOn")?.addEventListener("click", async () => { await askNotify(); drawNotify(); });
   }
   drawNotify();
+  main.querySelector("#limTest")?.addEventListener("click", async e => {
+    const b = e.currentTarget; b.disabled = true;
+    try { await api("/limits/test", { method: "POST" }); toast("Test text sent."); } catch (x) { toast(x.message, "bad"); } finally { b.disabled = false; }
+  });
   main.querySelector("#sumPreview")?.addEventListener("click", async e => {
     const b = e.currentTarget; b.disabled = true;
     try {
@@ -304,10 +316,9 @@ export async function render(main, ctx) {
       try {
         if (kind === "production") { Object.assign(S, await api("/settings/production", { method: "PUT", body: readProduction(form) })); }
         else if (kind === "runs") { const r = await api("/settings/runs", { method: "PUT", body: { runs: readRuns(form) } }); S.runs = r.runs; runs = structuredClone(r.runs); form.querySelector("#runList").innerHTML = runs.map((x, i) => runHtml(x, i)).join(""); }
-        else if (kind === "import") { await doImport(form); }
         else { const r = await api(`/settings/${g}`, { method: "PUT", body: readGroup(GROUPS.find(x => x.id === g), form) }); S.groups[g] = r[g]; }
-        note.textContent = kind === "import" ? "Imported" : "Saved"; note.className = "saved-note ok";
-        if (kind !== "import") toast("Saved.");
+        note.textContent = "Saved"; note.className = "saved-note ok";
+        toast("Saved.");
       } catch (x) { btn.disabled = false; note.textContent = x.message; note.className = "saved-note bad"; }
     });
   });
@@ -326,19 +337,4 @@ export async function render(main, ctx) {
     runForm.querySelector("#runList").innerHTML = runs.map((x, k) => runHtml(x, k)).join("");
     runForm.dispatchEvent(new Event("change"));
   });
-
-  async function doImport(form) {
-    const dataFile = form.elements.data.files[0];
-    if (!dataFile) throw new Error("Choose planner-data.json first.");
-    const readJson = async f => { try { return JSON.parse(await f.text()); } catch { throw new Error(`${f.name} isn't a valid JSON file.`); } };
-    const data = await readJson(dataFile);
-    const history = await Promise.all([...form.elements.history.files].map(readJson));
-    const r = await api("/import/desktop", { method: "POST", body: { data, history } });
-    const box = form.querySelector(".import-result");
-    box.hidden = false;
-    box.innerHTML = html`<b>Imported.</b> ${r.peopleAdded} people added, ${r.peopleUpdated} updated, ${r.trainings} trainings, ${r.settings} settings groups, ${r.runs} runs,
-      ${r.planDays} past plans and ${r.hoursRows} days of hours.${r.skipped.length ? raw(html`<br><small>Skipped: ${r.skipped.join("; ")}</small>`) : ""}`;
-    S = await api("/settings");
-    toast("Import finished. Check the Team page.");
-  }
 }

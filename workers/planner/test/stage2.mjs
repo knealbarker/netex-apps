@@ -1,6 +1,5 @@
 // Tests for team, settings and the desktop import. Run: node workers/planner/test/stage2.mjs
-// Uses a made-up desktop file (same shape as planner-data.json). Set DESKTOP_DIR to also import a real copy.
-import { readFileSync, readdirSync, existsSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { freshDb, fakeAccess, makeEnv } from "./harness.mjs";
 import { handle } from "../src/index.js";
@@ -27,86 +26,6 @@ async function withRole(call, role, email) {
   await call("POST", "/api/users", { body: { name: role, email, role } });
 }
 
-const DESKTOP = {
-  biz: "Town & Country Cleaners", defStart: "07:00", fullDay: 7.5, breakMin: 30, breakAfter: 4, spread: 30, allowOT: true, otMax: 2, allowMoves: true,
-  allowClockOut: true, minPaid: 4, staggerBreaks: true, washOn: true, washers: 3, washSlt: 65, washSlb: 25, washComf: 2, washTc: 10, cycLaundry: 45, cycComf: 60, cycTc: 40, washDelay: 20,
-  stationMax: { dcb1: 6 },
-  employees: [
-    { id: "e1", name: "Ana Uno", start: "05:00", skills: { slt1: true, slb1: 3, dco: 2 }, rip: "38", ripName: "Ana Uno" },
-    { id: "e2", name: "Beto Dos", start: "07:30", skills: { dct2: 2, dct1: 1, dcb1: 1, nope: 1 }, rip: "40", ripName: "Beto Dos" },
-  ],
-  users: [{ id: "u", name: "Neal", role: "Owner", pinHash: "x" }],
-  price: { dct: 6.79, dcb: 7.53, slt: 3.84, slb: 6.91, comf: 35.7, tc: 14.04 }, payAvg: 13, otMult: 1.5, laborTarget: 17, pdfMoney: false,
-  rates: { slb: 20, sltSolo: 50, sltPair: 80, dct: 25, dcb: 25, tc: 6, asm: 100, comf: 3 },
-  asmInclude: { dct: true, dcb: true, slt: true, slb: true, comf: false, tc: true },
-  csvAliases: { comf: ["Bedspread"] },
-  smrtMap: { overdue: true, deps: { dct: "Dry Cleaning Tops", dcb: "Dry Cleaning Bottoms", slt: "Laundry Tops", slb: "Laundry Bottoms", comf: "", tc: "" }, types: { comf: "Comforter", tc: "Tablecloth" } },
-  rip: { depts: ["Production"], useTimes: true },
-  shuttles: { runs: [{ id: "wq", name: "Winnsboro + Quitman", back: 30, stops: [{ store: "Winnsboro", cutoff: "11:00", arrive: "11:30", drive: 30, stay: 15 }, { store: "Quitman", cutoff: "11:30", arrive: "12:00", drive: 15, stay: 15 }] }],
-    counter: { name: "Sulphur Springs store", store: "Sulphur Springs", ready: "16:00", cutoff: "18:00" }, warn: [45, 15], notify: true, weekStart: 1 },
-};
-const HISTORY = [
-  { v: 1, day: "2026-09-08", actual: { people: [{ rip: "40", name: "Beto Dos", in: 3.8333, out: 12.35, hours: 8.52, open: false }, { rip: "99", name: "Gone Person", in: 5.5, out: 14, hours: 8, open: false }] } },
-  { v: 1, day: "2026-10-10", plan: { at: 1791656551409, q: { dct: 4 }, price: {}, crew: [{ st: "slt1", rip: "38", name: "Ana Uno", start: "05:00", hrs: 7.5, stop: "" }, { st: "dct1", rip: "40", name: "Beto Dos", start: "07:30", hrs: 7.5, stop: "" }], metrics: { laborH: 15 } } },
-];
-
-console.log("desktop import");
-await t("imports team, rankings, settings, speeds, runs and history", async () => {
-  const { call, sqlite } = app();
-  const r = await call("POST", "/api/import/desktop", { body: { data: DESKTOP, history: HISTORY } });
-  eq(r.status, 200, JSON.stringify(r.body));
-  eq(r.body.peopleAdded, 3); eq(r.body.trainings, 5); eq(r.body.planDays, 1); eq(r.body.hoursRows, 2); eq(r.body.runs, 2);
-  ok(r.body.skipped.some(s => s.includes("nope")), "unknown station reported");
-  const team = (await call("GET", "/api/team")).body;
-  eq(team.people.filter(p => p.status === "active").map(p => p.name), ["Ana Uno", "Beto Dos"]);
-  eq(team.people.find(p => p.name === "Ana Uno").trainings, ["slt1", "dco", "slb"], "ordered by rank");
-  eq(team.people.find(p => p.name === "Beto Dos").trainings, ["dct", "dcb"], "DCT 1 and 2 collapse into one DCT; ties keep station order");
-  eq(team.trainings.find(x => x.id === "dct").stations, ["DCT 1", "DCT 2", "DCT 3"]);
-  eq(team.people.find(p => p.name === "Gone Person").status, "inactive");
-  eq(team.people.find(p => p.name === "Ana Uno").usualStart, "05:00");
-  const s = (await call("GET", "/api/settings")).body;
-  eq(s.groups.money.prices.comf, 35.7); eq(s.groups.money.payAvg, 13); eq(s.groups.smrt.itemTypes.comf, "Comforter, Bedspread");
-  eq(s.rates.find(x => x.type === "slb" && x.category === "slb").perHour, 20);
-  eq(s.categories.find(c => c.id === "comf").needsAssembly, false);
-  eq(s.runs.map(x => [x.name, x.kind, x.stops.map(y => y.store)]), [["Winnsboro + Quitman", "shuttle", ["Winnsboro", "Quitman"]], ["Sulphur Springs store", "counter", ["Sulphur Springs"]]]);
-  eq(s.runs[0].stops[0], { store: "Winnsboro", arrive: "11:30", drive: 30, stay: 15, cutoff: "11:00" });
-  const hrs = sqlite.prepare("SELECT hours, first_in, last_out FROM labor_daily_hours h JOIN core_people p ON p.id=h.person_id WHERE p.payroll_id='40'").get();
-  eq([hrs.hours, hrs.first_in, hrs.last_out], [8.52, "03:50", "12:21"]);
-  const asg = sqlite.prepare("SELECT s.code, a.starts_at FROM plan_assignments a JOIN plan_stations s ON s.id=a.station_id ORDER BY s.sort").all();
-  eq(asg.map(a => [a.code, a.starts_at]), [["slt1", "05:00"], ["dct1", "07:30"]]);
-  const pub = JSON.parse(sqlite.prepare("SELECT snapshot_json FROM plan_publications").get().snapshot_json);
-  eq(pub.source, "desktop"); eq(pub.metrics.laborH, 15);
-});
-await t("running it twice changes nothing new", async () => {
-  const { call, sqlite } = app();
-  await call("POST", "/api/import/desktop", { body: { data: DESKTOP, history: HISTORY } });
-  const r = await call("POST", "/api/import/desktop", { body: { data: DESKTOP, history: HISTORY } });
-  eq(r.body.peopleAdded, 0);
-  eq(sqlite.prepare("SELECT COUNT(*) n FROM core_people").get().n, 3);
-  eq(sqlite.prepare("SELECT COUNT(*) n FROM plan_publications").get().n, 1);
-  eq(sqlite.prepare("SELECT COUNT(*) n FROM plan_person_trainings").get().n, 5);
-  eq(sqlite.prepare("SELECT COUNT(*) n FROM plan_runs WHERE is_active=1").get().n, 2);
-  eq(sqlite.prepare("SELECT COUNT(*) n FROM core_locations WHERE name='Quitman'").get().n, 1);
-});
-await t("only the Owner can import; a bad file is refused", async () => {
-  const { call } = app();
-  await withRole(call, "admin", "ad@example.com");
-  eq((await call("POST", "/api/import/desktop", { as: "ad@example.com", body: { data: DESKTOP } })).status, 403);
-  eq((await call("POST", "/api/import/desktop", { body: { data: { hello: 1 } } })).status, 400);
-});
-if (process.env.DESKTOP_DIR && existsSync(join(process.env.DESKTOP_DIR, "planner-data.json"))) {
-  await t("real desktop files import cleanly", async () => {
-    const { call } = app();
-    const data = JSON.parse(readFileSync(join(process.env.DESKTOP_DIR, "planner-data.json"), "utf8"));
-    const hdir = process.env.HISTORY_DIR;
-    const history = hdir ? readdirSync(hdir).filter(f => f.endsWith(".json")).map(f => JSON.parse(readFileSync(join(hdir, f), "utf8"))) : [];
-    const r = await call("POST", "/api/import/desktop", { body: { data, history } });
-    eq(r.status, 200, JSON.stringify(r.body));
-    console.log("       ", JSON.stringify(r.body));
-  });
-}
-
-console.log("team");
 await t("Admin adds a person; Rippling id must be unique; Viewer can read but not add", async () => {
   const { call } = app();
   const r = await call("POST", "/api/team", { body: { firstName: "Cara", lastName: "Tres", payrollId: "77", usualStart: "06:00" } });

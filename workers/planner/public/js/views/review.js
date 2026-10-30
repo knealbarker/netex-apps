@@ -174,7 +174,7 @@ export async function render(main, ctx) {
   // the week so far for one person: Rippling's finished days before this one (paid hours) plus this day's
   function weekOf(id, todayH) {
     const H = R0?.P?.history?.hours; if (!H) return null;
-    const ws = BASE?.SET?.groups?.day?.weekStart ?? 1, dow = new Date(D.day + "T12:00:00").getDay(), back = (dow - ws + 7) % 7;
+    const ws = BASE?.SET?.groups?.alerts?.weekStart ?? 1, dow = new Date(D.day + "T12:00:00").getDay(), back = (dow - ws + 7) % 7;
     const start = new Date(Date.parse(D.day + "T12:00:00Z") - back * 864e5).toISOString().slice(0, 10);
     const before = H.filter(h => h.personId === id && h.day >= start && h.day < D.day).reduce((t, h) => t + (+h.hours || 0), 0);
     return before + (todayH || 0);

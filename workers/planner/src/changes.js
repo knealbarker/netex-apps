@@ -55,7 +55,7 @@ export async function addEvent(db, env, me, body) {
   return { added: !!(r?.meta?.changes) };
 }
 
-const SETTINGS_NAMES = { day: "Working day", money: "Labor & prices", route: "Route deliveries", alerts: "Shuttle alerts",
+const SETTINGS_NAMES = { day: "Working day", money: "Labor & prices", route: "Route deliveries", limits: "Daily limits", alerts: "Shuttle alerts",
   smrt: "SMRT mapping", rippling: "Rippling", business: "Business", summary: "Daily summary email" };
 
 /** Everything changed on a day (Central time), newest first. */

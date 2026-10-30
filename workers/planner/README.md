@@ -21,7 +21,7 @@ With the `CF_API_TOKEN` secret set, every change also rewrites the Netex users g
 - **Review** — any past day against its plan, the 15-day trend, follow-ups, and the next work day's projection.
 - **Team** — trainings in order, pay rates (Admins/Owner), **Order from history** (training order from where people worked).
 - **Settings** — everything the plan uses, shuttle alerts (and Windows pop-ups per PC), the **daily summary email**,
-  Rippling status (whether pay rates are coming through), and the desktop import.
+  the **daily limits** (a text when the next work day nears a department's max), and Rippling status (whether pay rates are coming through).
 - **Planned start vs. clocked in** (`src/attendance.js`, `attendanceOf` in `js/plan/model.js`): the crew's start and end
   columns are the plan; under each name is what the time clock (Rippling) says, with when it was last heard from. Today,
   15 minutes past someone's planned start (or late-arrival time) with no punch, the row and their timeline bar turn red and
@@ -90,7 +90,7 @@ For the van driver: is everything due at a store on VAN? (Neal, Oct 18.) Signed 
 
 ## Layout
 - `src/index.js` routes, security headers and the cron; `src/auth.js` sign-in; `src/users.js` users and the Access group.
-- `src/team.js`, `src/settings.js`, `src/import.js`, `src/pieces.js` (SMRT pieces), `src/plan.js` (save/publish),
+- `src/team.js`, `src/settings.js`, `src/limits.js` (daily limit texts), `src/pieces.js` (SMRT pieces), `src/plan.js` (save/publish),
   `src/review.js`, `src/pay.js` (Rippling pay rates), `src/changes.js` (Changes today, shuttle events), `src/summary.js`.
 - `public/` — the app (no build step). `js/engine/engine.js` draws the plan as entered (no simulation since Oct 14; the automatic planner was removed Oct 30); `js/plan/model.js` the Plan logic
   (also used by the summary email on the server); `js/views/*` one file per section.
@@ -101,7 +101,7 @@ Workers Builds, root directory `workers/planner`, deploy command
 Secret: `CF_API_TOKEN` (Account › Access: Organizations, Identity Providers, and Groups › Edit). Never commit it.
 
 ## Tests (Node 22; Node's SQLite stands in for D1, headless Chromium for the pages)
-- `test/run.mjs` sign-in and users · `test/stage2.mjs` team, settings, import · `test/pieces.mjs` · `test/plan.mjs` · `test/model.mjs`
+- `test/run.mjs` sign-in and users · `test/stage2.mjs` team, settings · `test/limits.mjs` daily limit texts · `test/pieces.mjs` · `test/plan.mjs` · `test/model.mjs`
 - `test/shuttle.mjs` shuttle status (rules, Check now, the page in Chromium) · `test/tally.mjs` station tablets (pairing, press start, pace, photos) · `test/station-ui.mjs` the tablet page and its Plan/Review/Settings parts in Chromium
 - `test/breakpay.mjs` paid break rule · `test/review.mjs` · `test/stage5.mjs` pay rates, any day, changes, events, streak, summary email
 - Browser: `test/browser.mjs`, `test/review-ui.mjs`, and **`test/e2e.mjs`** — the whole planner end to end,

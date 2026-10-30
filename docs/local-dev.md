@@ -26,7 +26,7 @@ Run any app on your laptop against a local copy of the database. Nothing here ch
 - **Secrets:** `.dev.vars` per worker; git ignores them. Leave the Twilio keys and `CF_API_TOKEN` empty: with them, a local run
   sends real texts or edits the real Access group. `SMRT_KEY` only reads SMRT.
 - **Email:** `send_email` is simulated locally (wrangler prints it); nothing goes out.
-- **Linked apps:** planner starts with netex-sync (`SYNC`), retail with netex-sms (`TEXTS`).
+- **Linked apps:** planner starts with netex-sync (`SYNC`) and netex-sms (`TEXTS`), retail with netex-sms (`TEXTS`).
 
 ## Rules
 - Work on a branch; merge to `main` only when ready. **A push to `main` deploys to the live apps.**

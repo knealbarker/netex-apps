@@ -136,28 +136,15 @@ await t("light theme renders", async () => {
   ok(bg === "rgb(244, 246, 250)", bg);
   await q.screenshot({ path: join(SHOTS, "8-light.png") });
 });
-// ---------- stage 2: import, team grid, settings ----------
-const DESK = {
-  biz: "Town & Country Cleaners", defStart: "07:00", fullDay: 7.5, breakMin: 30, washOn: true, washers: 3, washSlt: 65, washSlb: 25, washComf: 2, washTc: 10, cycLaundry: 45, cycComf: 60, cycTc: 40,
-  employees: [
-    { id: "a", name: "Ana Uno", start: "05:00", skills: { slt1: true, slb1: 3, dco: 2, asm1: 2 }, rip: "38", ripName: "Ana Uno" },
-    { id: "b", name: "Beto Dos", start: "07:30", skills: { dct1: 1, dct2: 2, dct3: 3, dcb1: 1 }, rip: "40", ripName: "Beto Dos" },
-    { id: "c", name: "Cora Tres", start: "05:35", skills: { slt2: 1, slb1: 1, slb2: 2, asm2: 1 }, rip: "41", ripName: "Cora Tres" },
-  ],
-  price: { dct: 6.79, dcb: 7.53, slt: 3.84, slb: 6.91, comf: 35.7, tc: 14.04 }, payAvg: 13, laborTarget: 17,
-  rates: { slb: 20, sltSolo: 50, sltPair: 80, dct: 25, dcb: 25, tc: 6, asm: 100, comf: 3 },
-  shuttles: { runs: [{ id: "wq", name: "Winnsboro + Quitman", back: 30, stops: [{ store: "Winnsboro", cutoff: "11:00", arrive: "11:30", drive: 30, stay: 15 }, { store: "Quitman", cutoff: "11:30", arrive: "12:00", drive: 15, stay: 15 }] }],
-    counter: { name: "Sulphur Springs store", store: "Sulphur Springs", ready: "16:00", cutoff: "18:00" }, warn: [45, 15] },
-};
-const HIST = { v: 1, day: "2026-09-08", actual: { people: [{ rip: "40", name: "Beto Dos", in: 3.83, out: 12.35, hours: 8.52 }] } };
-await t("Settings › Import: the Owner imports the desktop files", async () => {
-  await p.goto(url + "/#/settings");
-  await p.waitForSelector("#sec-import");
-  await p.setInputFiles('#sec-import input[name="data"]', { name: "planner-data.json", mimeType: "application/json", buffer: Buffer.from(JSON.stringify(DESK)) });
-  await p.setInputFiles('#sec-import input[name="history"]', [{ name: "2026-09-08.json", mimeType: "application/json", buffer: Buffer.from(JSON.stringify(HIST)) }]);
-  await p.click('#sec-import button[type="submit"]');
-  await p.waitForSelector("#sec-import .import-result:not([hidden])");
-  ok(/3 people added/.test(await p.textContent("#sec-import .import-result")), await p.textContent("#sec-import .import-result"));
+// ---------- stage 2: team grid, settings ----------
+await t("Setup: team, prices and shuttle runs through the API", async () => {
+  const call = async (method, path, data) => { const r = await p.request.fetch(url + path, { method, data }); ok(r.ok(), `${path}: ${r.status()}`); return r.json(); };
+  for (const [firstName, lastName, payrollId, usualStart, trainings] of [["Ana", "Uno", "38", "05:00", ["slt1", "slb", "iab1"]], ["Beto", "Dos", "40", "07:30", ["dct", "dcb"]], ["Cora", "Tres", "41", "05:35", ["slb", "slt2", "iab2"]]]) {
+    const { id } = await call("POST", "/api/team", { firstName, lastName, payrollId, usualStart });
+    await call("PUT", `/api/team/${id}/trainings`, { trainings });
+  }
+  await call("PUT", "/api/settings/money", { payAvg: 13, prices: { dct: 6.79, dcb: 7.53, slt: 3.84, slb: 6.91, comf: 35.7, tc: 14.04 } });
+  await call("PUT", "/api/settings/runs", { runs: [{ name: "Winnsboro + Quitman", kind: "shuttle", driveBack: 30, stops: [{ store: "Winnsboro", arrive: "11:30", drive: 30, stay: 15, cutoff: "11:00" }, { store: "Quitman", arrive: "12:00", drive: 15, stay: 15, cutoff: "11:30" }] }, { name: "Sulphur Springs store", kind: "counter", stops: [{ store: "Sulphur Springs", arrive: "16:00", drive: 0, stay: 0, cutoff: "18:00" }] }] });
 });
 await t("Team: each person shows their rank at each station; DCT 1-3 count as one", async () => {
   await p.goto(url + "/#/team");
@@ -282,7 +269,6 @@ await t("Settings: a Viewer sees values but can't edit", async () => {
   await q.waitForSelector("#sec-day");
   ok(await q.isDisabled('#sec-day input[name="breakMin"]'));
   ok(!(await q.$('#sec-day button[type="submit"]')));
-  ok(!(await q.$("#sec-import")));
   await q.goto(url + "/#/team"); await q.waitForSelector(".team-list");
   ok(!(await q.$("[data-train]")), "viewer has no Trainings button");
   who = "neal@towncountryclean.com";

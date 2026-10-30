@@ -9,4 +9,5 @@ $host.UI.RawUI.WindowTitle = "netex $App - http://localhost:$($a.Port)"
 Write-Host "$($a.Note)" -ForegroundColor Cyan
 Write-Host "  http://localhost:$($a.Port)   (signed in as $DevEmail via DEV_EMAIL; local database only)" -ForegroundColor Green
 Write-Host "  Run a scheduled job:  http://localhost:$($a.Port)/__scheduled?cron=<the cron from wrangler.toml>   Stop: Ctrl+C" -ForegroundColor DarkGray
-npx wrangler dev @cfg --port $a.Port --inspector-port ($a.Port + 1442) --persist-to "$State" --test-scheduled
+# --local-upstream: with a route in wrangler.toml, wrangler otherwise addresses each request to the live hostname, and DEV_EMAIL only counts on localhost
+npx wrangler dev @cfg --port $a.Port --inspector-port ($a.Port + 1442) --local-upstream "localhost:$($a.Port)" --persist-to "$State" --test-scheduled

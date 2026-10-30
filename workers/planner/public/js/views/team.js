@@ -41,7 +41,7 @@ export async function render(main, ctx) {
     const T = data.today, todayAway = active.flatMap(p => (p.away || []).filter(t => t.fromDay <= T && t.toDay >= T).map(t => ({ p, t })));
     main.innerHTML = html`
       <div class="page-head">
-        <div><h1>Team</h1><p>${active.length} people on the production team. Each station has one #1, one #2, and so on: the plan puts each station's #1 there first, then works down the list.</p></div>
+        <div><h1>Team</h1><p>${active.length} people on the production team. Each station has one #1, one #2, and so on. When you add someone to a station on the Plan, people are listed in that order.</p></div>
         <div class="head-actions">
           ${former ? raw(html`<label class="check"><input type="checkbox" id="former" ${raw(showFormer ? "checked" : "")}> Show former (${former})</label>`) : ""}
           ${canEdit ? raw(html`<button class="btn primary" id="addPerson">${raw(PLUS)}Add person</button>`) : ""}
@@ -118,8 +118,7 @@ function depthChart(data, active, chart, canEdit) {
   };
   return html`<section class="card depth" aria-labelledby="dc-h">
     <header class="depth-head"><h2 id="dc-h">Station depth chart</h2>
-      <p>${canEdit ? "Pick a number to put someone at that rank; everyone below moves down one. Pick – to take them off. Being on a station's list means they're trained there." : "Each station's #1, #2, #3 … as the plan uses them."}
-      Comforters and Tablecloths aren't starting stations: their list is who moves there first once the washers are done.</p></header>
+      <p>${canEdit ? "Pick a number to put someone at that rank; everyone below moves down one. Pick – to take them off. Being on a station's list means they're trained there." : "Each station's #1, #2, #3 …"}</p></header>
     <div class="dc-scroll"><table class="dc"><thead><tr><th></th>${raw(T.map(t => html`<th scope="col" title="${t.name}${t.stations.length > 1 ? ` — ${t.stations.join(", ")}` : ""}">${t.short}</th>`).join(""))}</tr></thead>
       <tbody>${raw(ppl.map(p => html`<tr><th scope="row">${p.name}</th>${raw(T.map(t => cell(p, t)).join(""))}</tr>`).join(""))}</tbody></table></div>
   </section>`;

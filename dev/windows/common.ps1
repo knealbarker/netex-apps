@@ -9,7 +9,7 @@ $DevEmail = 'neal@towncountryclean.com'
 
 # app -> worker folders (first one is served; the others run alongside for service bindings) and port
 $Apps = [ordered]@{
-  planner  = @{ Workers = @('planner','sync'); Port = 8787; Note = 'Production Planner (with netex-sync for Check now)' }
+  planner  = @{ Workers = @('planner','sync','sms'); Port = 8787; Note = 'Production Planner (with netex-sync for Check now, netex-sms for texts)' }
   retail   = @{ Workers = @('retail','sms');   Port = 8788; Note = 'Retail Snapshot (with netex-sms for texts)' }
   supplies = @{ Workers = @('supplies');       Port = 8789; Note = 'Supplies' }
   sms      = @{ Workers = @('sms');            Port = 8790; Note = 'Texts' }

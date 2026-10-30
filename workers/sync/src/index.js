@@ -12,8 +12,8 @@ import { localNow } from "./util.js";
 
 const inWindow = (hour, start, end) => (start <= end ? hour >= start && hour < end : hour >= start || hour < end);
 const weekday = day => new Date(day + "T12:00:00Z").getUTCDay(); // 0 = Sunday
-export const LIVE_CRON = "*/10 * * * *";
-export const RACKS_CRON = "*/2 * * * *";
+const LIVE_CRON = "*/10 * * * *";
+const RACKS_CRON = "*/2 * * * *";
 
 /** History loads overnight on work days, and all day on days off (nobody is using SMRT for production then). */
 export function backfillAllowed({ day, hour, workDays = [1, 2, 3, 4, 5], start = 20, end = 5 }) {
